@@ -19,6 +19,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "google-genai>=1.68.0",
     "langchain>=1.2.12",
+    "langfuse>=3.9.0",
     "langchain-google-genai>=4.0.0",
     "langgraph>=1.1.2",
     "moviepy>=2.2.1",

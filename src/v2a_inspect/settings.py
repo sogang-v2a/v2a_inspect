@@ -12,6 +12,17 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GEMINI_API_KEY", "API_KEY"),
     )
     openrouter_api_key: SecretStr | None = None
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_base_url: str | None = None
+    langfuse_environment: str = "local"
+    langfuse_release: str | None = None
+    langfuse_sample_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    prompt_backend: Literal["local", "auto", "langfuse"] = Field(
+        default="local",
+        validation_alias=AliasChoices("PROMPT_BACKEND", "LANGFUSE_PROMPT_BACKEND"),
+    )
+    langfuse_prompt_label: str = "production"
     auth_mode: Literal["disabled", "password"] = "password"
     auth_allow_self_signup: bool = True
     auth_cookie_key: SecretStr | None = None
@@ -34,6 +45,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "At least one of GEMINI_API_KEY or OPENROUTER_API_KEY must be set."
             )
+
+        if (self.langfuse_public_key is None) != (self.langfuse_secret_key is None):
+            raise ValueError(
+                "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must either both be set or both be omitted."
+            )
+
         return self
 
 
