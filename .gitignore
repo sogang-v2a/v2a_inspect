@@ -261,6 +261,7 @@ celerybeat.pid
 # Environments
 .env
 .env.secure
+credentials.yaml
 .venv
 secrets/
 env/
