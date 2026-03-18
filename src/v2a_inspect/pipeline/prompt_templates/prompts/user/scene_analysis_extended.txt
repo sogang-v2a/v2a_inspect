@@ -1,0 +1,68 @@
+Analyze this video and break it down into distinct scenes. Your goal is to generate RICH, DETAILED sound descriptions that could be used to recreate realistic audio.
+
+**Scene Definition:**
+A new scene starts when ONE OR MORE of these occur:
+- Complete scene transition (location change, fade, cut to different setting)
+- Main subject/object changes (e.g., from person to car, from indoor to outdoor)
+- Camera angle/composition drastically changes (e.g., wide shot to close-up, front view to side view)
+
+Infer and describe ALL sounds that would realistically be heard based on what you see.
+
+For each scene, provide:
+
+1. **time_range**: start and end time in seconds
+    - All timestamps MUST be specified to 0.1 second precision (e.g., 3.2, 7.8, 12.4)
+    - Do NOT round to whole seconds or 0.5 second intervals
+    - Object time_range should reflect ACTUAL sound duration, not just copy scene boundaries
+
+2. **background_sound**: Environmental ambience and atmosphere
+    - Describe with RICH DETAIL: include specific characteristics like intensity, texture, distance, and quality
+    - Layer multiple ambient elements when realistic (e.g., "gentle wind rustling through oak leaves with distant highway traffic hum and occasional bird chirps")
+    - Specify acoustic environment characteristics (e.g., "reverberant concrete hallway", "open outdoor field with natural echo", "muffled indoor room")
+    - DO NOT include sounds from the main objects listed below
+    - If there are more than 2 notable sound-producing objects, describe the extra objects' sounds here with full detail
+
+3. **objects**: up to 2 main sound-producing objects. Each object MUST include:
+
+    **A. Identification with count:**
+    - Always specify exact quantity (e.g., "a person", "two dogs", "three cars")
+
+    **B. Detailed sound description including:**
+    - **Action/Activity**: What is producing the sound? (e.g., "playing an acoustic guitar", "running on gravel path", "engine idling")
+    - **Sound Characteristics**:
+        - Pitch (high/mid/low frequency)
+        - Intensity (soft, moderate, loud, aggressive)
+        - Rhythm/Pattern (steady, intermittent, accelerating, irregular)
+        - Texture/Quality (smooth, harsh, crisp, muffled, resonant, metallic, wooden)
+    - **Dynamics**: How does the sound change? (e.g., "starting soft and building to loud", "steady rhythm with occasional accents", "gradually fading")
+    - **Secondary sounds**: Related sounds the action produces (e.g., for guitar: "finger squeaks on strings, body resonance, pick attack"; for walking: "footsteps with clothing rustle and keys jingling")
+
+    **C. time_range**: Precise timing within the scene (0.1s precision)
+
+**Description Quality Examples:**
+
+❌ BAD (too vague):
+- "a person playing drums"
+- "a car driving"
+- "birds in trees"
+
+✅ GOOD (rich detail):
+- "a drummer performing energetic rock beats on an acoustic kit - punchy bass drum kicks at 120 BPM, sharp snare hits with buzzing wires on backbeats, rapid hi-hat patterns with occasional open splashes, wooden stick clicks between hits, and the metallic shimmer of crash cymbals accenting transitions"
+- "a sports car accelerating aggressively - engine revving from low rumble to high-pitched scream, turbo spooling with whooshing boost, transmission cracking through rapid upshifts, exhaust popping and crackling, tires chirping slightly on each gear change"
+- "three sparrows chirping in rapid high-pitched tweets with fluttering wing beats, hopping between branches with light scratching sounds on bark"
+
+**Important Rules:**
+- Mutual Exclusion: background_sound must NOT overlap with sounds described in objects
+- Every object description MUST contain a specific count AND detailed sound characteristics
+- Object time_range must be within scene time_range and reflect actual sound presence
+- Dynamic Selection: Provide 0, 1, or 2 objects based on actual content - do not force objects
+- Think like a sound designer: What would a Foley artist need to recreate this scene's audio?
+- Consider material interactions: wood on wood, metal on concrete, fabric rustling, liquid splashing, etc.
+- Include realistic incidental sounds: breathing, footsteps, mechanical noises, environmental reactions
+
+**Self-Check Before Responding:**
+□ Are my descriptions detailed enough to recreate the sound without seeing the video?
+□ Did I include sound characteristics (pitch, intensity, rhythm, texture)?
+□ Did I mention secondary/incidental sounds where appropriate?
+□ Are timestamps precise to 0.1 seconds?
+□ Do object times reflect actual sound duration (not just scene boundaries)?
