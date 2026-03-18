@@ -1167,6 +1167,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyngrok"
+version = "7.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9e/8b/a254d57f6d5ec8797daa57510abd8e82eb7f7992fc1c455677f28e805893/pyngrok-7.5.1.tar.gz", hash = "sha256:934ec8a899ace8ec61c39120a27a8212aeb40293cad2f4ffc8a3d1a4bb6a8d6c", size = 43307 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/c3/c73d882109bb19804383c375b42bbbdcbf3838fc3305217d9ba1bb051cfa/pyngrok-7.5.1-py3-none-any.whl", hash = "sha256:88f1ffb0ccc8dbc7810a29136eb9db3abb46b62436da438e277dfc1e70cf76ae", size = 24801 },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -1548,7 +1560,7 @@ wheels = [
 [[package]]
 name = "v2a-inspect"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "dotenv" },
     { name = "google-genai" },
@@ -1562,6 +1574,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pre-commit" },
+    { name = "pyngrok" },
     { name = "ruff" },
 ]
 
@@ -1579,6 +1592,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.5.1" },
+    { name = "pyngrok", specifier = ">=7.5.1" },
     { name = "ruff", specifier = ">=0.15.6" },
 ]
 

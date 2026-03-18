@@ -1,3 +1,14 @@
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["v2a_inspect"]
+module-root = "src"
+
+[tool.uv-build]
+include = ["src/v2a_inspect/prompt_templates/prompts/**/*.txt"]
+
 [project]
 name = "v2a-inspect"
 version = "0.1.0"
@@ -17,5 +28,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
+    "pyngrok>=7.5.1",
     "ruff>=0.15.6",
 ]
