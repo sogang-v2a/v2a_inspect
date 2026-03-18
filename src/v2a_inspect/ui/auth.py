@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from secrets import token_urlsafe
@@ -57,15 +56,7 @@ def resolve_auth_credentials_path() -> Path:
     if settings.auth_credentials_path is not None:
         return settings.auth_credentials_path.expanduser().resolve()
 
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return (Path(appdata) / "v2a_inspect" / "credentials.yaml").resolve()
-
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-    if xdg_config_home:
-        return (Path(xdg_config_home) / "v2a_inspect" / "credentials.yaml").resolve()
-
-    return (Path.home() / ".config" / "v2a_inspect" / "credentials.yaml").resolve()
+    return (Path.cwd() / "credentials.yaml").resolve()
 
 
 def ensure_auth_config_file(credentials_path: Path) -> None:
