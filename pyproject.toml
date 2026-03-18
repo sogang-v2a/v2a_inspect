@@ -21,6 +21,7 @@ dependencies = [
     "langchain>=1.2.12",
     "langgraph>=1.1.2",
     "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
     "streamlit>=1.55.0",
     "streamlit-authenticator>=0.4.2",
 ]
