@@ -1,0 +1,21 @@
+[project]
+name = "v2a-inspect"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dotenv>=0.9.9",
+    "google-genai>=1.68.0",
+    "langchain>=1.2.12",
+    "langgraph>=1.1.2",
+    "pydantic>=2.12.5",
+    "streamlit>=1.55.0",
+    "streamlit-authenticator>=0.4.2",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "ruff>=0.15.6",
+]
