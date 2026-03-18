@@ -59,35 +59,30 @@ def build_video_messages(
     return messages
 
 
-def configure_llm(
+def build_invoke_kwargs(
     llm: BaseChatModel,
     *,
     model: str | None = None,
     timeout_ms: int | None = None,
     max_retries: int | None = None,
-) -> BaseChatModel:
-    updates: dict[str, Any] = {}
+) -> dict[str, Any]:
+    invoke_kwargs: dict[str, Any] = {}
 
-    if model:
-        updates["model"] = model
-    if timeout_ms is not None:
-        updates["timeout"] = timeout_ms / 1000
-    if max_retries is not None:
-        updates["max_retries"] = max(1, max_retries)
-
-    if not updates:
-        return llm
-
-    model_copy = getattr(llm, "model_copy", None)
-    if not callable(model_copy):
-        raise TypeError(
-            "Inspect workflow requires a Pydantic-based chat model for per-call overrides."
+    # Avoid model_copy()-style overrides here: ChatGoogleGenerativeAI copies share
+    # the same underlying google-genai client, and copied instances close that client
+    # in __del__, which can break later nodes in the same workflow.
+    current_model = getattr(llm, "model", None)
+    if model is not None and current_model not in (None, model):
+        raise ValueError(
+            "Per-call model overrides are not supported for the shared Gemini chat "
+            f"client. Runtime model is {current_model!r}, requested model is {model!r}."
         )
+    if timeout_ms is not None:
+        invoke_kwargs["timeout"] = timeout_ms / 1000
+    if max_retries is not None:
+        invoke_kwargs["max_retries"] = max(1, max_retries)
 
-    configured_llm = model_copy(update=updates)
-    if not isinstance(configured_llm, BaseChatModel):
-        raise TypeError("Inspect workflow requires a BaseChatModel runtime dependency.")
-    return configured_llm
+    return invoke_kwargs
 
 
 def invoke_structured_text(
@@ -152,13 +147,13 @@ def _invoke_structured(
     label: str = "",
     config: RunnableConfig | None = None,
 ) -> T:
-    configured_llm = configure_llm(
+    invoke_kwargs = build_invoke_kwargs(
         llm,
         model=model,
         timeout_ms=timeout_ms,
         max_retries=max_retries,
     )
-    structured_llm = configured_llm.with_structured_output(
+    structured_llm = llm.with_structured_output(
         schema,
         method="json_schema",
     )
@@ -177,10 +172,10 @@ def _invoke_structured(
             "prompt_name": prompt.name,
         },
         prompt=prompt.langfuse_prompt,
-        model=getattr(configured_llm, "model", None),
+        model=getattr(llm, "model", None),
     ) as request_observation:
         try:
-            result = structured_llm.invoke(messages, config=config)
+            result = structured_llm.invoke(messages, config=config, **invoke_kwargs)
         except Exception as exc:  # noqa: BLE001
             if request_observation is not None:
                 request_observation.update(
