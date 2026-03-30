@@ -37,4 +37,5 @@ v2a-inspect = "v2a_inspect.cli:main"
 dev = [
     "pre-commit>=4.5.1",
     "ruff>=0.15.6",
+    "ty>=0.0.26",
 ]
