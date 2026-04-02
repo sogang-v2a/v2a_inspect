@@ -17,6 +17,10 @@ class ProviderServiceConfig(BaseModel):
     mode: ProviderMode = "sync_endpoint"
     timeout_seconds: int = Field(default=120, ge=1)
 
+    @property
+    def resolved_route(self) -> str:
+        return self.route or self.name
+
 
 class ProviderJobRef(BaseModel):
     provider: str
@@ -49,16 +53,20 @@ class GpuProvider(ABC):
     @abstractmethod
     def invoke(
         self,
+        *,
         service: ProviderServiceConfig,
         payload: dict[str, Any],
+        gpu_policy: RemoteGpuPolicy,
     ) -> ProviderResult:
         raise NotImplementedError
 
     @abstractmethod
     def submit_job(
         self,
+        *,
         service: ProviderServiceConfig,
         payload: dict[str, Any],
+        gpu_policy: RemoteGpuPolicy,
     ) -> ProviderJobRef:
         raise NotImplementedError
 
