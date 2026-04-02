@@ -37,6 +37,8 @@ class InspectOptions(BaseModel):
     video_timeout_ms: int = Field(default=180_000, ge=1)
     max_retries: int = Field(default=3, ge=0)
     poll_interval_seconds: float = Field(default=2.0, gt=0.0)
+    runtime_mode: Literal["nvidia_docker", "remote_adapter"] = "nvidia_docker"
+    minimum_gpu_vram_gb: int = Field(default=16, ge=1, le=24)
     gpu_provider: str = "runpod"
     provider_mode: Literal["sync_endpoint", "async_job"] = "sync_endpoint"
     provider_base_url: str | None = None

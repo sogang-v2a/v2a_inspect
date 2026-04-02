@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     ui_analysis_acquire_timeout_seconds: int = Field(default=120, ge=1)
     ui_temp_cleanup_max_age_seconds: int = Field(default=3600, ge=1)
     ui_cleanup_interval_seconds: int = Field(default=1800, ge=1)
+    runtime_mode: Literal["nvidia_docker", "remote_adapter"] = "nvidia_docker"
+    server_bind_host: str = "0.0.0.0"
+    server_bind_port: int = Field(default=8080, ge=1, le=65535)
+    minimum_gpu_vram_gb: int = Field(default=16, ge=1, le=24)
     gpu_provider: str = "runpod"
     provider_mode: Literal["sync_endpoint", "async_job"] = "sync_endpoint"
     provider_base_url: str | None = Field(
@@ -108,6 +112,11 @@ class Settings(BaseSettings):
         if self.remote_gpu_vram_preference_gb > self.remote_gpu_vram_cap_gb:
             raise ValueError(
                 "REMOTE_GPU_VRAM_PREFERENCE_GB cannot exceed REMOTE_GPU_VRAM_CAP_GB."
+            )
+
+        if self.minimum_gpu_vram_gb > self.remote_gpu_vram_cap_gb:
+            raise ValueError(
+                "MINIMUM_GPU_VRAM_GB cannot exceed REMOTE_GPU_VRAM_CAP_GB."
             )
 
         if not self.gpu_provider.strip():

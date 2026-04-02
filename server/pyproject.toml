@@ -17,5 +17,8 @@ dependencies = [
   "v2a-inspect>=0.1.0",
 ]
 
+[project.scripts]
+v2a-inspect-server = "v2a_inspect_server.runtime:main"
+
 [tool.uv.sources]
 v2a-inspect = { path = ".." }

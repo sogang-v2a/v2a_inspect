@@ -13,14 +13,14 @@
 
 ## Mid-level tools
 
-- provider adapter methods for sync invoke and async submit/poll/fetch
+- runtime environment validation and bootstrap helpers
 - `Sam3Client.recover_with_text_prompt(...)` for recovery-only extraction
 
 ## Package split
 
 - Client-safe tooling and shared types stay in `v2a_inspect`.
 - Remote inference clients and future heavy dependencies stay in `v2a_inspect_server`.
-- Remote GPU providers are accessed through a provider abstraction; Runpod is only the first implementation.
+- The active deployment target is a single NVIDIA Docker runtime.
 - Hugging Face is a weights/artifact source only.
 
 ## Non-goals for this layer
@@ -29,3 +29,4 @@
 - No local CUDA/GPU execution
 - No Gemini upload or Gemini prompt orchestration in the tool contract
 - No Hugging Face inference endpoint interoperability
+- No requirement to optimize for multiple GPU providers in the current slice
