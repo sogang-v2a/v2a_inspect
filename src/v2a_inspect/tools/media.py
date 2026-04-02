@@ -117,9 +117,11 @@ def sample_frames(
 def _extract_single_frame(
     video_path: str, timestamp_seconds: float, output_path: Path
 ) -> None:
-    command = [
+    primary_command = [
         "ffmpeg",
         "-y",
+        "-loglevel",
+        "error",
         "-ss",
         f"{timestamp_seconds:.3f}",
         "-i",
@@ -128,12 +130,33 @@ def _extract_single_frame(
         "1",
         str(output_path),
     ]
-    subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        subprocess.run(
+            primary_command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        fallback_command = [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            video_path,
+            "-ss",
+            f"{timestamp_seconds:.3f}",
+            "-frames:v",
+            "1",
+            str(output_path),
+        ]
+        subprocess.run(
+            fallback_command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
 
 def _scene_sample_timestamps(
