@@ -232,10 +232,26 @@ def _scene_prompt_candidates(
 ) -> dict[int, list[str]]:
     candidate_labels = [
         "person",
+        "man",
+        "woman",
+        "child",
+        "cat",
+        "dog",
         "vehicle",
+        "car",
+        "truck",
+        "bus",
+        "bicycle",
+        "motorcycle",
+        "boat",
         "animal",
-        "object",
+        "bird",
+        "tree",
+        "plant",
+        "building",
         "screen",
+        "laptop",
+        "object",
         "background",
     ]
     prompts_by_scene: dict[int, list[str]] = {}

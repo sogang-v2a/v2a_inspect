@@ -19,6 +19,10 @@ from .model_runtime import inference_device, inference_dtype, load_rgb_images, m
 
 DEFAULT_SAM3_PROMPTS = [
     "person",
+    "cat",
+    "dog",
+    "car",
+    "boat",
     "vehicle",
     "animal",
     "object",
