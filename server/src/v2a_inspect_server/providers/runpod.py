@@ -42,10 +42,7 @@ class RunpodProvider(GpuProvider):
     ) -> ProviderResult:
         response = post_json(
             f"{self.base_url}/{service.resolved_route.lstrip('/')}",
-            {
-                "gpu": self.select_gpu(gpu_policy).model_dump(mode="json"),
-                "input": payload,
-            },
+            _build_request_payload(self.select_gpu(gpu_policy), payload),
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
         )
@@ -64,10 +61,7 @@ class RunpodProvider(GpuProvider):
     ) -> ProviderJobRef:
         response = post_json(
             f"{self.base_url}/jobs/{service.resolved_route.lstrip('/')}",
-            {
-                "gpu": self.select_gpu(gpu_policy).model_dump(mode="json"),
-                "input": payload,
-            },
+            _build_request_payload(self.select_gpu(gpu_policy), payload),
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
         )
@@ -121,3 +115,13 @@ def _extract_output_payload(response: dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     raise TypeError("Provider response payload must be a JSON object.")
+
+
+def _build_request_payload(
+    gpu_selection: RemoteGpuSelection,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "gpu": gpu_selection.model_dump(mode="json"),
+        "input": payload,
+    }

@@ -34,14 +34,7 @@ def post_json(
         headers=headers,
         method="POST",
     )
-    with request.urlopen(request_obj, timeout=timeout_seconds) as response:
-        body = response.read().decode("utf-8")
-    if not body.strip():
-        return {}
-    decoded = json.loads(body)
-    if isinstance(decoded, dict):
-        return decoded
-    raise TypeError("Remote endpoint did not return a JSON object.")
+    return _read_json_response(request_obj, timeout_seconds=timeout_seconds)
 
 
 def get_json(
@@ -56,14 +49,7 @@ def get_json(
         headers.update(extra_headers)
 
     request_obj = request.Request(url=url, headers=headers, method="GET")
-    with request.urlopen(request_obj, timeout=timeout_seconds) as response:
-        body = response.read().decode("utf-8")
-    if not body.strip():
-        return {}
-    decoded = json.loads(body)
-    if isinstance(decoded, dict):
-        return decoded
-    raise TypeError("Remote endpoint did not return a JSON object.")
+    return _read_json_response(request_obj, timeout_seconds=timeout_seconds)
 
 
 def download_file(
@@ -79,3 +65,18 @@ def download_file(
     request_obj = request.Request(url=url, headers=headers, method="GET")
     with request.urlopen(request_obj, timeout=timeout_seconds) as response:
         destination.write_bytes(response.read())
+
+
+def _read_json_response(
+    request_obj: request.Request,
+    *,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    with request.urlopen(request_obj, timeout=timeout_seconds) as response:
+        body = response.read().decode("utf-8")
+    if not body.strip():
+        return {}
+    decoded = json.loads(body)
+    if isinstance(decoded, dict):
+        return decoded
+    raise TypeError("Remote endpoint did not return a JSON object.")
