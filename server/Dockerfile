@@ -23,4 +23,4 @@ RUN pip install uv && \
     uv sync --locked --no-dev && \
     uv --project server sync --locked --no-dev
 
-CMD ["uv", "--project", "server", "run", "v2a-inspect-server", "check"]
+CMD ["uv", "--project", "server", "run", "v2a-inspect-server", "serve"]
