@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from v2a_inspect.runner import (
     run_inspect,
 )
 from v2a_inspect.settings import settings
+from v2a_inspect.tools import detect_scenes, probe_video
 from v2a_inspect.workflows import InspectOptions
 
 
@@ -67,6 +69,36 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write GroupedAnalysis JSON to this path instead of stdout",
     )
     group_parser.set_defaults(func=_run_group_command)
+
+    probe_parser = subparsers.add_parser(
+        "probe",
+        help="Probe video metadata for the tool-first visual pipeline",
+    )
+    probe_parser.add_argument("video_path", help="Path to the input video")
+    probe_parser.add_argument(
+        "-o",
+        "--output",
+        help="Write probe JSON to this path instead of stdout",
+    )
+    probe_parser.set_defaults(func=_run_probe_command)
+
+    plan_scenes_parser = subparsers.add_parser(
+        "plan-scenes",
+        help="Build scene chunks for the tool-first visual pipeline",
+    )
+    plan_scenes_parser.add_argument("video_path", help="Path to the input video")
+    plan_scenes_parser.add_argument(
+        "--scene-seconds",
+        type=float,
+        default=5.0,
+        help="Target chunk length used by the fixed-window scene planner",
+    )
+    plan_scenes_parser.add_argument(
+        "-o",
+        "--output",
+        help="Write scene plan JSON to this path instead of stdout",
+    )
+    plan_scenes_parser.set_defaults(func=_run_plan_scenes_command)
 
     prompts_parser = subparsers.add_parser(
         "prompts",
@@ -269,6 +301,32 @@ def _run_ui_command(args: argparse.Namespace) -> int:
     return completed.returncode
 
 
+def _run_probe_command(args: argparse.Namespace) -> int:
+    video_probe = probe_video(args.video_path)
+    _write_json_payload(
+        video_probe.model_dump_json(indent=2) + "\n", output_path=args.output
+    )
+    return 0
+
+
+def _run_plan_scenes_command(args: argparse.Namespace) -> int:
+    video_probe = probe_video(args.video_path)
+    scene_plan = detect_scenes(
+        args.video_path,
+        probe=video_probe,
+        target_scene_seconds=args.scene_seconds,
+    )
+    payload = {
+        "probe": video_probe.model_dump(mode="json"),
+        "scenes": [scene.model_dump(mode="json") for scene in scene_plan],
+    }
+    _write_json_payload(
+        json.dumps(payload, indent=2) + "\n",
+        output_path=args.output,
+    )
+    return 0
+
+
 def _build_analyze_options(args: argparse.Namespace) -> InspectOptions:
     return InspectOptions(
         fps=args.fps,
@@ -308,11 +366,15 @@ def _write_grouped_analysis_json(
     grouped_analysis: GroupedAnalysis, *, output_path: str | None
 ) -> None:
     payload = grouped_analysis.model_dump_json(indent=2) + "\n"
+    _write_json_payload(payload, output_path=output_path)
+
+
+def _write_json_payload(payload: str, *, output_path: str | None) -> None:
     if output_path:
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(payload, encoding="utf-8")
-        print(f"Wrote grouped analysis to {output_file}", file=sys.stderr)
+        print(f"Wrote JSON output to {output_file}", file=sys.stderr)
         return
 
     sys.stdout.write(payload)
