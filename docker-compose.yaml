@@ -1,6 +1,9 @@
 services:
   v2a-inspect:
-    image: ${V2A_INSPECT_IMAGE:-ghcr.io/sogang-v2a/v2a_inspect:latest}
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: ${V2A_INSPECT_IMAGE:-v2a_inspect:local}
     restart: unless-stopped
 
     labels:
@@ -17,6 +20,9 @@ services:
       AUTH_CREDENTIALS_PATH: /data/credentials.yaml
 
       PROMPT_BACKEND: langfuse
+      RUNTIME_MODE: nvidia_docker
+      SERVER_BASE_URL: http://v2a-inspect-server:8080
+      SHARED_VIDEO_DIR: /data/uploads
 
       STREAMLIT_SERVER_HEADLESS: "true"
       STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
@@ -29,6 +35,8 @@ services:
 
     volumes:
       - v2a_inspect_data:/data
+    depends_on:
+      - v2a-inspect-server
 
     healthcheck:
       test:
@@ -37,6 +45,41 @@ services:
           "python",
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health').read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  v2a-inspect-server:
+    build:
+      context: .
+      dockerfile: ./server/Dockerfile
+    image: ${V2A_INSPECT_SERVER_IMAGE:-v2a_inspect_server:local}
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      RUNTIME_MODE: nvidia_docker
+      SERVER_BIND_HOST: 0.0.0.0
+      SERVER_BIND_PORT: 8080
+      SHARED_VIDEO_DIR: /data/uploads
+      MODEL_CACHE_DIR: /data/model-cache
+      WEIGHTS_MANIFEST_PATH: /app/server/model-manifest.json
+      MINIMUM_GPU_VRAM_GB: 16
+      HF_TOKEN: ${HF_TOKEN:-}
+    gpus: all
+    secrets:
+      - gemini_api_key
+    volumes:
+      - v2a_inspect_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()",
         ]
       interval: 30s
       timeout: 5s

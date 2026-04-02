@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     runtime_mode: Literal["nvidia_docker", "remote_adapter"] = "nvidia_docker"
     server_bind_host: str = "0.0.0.0"
     server_bind_port: int = Field(default=8080, ge=1, le=65535)
+    server_base_url: str = "http://127.0.0.1:8080"
+    shared_video_dir: Path | None = Path("/data/uploads")
     minimum_gpu_vram_gb: int = Field(default=16, ge=1, le=24)
     gpu_provider: str = "runpod"
     provider_mode: Literal["sync_endpoint", "async_job"] = "sync_endpoint"

@@ -9,6 +9,7 @@ from .video import (
     upload_video,
     wait_for_file_active,
 )
+from .server import run_server_inspect
 
 __all__ = [
     "DEFAULT_GEMINI_MODEL",
@@ -20,4 +21,5 @@ __all__ = [
     "upload_file",
     "upload_video",
     "wait_for_file_active",
+    "run_server_inspect",
 ]

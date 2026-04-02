@@ -12,7 +12,9 @@ from v2a_inspect.observability import (
     create_langfuse_handler,
     start_observation,
 )
+from v2a_inspect.clients import run_server_inspect
 from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
+from v2a_inspect.settings import settings
 from v2a_inspect.runtime import build_inspect_runtime
 from v2a_inspect.workflows import (
     InspectOptions,
@@ -40,6 +42,13 @@ def run_inspect(
     """Run the full inspect workflow for a video path."""
 
     resolved_options = options or InspectOptions()
+    if resolved_options.runtime_mode == "nvidia_docker":
+        return run_server_inspect(
+            server_base_url=resolved_options.server_base_url
+            or settings.server_base_url,
+            video_path=video_path,
+            options=resolved_options,
+        )
     initial_state = build_initial_inspect_state(video_path, options=resolved_options)
     return _run_workflow(
         initial_state,
@@ -240,6 +249,7 @@ def _summarize_workflow_input(
         "video_name": Path(video_path).name if video_path else None,
         "has_scene_analysis": initial_state.get("scene_analysis") is not None,
         "pipeline_mode": options.pipeline_mode,
+        "runtime_mode": options.runtime_mode,
         "fps": options.fps,
         "scene_analysis_mode": options.scene_analysis_mode,
         "enable_vlm_verify": options.enable_vlm_verify,

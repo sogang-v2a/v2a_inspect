@@ -7,7 +7,16 @@ from typing import Any
 
 
 def save_uploaded_file(uploaded_file: Any) -> str:
-    temp_dir = tempfile.mkdtemp(prefix="v2a_inspect_upload_")
+    from v2a_inspect.settings import settings
+
+    if settings.shared_video_dir is not None:
+        Path(settings.shared_video_dir).mkdir(parents=True, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(
+            prefix="v2a_inspect_upload_",
+            dir=str(settings.shared_video_dir),
+        )
+    else:
+        temp_dir = tempfile.mkdtemp(prefix="v2a_inspect_upload_")
     safe_name = "".join(
         character
         for character in Path(uploaded_file.name).name

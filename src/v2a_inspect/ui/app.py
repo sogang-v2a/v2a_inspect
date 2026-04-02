@@ -121,10 +121,22 @@ def run_analysis(video_path: str, options: InspectOptions) -> None:
                 state = run_inspect(
                     video_path,
                     options=options,
-                    progress_callback=status.write,
-                    warning_callback=lambda message: status.write(f"⚠️ {message}"),
+                    progress_callback=status.write
+                    if options.runtime_mode != "nvidia_docker"
+                    else None,
+                    warning_callback=(
+                        lambda message: (
+                            status.write(f"⚠️ {message}")
+                            if options.runtime_mode != "nvidia_docker"
+                            else None
+                        )
+                    ),
                     trace_context=_build_ui_trace_context(options),
                 )
+                for message in state.get("progress_messages", []):
+                    status.write(message)
+                for message in state.get("warnings", []):
+                    status.write(f"⚠️ {message}")
                 scene_analysis = state.get("scene_analysis")
                 if scene_analysis is None:
                     raise ValueError(
