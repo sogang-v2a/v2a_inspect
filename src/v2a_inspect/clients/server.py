@@ -7,6 +7,8 @@ from urllib import parse, request
 from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
 from v2a_inspect.workflows import InspectOptions, InspectState
 
+CLIENT_USER_AGENT = "v2a-inspect-client/1.0"
+
 
 def run_server_inspect(
     *,
@@ -29,6 +31,7 @@ def run_server_inspect(
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": CLIENT_USER_AGENT,
         },
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
@@ -78,6 +81,7 @@ def _upload_video(
             "Content-Type": "application/octet-stream",
             "Content-Length": str(path.stat().st_size),
             "X-Filename": path.name,
+            "User-Agent": CLIENT_USER_AGENT,
         },
         data=path.read_bytes(),
         method="POST",

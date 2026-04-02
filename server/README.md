@@ -1,20 +1,31 @@
 # v2a-inspect-server
 
-Server-side tooling package for remote visual inference (SAM3, embeddings, label scoring).
-This package exists so client-side installs do not need to absorb future heavy runtime dependencies.
+Server-side tooling package for remote visual inference and Gemini orchestration.
+This package exists so client-side installs do not need to absorb heavy runtime dependencies.
 
 Current target runtime:
-- Docker container
-- NVIDIA GPU host
+- a single Docker image deployed on Runpod
+- NVIDIA GPU host (A4000 preferred, A4500 fallback)
 - HF only for weights bootstrap
+- Gemini stays in the pipeline; server-side tools provide visual evidence
 
 What this package is responsible for:
 - checking that an NVIDIA GPU is visible at startup
 - verifying minimum VRAM requirements
 - bootstrapping model weights from HF into cache
-- serving the server-side inference/runtime layer
+- serving the server-side runtime API
+- running native in-container visual tool helpers
+- uploading remote video inputs before analysis
 
 Current CLI:
 - `v2a-inspect-server check`
 - `v2a-inspect-server bootstrap`
 - `v2a-inspect-server runtime-info`
+- `v2a-inspect-server serve`
+
+Current HTTP endpoints:
+- `GET /health`
+- `GET /runtime-info`
+- `POST /upload`
+- `POST /bootstrap`
+- `POST /analyze`

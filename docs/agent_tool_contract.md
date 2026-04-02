@@ -15,12 +15,13 @@
 
 - runtime environment validation and bootstrap helpers
 - `Sam3Client.recover_with_text_prompt(...)` for recovery-only extraction
+- remote upload helper: store a video on the server before analyze
 
 ## Package split
 
 - Client-safe tooling and shared types stay in `v2a_inspect`.
-- Remote inference clients and future heavy dependencies stay in `v2a_inspect_server`.
-- The active deployment target is a single NVIDIA Docker runtime.
+- Remote runtime helpers and future heavy dependencies stay in `v2a_inspect_server`.
+- The active deployment target is a single Runpod-hosted NVIDIA Docker runtime.
 - Hugging Face is a weights/artifact source only.
 
 ## Non-goals for this layer
