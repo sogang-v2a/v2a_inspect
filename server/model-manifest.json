@@ -2,21 +2,21 @@
   "artifacts": [
     {
       "name": "sam3",
-      "repo_id": "AEmotionStudio/sam3",
+      "repository": "AEmotionStudio/sam3",
       "filename": "sam3.safetensors",
       "revision": "main",
       "relative_path": "sam3/sam3.safetensors"
     },
     {
       "name": "embedding",
-      "repo_id": "facebook/dinov2-base",
+      "repository": "facebook/dinov2-base",
       "filename": "model.safetensors",
       "revision": "main",
       "relative_path": "embeddings/dinov2/model.safetensors"
     },
     {
       "name": "label",
-      "repo_id": "google/siglip2-base-patch16-224",
+      "repository": "google/siglip2-base-patch16-224",
       "filename": "model.safetensors",
       "revision": "main",
       "relative_path": "labels/siglip2/model.safetensors"
