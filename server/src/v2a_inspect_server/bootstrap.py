@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from huggingface_hub import snapshot_download
 from pydantic import BaseModel, Field
-
-from .remote import download_file
 
 
 class WeightsArtifact(BaseModel):
     name: str
     repository: str
-    filename: str
     revision: str = "main"
     relative_path: str | None = None
+    allow_patterns: list[str] = Field(default_factory=list)
 
 
 class WeightsManifest(BaseModel):
@@ -42,25 +41,29 @@ class WeightsBootstrapper:
             for artifact in manifest.artifacts
         }
 
+    def resolve_manifest(self, manifest: WeightsManifest) -> dict[str, Path]:
+        return {
+            artifact.name: self.resolve_artifact(artifact)
+            for artifact in manifest.artifacts
+        }
+
     def ensure_artifact(self, artifact: WeightsArtifact) -> Path:
-        destination = self.cache_dir / (artifact.relative_path or artifact.filename)
+        destination = self.resolve_artifact(artifact)
         if destination.exists():
             return destination
         if not self.hf_token:
             raise ValueError(
                 "HF_TOKEN is required to download missing model artifacts."
             )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        download_file(
-            self.build_download_url(artifact),
-            destination,
-            api_key=self.hf_token,
+        destination.mkdir(parents=True, exist_ok=True)
+        snapshot_download(
+            repo_id=artifact.repository,
+            revision=artifact.revision,
+            token=self.hf_token,
+            local_dir=destination,
+            allow_patterns=artifact.allow_patterns or None,
         )
         return destination
 
-    @staticmethod
-    def build_download_url(artifact: WeightsArtifact) -> str:
-        return (
-            f"https://huggingface.co/{artifact.repository}/resolve/"
-            f"{artifact.revision}/{artifact.filename}"
-        )
+    def resolve_artifact(self, artifact: WeightsArtifact) -> Path:
+        return self.cache_dir / (artifact.relative_path or artifact.name)

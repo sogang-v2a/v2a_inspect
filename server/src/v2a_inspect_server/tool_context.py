@@ -25,6 +25,13 @@ if TYPE_CHECKING:
 
 
 class _LabelClientLike(Protocol):
+    def score_image_labels(
+        self,
+        *,
+        image_paths: list[str],
+        labels: list[str],
+    ) -> Sequence["_LabelScoreLike"]: ...
+
     def score_labels(
         self,
         *,
@@ -128,8 +135,15 @@ def _append_runtime_tool_evidence(
         [str(item) for item in raw_progress] if isinstance(raw_progress, list) else []
     )
     try:
+        label_client = getattr(tooling_runtime, "label_client", None)
+        scene_prompts = (
+            _scene_prompt_candidates(frame_batches, label_client)
+            if label_client is not None
+            else {}
+        )
         sam3_track_set = tooling_runtime.sam3_client.extract_entities(
-            list(frame_batches)
+            list(frame_batches),
+            prompts_by_scene=scene_prompts,
         )
         context["sam3_track_set"] = sam3_track_set
         normalized_tracks = _normalize_tracks(getattr(sam3_track_set, "tracks", []))
@@ -150,7 +164,6 @@ def _append_runtime_tool_evidence(
 
         if track_image_paths:
             embedding_client = getattr(tooling_runtime, "embedding_client", None)
-            label_client = getattr(tooling_runtime, "label_client", None)
             if embedding_client is not None and label_client is not None:
                 embeddings = embedding_client.embed_images(track_image_paths)
                 context["entity_embeddings"] = embeddings
@@ -211,6 +224,40 @@ def _append_runtime_tool_evidence(
         warnings.append(f"Tool runtime: SAM3 extraction unavailable ({exc}).")
         context["warnings"] = warnings
     context["progress_messages"] = progress_messages
+
+
+def _scene_prompt_candidates(
+    frame_batches: Sequence[FrameBatch],
+    label_client: _LabelClientLike,
+) -> dict[int, list[str]]:
+    candidate_labels = [
+        "person",
+        "vehicle",
+        "animal",
+        "object",
+        "screen",
+        "background",
+    ]
+    prompts_by_scene: dict[int, list[str]] = {}
+    for batch in frame_batches:
+        image_paths = [frame.image_path for frame in batch.frames]
+        if not image_paths:
+            continue
+        scores = list(
+            label_client.score_image_labels(
+                image_paths=image_paths,
+                labels=candidate_labels,
+            )
+        )
+        prompts = [
+            score.label
+            for score in scores
+            if score.label != "background" and score.score >= 0.2
+        ][:3]
+        if not prompts:
+            prompts = ["object"]
+        prompts_by_scene[batch.scene_index] = prompts
+    return prompts_by_scene
 
 
 def _normalize_tracks(tracks: Sequence[object]) -> list[Sam3EntityTrack]:

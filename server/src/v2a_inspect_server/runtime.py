@@ -4,6 +4,7 @@ import argparse
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,8 +29,10 @@ class ToolingRuntime:
     label_client: LabelClient
     bootstrapper: WeightsBootstrapper
     weights_manifest: WeightsManifest
+    resolved_artifacts: dict[str, Path]
 
 
+@lru_cache(maxsize=1)
 def build_tooling_runtime() -> ToolingRuntime:
     bootstrapper = WeightsBootstrapper(
         cache_dir=Path(settings.model_cache_dir),
@@ -40,12 +43,21 @@ def build_tooling_runtime() -> ToolingRuntime:
         ),
     )
     weights_manifest = bootstrapper.load_manifest(Path(settings.weights_manifest_path))
+    resolved_artifacts = bootstrapper.resolve_manifest(weights_manifest)
+    missing = [
+        name for name, path in resolved_artifacts.items() if not path.exists()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            "Missing bootstrapped model artifacts: " + ", ".join(sorted(missing))
+        )
     return ToolingRuntime(
-        sam3_client=Sam3Client(),
-        embedding_client=EmbeddingClient(),
-        label_client=LabelClient(),
+        sam3_client=Sam3Client(model_dir=resolved_artifacts["sam3"]),
+        embedding_client=EmbeddingClient(model_dir=resolved_artifacts["embedding"]),
+        label_client=LabelClient(model_dir=resolved_artifacts["label"]),
         bootstrapper=bootstrapper,
         weights_manifest=weights_manifest,
+        resolved_artifacts=resolved_artifacts,
     )
 
 
@@ -197,6 +209,7 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         Path(settings.weights_manifest_path)
                     )
                     resolved = bootstrapper.ensure_manifest(manifest)
+                    build_tooling_runtime.cache_clear()
                     self._write_json(
                         {
                             "ok": True,
