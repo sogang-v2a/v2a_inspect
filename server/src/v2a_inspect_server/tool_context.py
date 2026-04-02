@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from v2a_inspect.settings import settings
 from v2a_inspect.tools import (
@@ -18,6 +18,27 @@ from v2a_inspect.workflows import InspectOptions
 
 if TYPE_CHECKING:
     from v2a_inspect_server.runtime import ToolingRuntime
+
+
+class _LabelClientLike(Protocol):
+    def score_labels(
+        self,
+        *,
+        group_id: str,
+        image_paths: list[str],
+        labels: list[str],
+    ) -> "_LabelResultLike": ...
+
+
+class _LabelScoreLike(Protocol):
+    label: str
+    score: float
+
+
+class _LabelResultLike(Protocol):
+    group_id: str
+    label: str
+    scores: Sequence[_LabelScoreLike]
 
 
 def build_tool_context(
@@ -211,7 +232,7 @@ def _grouping_hints_from_groups(
 def _append_group_label_hints(
     context: dict[str, object],
     *,
-    label_client: object,
+    label_client: _LabelClientLike,
     candidate_groups: Sequence[object],
     track_image_paths: dict[str, list[str]],
 ) -> None:

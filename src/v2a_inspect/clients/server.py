@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+from pathlib import Path
 from urllib import request
 
 from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
@@ -13,10 +15,7 @@ def run_server_inspect(
     video_path: str,
     options: InspectOptions,
 ) -> InspectState:
-    payload = {
-        "video_path": video_path,
-        "options": options.model_dump(mode="json"),
-    }
+    payload = _build_request_payload(video_path=video_path, options=options)
     request_obj = request.Request(
         url=f"{server_base_url.rstrip('/')}/analyze",
         headers={
@@ -52,3 +51,17 @@ def run_server_inspect(
         "progress_messages": [str(item) for item in progress_messages],
     }
     return state
+
+
+def _build_request_payload(
+    *,
+    video_path: str,
+    options: InspectOptions,
+) -> dict[str, object]:
+    payload = {
+        "video_path": video_path,
+        "options": options.model_dump(mode="json"),
+        "video_filename": Path(video_path).name,
+        "video_base64": base64.b64encode(Path(video_path).read_bytes()).decode("ascii"),
+    }
+    return payload

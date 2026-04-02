@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import unittest
@@ -82,6 +83,8 @@ class RuntimeHttpTests(unittest.TestCase):
                     data=json.dumps(
                         {
                             "video_path": "/data/uploads/video.mp4",
+                            "video_filename": "video.mp4",
+                            "video_base64": base64.b64encode(b"video").decode("ascii"),
                             "options": {},
                         }
                     ).encode("utf-8"),

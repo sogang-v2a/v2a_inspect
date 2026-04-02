@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 from dataclasses import dataclass
 from collections.abc import Mapping
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import tempfile
 
 from v2a_inspect.settings import settings
 from v2a_inspect.tools import RemoteGpuPolicy, RemoteGpuSelection, choose_remote_gpu
@@ -232,15 +234,31 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
             if self.path == "/analyze":
                 payload = self._read_json()
                 video_path = payload.get("video_path")
+                video_filename = payload.get("video_filename")
+                video_base64 = payload.get("video_base64")
                 options_payload = payload.get("options", {})
-                if not isinstance(video_path, str) or not video_path:
-                    self.send_error(HTTPStatus.BAD_REQUEST, "video_path is required")
+                if not isinstance(video_path, str) and not isinstance(
+                    video_base64, str
+                ):
+                    self.send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "video_path or video_base64 is required",
+                    )
                     return
                 if not isinstance(options_payload, dict):
                     self.send_error(HTTPStatus.BAD_REQUEST, "options must be an object")
                     return
 
                 options = InspectOptions.model_validate(options_payload)
+                resolved_video_path = _resolve_request_video_path(
+                    video_path=video_path if isinstance(video_path, str) else "",
+                    video_filename=video_filename
+                    if isinstance(video_filename, str)
+                    else "video.mp4",
+                    video_base64=video_base64
+                    if isinstance(video_base64, str)
+                    else None,
+                )
                 server_options = options.model_copy(
                     update={"runtime_mode": "remote_adapter"}
                 )
@@ -249,12 +267,12 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 except Exception:  # noqa: BLE001
                     tooling_runtime = None
                 tool_context = build_tool_context(
-                    video_path,
+                    resolved_video_path,
                     options=server_options,
                     tooling_runtime=tooling_runtime,
                 )
                 state = run_inspect(
-                    video_path,
+                    resolved_video_path,
                     options=server_options,
                     initial_state_overrides=tool_context,
                 )
@@ -298,3 +316,42 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
     return RuntimeHandler
+
+
+def _resolve_request_video_path(
+    *,
+    video_path: str,
+    video_filename: str,
+    video_base64: str | None,
+) -> str:
+    if video_path and Path(video_path).exists():
+        return video_path
+
+    if video_base64 is None:
+        raise ValueError("video_base64 is required when video_path is not accessible.")
+
+    target_root = settings.shared_video_dir or Path(tempfile.gettempdir())
+    resolved_root = Path(target_root)
+    try:
+        resolved_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        resolved_root = Path(tempfile.gettempdir())
+        resolved_root.mkdir(parents=True, exist_ok=True)
+
+    safe_name = (
+        "".join(
+            char
+            for char in Path(video_filename).name
+            if char.isalnum() or char in "._-"
+        )
+        or "video.mp4"
+    )
+    temp_dir = Path(
+        tempfile.mkdtemp(
+            prefix="v2a_inspect_server_upload_",
+            dir=str(resolved_root),
+        )
+    )
+    target_path = temp_dir / safe_name
+    target_path.write_bytes(base64.b64decode(video_base64))
+    return str(target_path)
