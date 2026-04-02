@@ -244,7 +244,15 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 server_options = options.model_copy(
                     update={"runtime_mode": "remote_adapter"}
                 )
-                tool_context = build_tool_context(video_path, options=server_options)
+                try:
+                    tooling_runtime = build_tooling_runtime()
+                except Exception:  # noqa: BLE001
+                    tooling_runtime = None
+                tool_context = build_tool_context(
+                    video_path,
+                    options=server_options,
+                    tooling_runtime=tooling_runtime,
+                )
                 state = run_inspect(
                     video_path,
                     options=server_options,

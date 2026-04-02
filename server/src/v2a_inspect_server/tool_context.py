@@ -3,16 +3,21 @@ from __future__ import annotations
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from v2a_inspect.settings import settings
-from v2a_inspect.tools import detect_scenes, probe_video, sample_frames
+from v2a_inspect.tools import FrameBatch, detect_scenes, probe_video, sample_frames
 from v2a_inspect.workflows import InspectOptions
+
+if TYPE_CHECKING:
+    from v2a_inspect_server.runtime import ToolingRuntime
 
 
 def build_tool_context(
     video_path: str,
     *,
     options: InspectOptions,
+    tooling_runtime: ToolingRuntime | None = None,
 ) -> dict[str, object]:
     probe = probe_video(video_path)
     scenes = detect_scenes(video_path, probe=probe, target_scene_seconds=5.0)
@@ -24,7 +29,7 @@ def build_tool_context(
         frames_per_scene=2,
     )
 
-    return {
+    context: dict[str, object] = {
         "video_probe": probe,
         "scene_boundaries": scenes,
         "frame_batches": frame_batches,
@@ -35,6 +40,13 @@ def build_tool_context(
             f"Tool pipeline: sampled {sum(len(batch.frames) for batch in frame_batches)} frames.",
         ],
     }
+    if tooling_runtime is not None:
+        _append_runtime_tool_evidence(
+            context,
+            frame_batches=frame_batches,
+            tooling_runtime=tooling_runtime,
+        )
+    return context
 
 
 def _frame_output_dir(video_path: str) -> Path:
@@ -69,3 +81,48 @@ def _scene_summary(*, probe: object, scenes: Sequence[object]) -> str:
             *lines,
         ]
     )
+
+
+def _append_runtime_tool_evidence(
+    context: dict[str, object],
+    *,
+    frame_batches: Sequence[FrameBatch],
+    tooling_runtime: ToolingRuntime,
+) -> None:
+    raw_progress = context.get("progress_messages", [])
+    progress_messages = (
+        [str(item) for item in raw_progress] if isinstance(raw_progress, list) else []
+    )
+    try:
+        sam3_track_set = tooling_runtime.sam3_client.extract_entities(
+            list(frame_batches)
+        )
+        context["sam3_track_set"] = sam3_track_set
+        context["tool_grouping_hints"] = _grouping_hints_from_tracks(sam3_track_set)
+        progress_messages.append(
+            f"Tool pipeline: extracted {len(sam3_track_set.tracks)} SAM3 tracks."
+        )
+    except Exception as exc:  # noqa: BLE001
+        raw_warnings = context.get("warnings", [])
+        warnings = (
+            [str(item) for item in raw_warnings]
+            if isinstance(raw_warnings, list)
+            else []
+        )
+        warnings.append(f"Tool runtime: SAM3 extraction unavailable ({exc}).")
+        context["warnings"] = warnings
+    context["progress_messages"] = progress_messages
+
+
+def _grouping_hints_from_tracks(track_set: object) -> str:
+    tracks = getattr(track_set, "tracks", [])
+    if not tracks:
+        return "SAM3 found no tracks."
+    lines = []
+    for track in tracks[:20]:
+        lines.append(
+            f"- {getattr(track, 'track_id')}: scene={getattr(track, 'scene_index')} "
+            f"range={getattr(track, 'start_seconds'):.1f}-{getattr(track, 'end_seconds'):.1f} "
+            f"label_hint={getattr(track, 'label_hint', None)} confidence={getattr(track, 'confidence', 0.0):.2f}"
+        )
+    return "\n".join(["SAM3 track hints:", *lines])
