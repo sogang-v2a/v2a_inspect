@@ -151,12 +151,31 @@ def _extract_single_frame(
             "1",
             str(output_path),
         ]
-        subprocess.run(
-            fallback_command,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            subprocess.run(
+                fallback_command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError:
+            final_fallback_command = [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                video_path,
+                "-frames:v",
+                "1",
+                str(output_path),
+            ]
+            subprocess.run(
+                final_fallback_command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
 
 def _scene_sample_timestamps(
