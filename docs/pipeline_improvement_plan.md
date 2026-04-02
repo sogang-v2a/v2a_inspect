@@ -193,3 +193,44 @@ v2a_inspect/
 1. CoT 기반 TTA/VTA 모델 라우팅 — 숫자 스코어 대비 안정성/정확도 개선
 2. 음향 맥락 기반 그루핑 — entity 동일성이 아닌 acoustic context 기준 분리
 3. 프레임 기반 VLM 검증 — 비용 60%+ 절감, 정확도 동등 이상
+
+---
+
+## 9. 향후 아키텍처 리디자인 방향
+
+도구 레이어(SAM3, 임베딩, 라벨 스코어링)가 충분히 신뢰 가능해진 뒤에는,
+현재의 **Gemini 중심 파이프라인 + 도구 보강** 구조를 장기적으로 재설계한다.
+
+### 목표 방향
+
+- **CV / 도구 우선(tool/model-first)** 파이프라인으로 전환
+- **Gemini는 제거하지 않고 adjudicator(판정자)** 역할로 축소
+
+### 목표 형태
+
+```
+영상
+→ probe / scene split
+→ segmentation / tracking
+→ crop 생성
+→ embeddings / clustering / candidate groups
+→ Gemini (ambiguity resolution / semantic consolidation / final adjudication)
+→ GroupedAnalysis
+```
+
+### 원칙
+
+- Gemini가 모든 stage의 1차 extractor가 되지 않도록 한다.
+- 반대로 Gemini를 완전히 제거하지도 않는다.
+- 구조적 정보는 가능한 한 deterministic CV / tool pipeline이 먼저 만든다.
+- Gemini는 다음과 같은 고차원 판단에 집중시킨다:
+  - 애매한 merge / split 판단
+  - canonical naming / semantic consolidation
+  - 예외적 verification
+  - 최종 설명 및 정리
+
+### 우선순위
+
+1. 먼저 도구 품질을 안정화한다.
+2. 도구 출력이 신뢰 가능해진 뒤에 아키텍처를 재설계한다.
+3. 그 전에는 리디자인보다 **tool quality 확보**가 우선이다.
