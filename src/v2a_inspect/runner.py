@@ -239,6 +239,7 @@ def _summarize_workflow_input(
         "operation": trace_context.operation,
         "video_name": Path(video_path).name if video_path else None,
         "has_scene_analysis": initial_state.get("scene_analysis") is not None,
+        "pipeline_mode": options.pipeline_mode,
         "fps": options.fps,
         "scene_analysis_mode": options.scene_analysis_mode,
         "enable_vlm_verify": options.enable_vlm_verify,

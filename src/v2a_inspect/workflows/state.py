@@ -12,12 +12,22 @@ from v2a_inspect.pipeline.response_models import (
     TrackGroup,
     VideoSceneAnalysis,
 )
+from v2a_inspect.tools import (
+    CandidateGroup,
+    EntityEmbedding,
+    FrameBatch,
+    GroupRoutingDecision,
+    Sam3TrackSet,
+    SceneBoundary,
+    VideoProbe,
+)
 
 
 class InspectOptions(BaseModel):
     """User-configurable options for the inspection workflow."""
 
     fps: float = Field(default=2.0, gt=0.0)
+    pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = "legacy_gemini"
     scene_analysis_mode: Literal["default", "extended"] = "default"
     enable_vlm_verify: bool = True
     enable_model_select: bool = False
@@ -27,6 +37,14 @@ class InspectOptions(BaseModel):
     video_timeout_ms: int = Field(default=180_000, ge=1)
     max_retries: int = Field(default=3, ge=0)
     poll_interval_seconds: float = Field(default=2.0, gt=0.0)
+    sam3_provider: Literal["runpod", "huggingface"] = "runpod"
+    embedding_provider: Literal["runpod", "huggingface"] = "runpod"
+    label_provider: Literal["runpod", "huggingface"] = "runpod"
+    remote_timeout_seconds: int = Field(default=120, ge=1)
+    remote_gpu_preference: Literal["A4000", "A4500"] = "A4000"
+    remote_gpu_fallback: Literal["A4000", "A4500"] = "A4500"
+    remote_gpu_vram_preference_gb: int = Field(default=16, ge=1, le=24)
+    remote_gpu_vram_cap_gb: int = Field(default=24, ge=1, le=24)
 
 
 class InspectState(TypedDict, total=False):
@@ -46,3 +64,10 @@ class InspectState(TypedDict, total=False):
     errors: list[str]
     warnings: list[str]
     progress_messages: list[str]
+    video_probe: VideoProbe
+    scene_boundaries: list[SceneBoundary]
+    frame_batches: list[FrameBatch]
+    sam3_track_set: Sam3TrackSet
+    entity_embeddings: list[EntityEmbedding]
+    candidate_groups: list[CandidateGroup]
+    routing_decisions: list[GroupRoutingDecision]

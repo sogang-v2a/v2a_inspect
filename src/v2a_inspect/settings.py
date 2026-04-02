@@ -16,6 +16,11 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("GEMINI_API_KEY", "API_KEY"),
     )
+    hf_token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN"),
+    )
+    runpod_api_key: SecretStr | None = None
     openrouter_api_key: SecretStr | None = None
     langfuse_public_key: SecretStr | None = None
     langfuse_secret_key: SecretStr | None = None
@@ -38,10 +43,25 @@ class Settings(BaseSettings):
     ui_analysis_acquire_timeout_seconds: int = Field(default=120, ge=1)
     ui_temp_cleanup_max_age_seconds: int = Field(default=3600, ge=1)
     ui_cleanup_interval_seconds: int = Field(default=1800, ge=1)
+    sam3_provider: Literal["runpod", "huggingface"] = "runpod"
+    embedding_provider: Literal["runpod", "huggingface"] = "runpod"
+    label_provider: Literal["runpod", "huggingface"] = "runpod"
+    sam3_endpoint_url: str | None = None
+    embedding_endpoint_url: str | None = None
+    label_endpoint_url: str | None = None
+    remote_timeout_seconds: int = Field(default=120, ge=1)
+    remote_gpu_preference: Literal["A4000", "A4500"] = "A4000"
+    remote_gpu_fallback: Literal["A4000", "A4500"] = "A4500"
+    remote_gpu_vram_preference_gb: int = Field(default=16, ge=1, le=24)
+    remote_gpu_vram_cap_gb: int = Field(default=24, ge=1, le=24)
+    visual_pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = (
+        "legacy_gemini"
+    )
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.secure"),
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     @classmethod
@@ -67,14 +87,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_api_keys(self) -> "Settings":
-        if self.gemini_api_key is None and self.openrouter_api_key is None:
-            raise ValueError(
-                "At least one of GEMINI_API_KEY or OPENROUTER_API_KEY must be set."
-            )
-
         if (self.langfuse_public_key is None) != (self.langfuse_secret_key is None):
             raise ValueError(
                 "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must either both be set or both be omitted."
+            )
+
+        if self.remote_gpu_preference == self.remote_gpu_fallback:
+            raise ValueError(
+                "REMOTE_GPU_PREFERENCE and REMOTE_GPU_FALLBACK must be different SKUs."
+            )
+
+        if self.remote_gpu_vram_preference_gb > self.remote_gpu_vram_cap_gb:
+            raise ValueError(
+                "REMOTE_GPU_VRAM_PREFERENCE_GB cannot exceed REMOTE_GPU_VRAM_CAP_GB."
             )
 
         return self
