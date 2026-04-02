@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from v2a_inspect.settings import settings
 from v2a_inspect.tools import (
     FrameBatch,
     Sam3EntityTrack,
-    group_entity_embeddings,
+    Sam3VisualFeatures,
+    TrackRoutingDecision,
+    aggregate_group_routes,
     detect_scenes,
+    group_entity_embeddings,
     probe_video,
+    route_track,
     sample_frames,
 )
 from v2a_inspect.workflows import InspectOptions
@@ -73,6 +77,7 @@ def build_tool_context(
             context,
             frame_batches=frame_batches,
             tooling_runtime=tooling_runtime,
+            options=options,
         )
     return context
 
@@ -116,6 +121,7 @@ def _append_runtime_tool_evidence(
     *,
     frame_batches: Sequence[FrameBatch],
     tooling_runtime: ToolingRuntime,
+    options: InspectOptions,
 ) -> None:
     raw_progress = context.get("progress_messages", [])
     progress_messages = (
@@ -126,41 +132,74 @@ def _append_runtime_tool_evidence(
             list(frame_batches)
         )
         context["sam3_track_set"] = sam3_track_set
-        context["tool_grouping_hints"] = _grouping_hints_from_tracks(sam3_track_set)
+        normalized_tracks = _normalize_tracks(getattr(sam3_track_set, "tracks", []))
+        context["tool_grouping_hints"] = _grouping_hints_from_tracks(normalized_tracks)
         progress_messages.append(
-            f"Tool pipeline: extracted {len(sam3_track_set.tracks)} SAM3 tracks."
+            f"Tool pipeline: extracted {len(normalized_tracks)} SAM3 tracks."
         )
+
+        tracks_by_id = {track.track_id: track for track in normalized_tracks}
         track_image_paths = _track_image_paths(
             frame_batches=frame_batches,
-            tracks=sam3_track_set.tracks,
+            tracks=normalized_tracks,
         )
+        track_routing_decisions = _build_track_routing_decisions(normalized_tracks)
+        group_objects: Sequence[object] = _singleton_groups_for_tracks(
+            normalized_tracks
+        )
+
         if track_image_paths:
             embedding_client = getattr(tooling_runtime, "embedding_client", None)
             label_client = getattr(tooling_runtime, "label_client", None)
-            if embedding_client is None or label_client is None:
-                context["progress_messages"] = progress_messages
-                return
+            if embedding_client is not None and label_client is not None:
+                embeddings = embedding_client.embed_images(track_image_paths)
+                context["entity_embeddings"] = embeddings
+                candidate_groups = group_entity_embeddings(
+                    embeddings,
+                    tracks_by_id=tracks_by_id,
+                )
+                group_objects = candidate_groups.groups
+                context["candidate_groups"] = candidate_groups.groups
+                context["tool_grouping_hints"] = _grouping_hints_from_groups(
+                    candidate_groups.groups,
+                    tracks_by_id=tracks_by_id,
+                )
+                progress_messages.append(
+                    f"Tool pipeline: proposed {len(candidate_groups.groups)} embedding-based groups."
+                )
+                _append_group_label_hints(
+                    context,
+                    label_client=label_client,
+                    candidate_groups=candidate_groups.groups,
+                    track_image_paths=track_image_paths,
+                )
 
-            embeddings = embedding_client.embed_images(track_image_paths)
-            context["entity_embeddings"] = embeddings
-            tracks_by_id = {track.track_id: track for track in sam3_track_set.tracks}
-            candidate_groups = group_entity_embeddings(
-                embeddings,
-                tracks_by_id=tracks_by_id,
+        routing_decisions = _build_group_routing_decisions(
+            group_objects=group_objects,
+            track_decisions_by_track_id=track_routing_decisions,
+        )
+        if routing_decisions:
+            routing_hints = _routing_hints_from_decisions(
+                routing_decisions,
+                track_decisions_by_track_id=track_routing_decisions,
             )
-            context["candidate_groups"] = candidate_groups.groups
-            context["tool_grouping_hints"] = _grouping_hints_from_groups(
-                candidate_groups.groups,
-                tracks_by_id=tracks_by_id,
+            context["routing_decisions"] = routing_decisions
+            context["tool_routing_hints"] = routing_hints
+            context["tool_grouping_hints"] = _append_hint_section(
+                context.get("tool_grouping_hints", ""),
+                routing_hints,
             )
-            progress_messages.append(
-                f"Tool pipeline: proposed {len(candidate_groups.groups)} embedding-based groups."
-            )
-            _append_group_label_hints(
-                context,
-                label_client=label_client,
-                candidate_groups=candidate_groups.groups,
-                track_image_paths=track_image_paths,
+
+        verify_hints = _verify_hints_from_groups(
+            group_objects=group_objects,
+            tracks_by_id=tracks_by_id,
+            minimum_group_size=2 if options.enable_vlm_verify else 1,
+        )
+        if verify_hints:
+            context["tool_verify_hints"] = verify_hints
+            context["tool_grouping_hints"] = _append_hint_section(
+                context.get("tool_grouping_hints", ""),
+                verify_hints,
             )
     except Exception as exc:  # noqa: BLE001
         raw_warnings = context.get("warnings", [])
@@ -174,16 +213,112 @@ def _append_runtime_tool_evidence(
     context["progress_messages"] = progress_messages
 
 
-def _grouping_hints_from_tracks(track_set: object) -> str:
-    tracks = getattr(track_set, "tracks", [])
+def _normalize_tracks(tracks: Sequence[object]) -> list[Sam3EntityTrack]:
+    normalized: list[Sam3EntityTrack] = []
+    for track in tracks:
+        normalized_track = _normalize_track(track)
+        if normalized_track is not None:
+            normalized.append(normalized_track)
+    return normalized
+
+
+def _normalize_track(track: object) -> Sam3EntityTrack | None:
+    track_id = getattr(track, "track_id", None)
+    if track_id is None:
+        return None
+    scene_index = _safe_int(getattr(track, "scene_index", 0))
+    start_seconds = _safe_float(getattr(track, "start_seconds", 0.0))
+    end_seconds = _safe_float(getattr(track, "end_seconds", start_seconds))
+    features = getattr(track, "features", None)
+    return Sam3EntityTrack(
+        track_id=str(track_id),
+        scene_index=max(scene_index, 0),
+        start_seconds=max(start_seconds, 0.0),
+        end_seconds=max(end_seconds, start_seconds),
+        confidence=_clamp01(getattr(track, "confidence", 0.0)),
+        label_hint=getattr(track, "label_hint", None),
+        features=Sam3VisualFeatures(
+            motion_score=_feature_value(features, "motion_score"),
+            interaction_score=_feature_value(features, "interaction_score"),
+            crowd_score=_feature_value(features, "crowd_score"),
+            camera_dynamics_score=_feature_value(features, "camera_dynamics_score"),
+        ),
+    )
+
+
+def _feature_value(features: object, name: str) -> float:
+    return _clamp01(getattr(features, name, 0.0))
+
+
+def _safe_float(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _safe_int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _clamp01(value: object) -> float:
+    return min(max(_safe_float(value), 0.0), 1.0)
+
+
+def _group_member_ids(group: object) -> list[str]:
+    raw_members: object
+    if hasattr(group, "member_track_ids"):
+        raw_members = getattr(group, "member_track_ids")
+    elif isinstance(group, Mapping):
+        mapping = cast(Mapping[str, object], group)
+        raw_members = mapping.get("member_track_ids", [])
+    else:
+        raw_members = []
+    if not isinstance(raw_members, Sequence) or isinstance(raw_members, (str, bytes)):
+        return []
+    return [str(member_id) for member_id in raw_members]
+
+
+def _group_id(group: object) -> str:
+    if hasattr(group, "group_id"):
+        return str(getattr(group, "group_id"))
+    if isinstance(group, Mapping):
+        mapping = cast(Mapping[str, object], group)
+        return str(mapping.get("group_id", "group"))
+    return "group"
+
+
+def _group_confidence(group: object) -> float:
+    if hasattr(group, "confidence"):
+        return _safe_float(getattr(group, "confidence"))
+    if isinstance(group, Mapping):
+        mapping = cast(Mapping[str, object], group)
+        return _safe_float(mapping.get("confidence", 0.0))
+    return 0.0
+
+
+def _grouping_hints_from_tracks(tracks: Sequence[Sam3EntityTrack]) -> str:
     if not tracks:
         return "SAM3 found no tracks."
     lines = []
     for track in tracks[:20]:
         lines.append(
-            f"- {getattr(track, 'track_id')}: scene={getattr(track, 'scene_index')} "
-            f"range={getattr(track, 'start_seconds'):.1f}-{getattr(track, 'end_seconds'):.1f} "
-            f"label_hint={getattr(track, 'label_hint', None)} confidence={getattr(track, 'confidence', 0.0):.2f}"
+            f"- {track.track_id}: scene={track.scene_index} "
+            f"range={track.start_seconds:.1f}-{track.end_seconds:.1f} "
+            f"label_hint={track.label_hint} confidence={track.confidence:.2f}"
         )
     return "\n".join(["SAM3 track hints:", *lines])
 
@@ -214,7 +349,7 @@ def _grouping_hints_from_groups(
         return "Embedding grouping found no candidate groups."
     lines = []
     for group in groups:
-        member_ids = list(getattr(group, "member_track_ids", []))
+        member_ids = _group_member_ids(group)
         member_summaries = []
         for member_id in member_ids:
             track = tracks_by_id.get(member_id)
@@ -224,9 +359,113 @@ def _grouping_hints_from_groups(
                 f"{member_id}(scene={track.scene_index}, conf={track.confidence:.2f}, hint={track.label_hint})"
             )
         lines.append(
-            f"- {getattr(group, 'group_id')}: members={', '.join(member_summaries)} confidence={getattr(group, 'confidence', 0.0):.2f}"
+            f"- {_group_id(group)}: members={', '.join(member_summaries)} confidence={_group_confidence(group):.2f}"
         )
     return "\n".join(["Embedding/SAM3 grouping hints:", *lines])
+
+
+def _build_track_routing_decisions(
+    tracks: Sequence[Sam3EntityTrack],
+) -> dict[str, TrackRoutingDecision]:
+    return {track.track_id: route_track(track) for track in tracks}
+
+
+def _singleton_groups_for_tracks(tracks: Sequence[Sam3EntityTrack]) -> list[object]:
+    return [
+        {"group_id": f"track:{track.track_id}", "member_track_ids": [track.track_id]}
+        for track in tracks
+    ]
+
+
+def _build_group_routing_decisions(
+    *,
+    group_objects: Sequence[object],
+    track_decisions_by_track_id: dict[str, TrackRoutingDecision],
+) -> list[object]:
+    routing_decisions: list[object] = []
+    for group in group_objects:
+        group_id = _group_id(group)
+        member_track_ids = _group_member_ids(group)
+        routing_decisions.append(
+            aggregate_group_routes(
+                group_id=group_id,
+                member_track_ids=member_track_ids,
+                decisions_by_track_id=track_decisions_by_track_id,
+            )
+        )
+    return routing_decisions
+
+
+def _routing_hints_from_decisions(
+    routing_decisions: Sequence[object],
+    *,
+    track_decisions_by_track_id: dict[str, TrackRoutingDecision],
+) -> str:
+    if not routing_decisions:
+        return ""
+    lines = ["Routing/model-selection hints:"]
+    for decision in routing_decisions:
+        member_track_ids = list(getattr(decision, "member_track_ids", []))
+        member_summaries = []
+        for track_id in member_track_ids:
+            track_decision = track_decisions_by_track_id.get(track_id)
+            if track_decision is None:
+                member_summaries.append(track_id)
+            else:
+                member_summaries.append(
+                    f"{track_id}:{track_decision.model_type}@{track_decision.confidence:.2f}"
+                )
+        lines.append(
+            f"- {_group_id(decision)}: recommend={getattr(decision, 'model_type', 'TTA')} "
+            f"confidence={_safe_float(getattr(decision, 'confidence', 0.0)):.2f} members={', '.join(member_summaries) or 'none'}"
+        )
+    return "\n".join(lines)
+
+
+def _verify_hints_from_groups(
+    *,
+    group_objects: Sequence[object],
+    tracks_by_id: dict[str, Sam3EntityTrack],
+    minimum_group_size: int,
+) -> str:
+    if not group_objects:
+        return ""
+    lines = ["Verify/group hints:"]
+    for group in group_objects:
+        group_id = _group_id(group)
+        member_track_ids = _group_member_ids(group)
+        member_tracks = [
+            tracks_by_id[track_id]
+            for track_id in member_track_ids
+            if track_id in tracks_by_id
+        ]
+        scene_ids = sorted({track.scene_index for track in member_tracks})
+        label_hints = sorted(
+            {track.label_hint for track in member_tracks if track.label_hint}
+        )
+        if len(member_track_ids) < minimum_group_size:
+            priority = "low"
+            recommendation = "singleton candidate; keep as-is unless Gemini has contradictory evidence"
+        elif len(scene_ids) > 1:
+            priority = "high"
+            recommendation = "cross-scene cluster; ask Gemini to confirm same-entity consistency before merging"
+        else:
+            priority = "medium"
+            recommendation = "same-scene cluster; Gemini should verify grouping with local visual differences"
+        lines.append(
+            f"- {group_id}: priority={priority} scenes={scene_ids or ['unknown']} labels={label_hints or ['unknown']} "
+            f"members={', '.join(member_track_ids) or 'none'} -> {recommendation}"
+        )
+    return "\n".join(lines)
+
+
+def _append_hint_section(existing: object, section: str) -> str:
+    if not section:
+        return str(existing).strip()
+    existing_text = str(existing).strip()
+    if not existing_text:
+        return section
+    return "\n\n".join([existing_text, section])
 
 
 def _append_group_label_hints(
@@ -238,14 +477,14 @@ def _append_group_label_hints(
 ) -> None:
     label_lines: list[str] = []
     for group in candidate_groups:
-        member_ids = list(getattr(group, "member_track_ids", []))
+        member_ids = _group_member_ids(group)
         if not member_ids:
             continue
         representative_images = track_image_paths.get(member_ids[0], [])
         if not representative_images:
             continue
         label_result = label_client.score_labels(
-            group_id=getattr(group, "group_id"),
+            group_id=_group_id(group),
             image_paths=representative_images,
             labels=["person", "vehicle", "animal", "object", "background"],
         )

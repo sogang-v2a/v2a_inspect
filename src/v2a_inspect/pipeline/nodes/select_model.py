@@ -14,6 +14,7 @@ from v2a_inspect.workflows.state import InspectState
 
 from ._shared import (
     append_state_message,
+    append_prompt_evidence,
     build_model_select_segment_list,
     get_active_groups,
     invoke_structured_video,
@@ -82,8 +83,13 @@ def select_models(
             group.model_selection = background_selection
             continue
 
-        resolved_prompt = resolve_prompt("model_select").render(
-            segment_list=build_model_select_segment_list(member_tracks)
+        resolved_prompt = append_prompt_evidence(
+            resolve_prompt("model_select").render(
+                segment_list=build_model_select_segment_list(member_tracks)
+            ),
+            title="Tool routing hints",
+            evidence=state.get("tool_routing_hints")
+            or state.get("tool_grouping_hints"),
         )
 
         try:

@@ -79,7 +79,7 @@ class ToolContextTests(unittest.TestCase):
     @patch("v2a_inspect_server.tool_context.sample_frames")
     @patch("v2a_inspect_server.tool_context.detect_scenes")
     @patch("v2a_inspect_server.tool_context.probe_video")
-    def test_build_tool_context_includes_sam3_hints_when_runtime_available(
+    def test_build_tool_context_adds_routing_and_verify_hints_for_partial_tracks(
         self,
         mock_probe_video,
         mock_detect_scenes,
@@ -145,12 +145,22 @@ class ToolContextTests(unittest.TestCase):
                 )
 
         self.assertIn("tool_grouping_hints", context)
+        self.assertIn("tool_routing_hints", context)
+        self.assertIn("tool_verify_hints", context)
+        self.assertIn("routing_decisions", context)
         self.assertIn("SAM3 track hints:", str(context["tool_grouping_hints"]))
+        self.assertIn(
+            "Routing/model-selection hints:",
+            str(context["tool_routing_hints"]),
+        )
+        self.assertIn("track:trk0", str(context["tool_routing_hints"]))
+        self.assertIn("Verify/group hints:", str(context["tool_verify_hints"]))
+        self.assertIn("priority=low", str(context["tool_verify_hints"]))
 
     @patch("v2a_inspect_server.tool_context.sample_frames")
     @patch("v2a_inspect_server.tool_context.detect_scenes")
     @patch("v2a_inspect_server.tool_context.probe_video")
-    def test_build_tool_context_includes_embedding_and_label_hints(
+    def test_build_tool_context_includes_embedding_label_and_cross_scene_hints(
         self,
         mock_probe_video,
         mock_detect_scenes,
@@ -160,7 +170,7 @@ class ToolContextTests(unittest.TestCase):
             "Probe",
             (),
             {
-                "duration_seconds": 3.0,
+                "duration_seconds": 6.0,
                 "fps": 2.0,
                 "width": 320,
                 "height": 240,
@@ -176,7 +186,17 @@ class ToolContextTests(unittest.TestCase):
                     "end_seconds": 3.0,
                     "strategy": "fixed_window",
                 },
-            )()
+            )(),
+            type(
+                "Scene",
+                (),
+                {
+                    "scene_index": 1,
+                    "start_seconds": 3.0,
+                    "end_seconds": 6.0,
+                    "strategy": "fixed_window",
+                },
+            )(),
         ]
         mock_sample_frames.return_value = [
             type(
@@ -186,10 +206,19 @@ class ToolContextTests(unittest.TestCase):
                     "scene_index": 0,
                     "frames": [
                         type("Frame", (), {"image_path": "/tmp/frame0.jpg"})(),
+                    ],
+                },
+            )(),
+            type(
+                "Batch",
+                (),
+                {
+                    "scene_index": 1,
+                    "frames": [
                         type("Frame", (), {"image_path": "/tmp/frame1.jpg"})(),
                     ],
                 },
-            )()
+            )(),
         ]
         fake_runtime = SimpleNamespace(
             sam3_client=SimpleNamespace(
@@ -202,7 +231,27 @@ class ToolContextTests(unittest.TestCase):
                             end_seconds=1.0,
                             label_hint="person",
                             confidence=0.9,
-                        )
+                            features=SimpleNamespace(
+                                motion_score=0.9,
+                                interaction_score=0.8,
+                                crowd_score=0.1,
+                                camera_dynamics_score=0.1,
+                            ),
+                        ),
+                        SimpleNamespace(
+                            track_id="trk1",
+                            scene_index=1,
+                            start_seconds=3.0,
+                            end_seconds=4.0,
+                            label_hint="person",
+                            confidence=0.85,
+                            features=SimpleNamespace(
+                                motion_score=0.8,
+                                interaction_score=0.75,
+                                crowd_score=0.15,
+                                camera_dynamics_score=0.1,
+                            ),
+                        ),
                     ]
                 )
             ),
@@ -210,7 +259,10 @@ class ToolContextTests(unittest.TestCase):
                 embed_images=lambda _image_paths: [
                     SimpleNamespace(
                         track_id="trk0", model_name="dinov2", vector=[1.0, 0.0]
-                    )
+                    ),
+                    SimpleNamespace(
+                        track_id="trk1", model_name="dinov2", vector=[1.0, 0.0]
+                    ),
                 ]
             ),
             label_client=SimpleNamespace(
@@ -232,10 +284,15 @@ class ToolContextTests(unittest.TestCase):
                     tooling_runtime=cast(ToolingRuntime, fake_runtime),
                 )
 
-        self.assertIn("tool_grouping_hints", context)
         hints = str(context["tool_grouping_hints"])
         self.assertIn("Embedding/SAM3 grouping hints:", hints)
         self.assertIn("Label hints:", hints)
+        self.assertIn("Routing/model-selection hints:", hints)
+        self.assertIn("Verify/group hints:", hints)
+        self.assertIn("cg0", str(context["tool_routing_hints"]))
+        self.assertIn("recommend=VTA", str(context["tool_routing_hints"]))
+        self.assertIn("priority=high", str(context["tool_verify_hints"]))
+        self.assertIn("cross-scene cluster", str(context["tool_verify_hints"]))
 
 
 if __name__ == "__main__":

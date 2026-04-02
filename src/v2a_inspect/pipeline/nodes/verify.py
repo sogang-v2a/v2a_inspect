@@ -9,6 +9,7 @@ from ..prompt_templates import resolve_prompt
 from ..response_models import TrackGroup, VLMVerifyResponse
 from ._shared import (
     append_state_message,
+    append_prompt_evidence,
     build_verify_segment_list,
     get_active_groups,
     invoke_structured_video,
@@ -76,9 +77,14 @@ def verify_groups(
             updated_groups.append(group)
             continue
 
-        resolved_prompt = resolve_prompt("vlm_verify").render(
-            canonical_description=group.canonical_description,
-            segment_list=build_verify_segment_list(group, tracks_by_id),
+        resolved_prompt = append_prompt_evidence(
+            resolve_prompt("vlm_verify").render(
+                canonical_description=group.canonical_description,
+                segment_list=build_verify_segment_list(group, tracks_by_id),
+            ),
+            title="Tool verify hints",
+            evidence=state.get("tool_verify_hints")
+            or state.get("tool_grouping_hints"),
         )
 
         try:

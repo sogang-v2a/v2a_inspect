@@ -79,3 +79,5 @@ class InspectState(TypedDict, total=False):
     routing_decisions: list[GroupRoutingDecision]
     tool_scene_summary: str
     tool_grouping_hints: str
+    tool_verify_hints: str
+    tool_routing_hints: str
