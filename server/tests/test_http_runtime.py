@@ -42,14 +42,19 @@ class RuntimeHttpTests(unittest.TestCase):
     @patch("v2a_inspect_server.runtime.settings")
     @patch("v2a_inspect_server.runtime.get_grouped_analysis")
     @patch("v2a_inspect_server.runtime.run_inspect")
+    @patch("v2a_inspect_server.runtime.build_tool_context")
     def test_analyze_endpoint_returns_grouped_payload(
         self,
+        mock_build_tool_context,
         mock_run_inspect,
         mock_get_grouped_analysis,
         mock_settings,
     ) -> None:
         mock_settings.runtime_mode = "nvidia_docker"
         mock_settings.minimum_gpu_vram_gb = 16
+        mock_build_tool_context.return_value = {
+            "progress_messages": ["tool-step"],
+        }
 
         mock_run_inspect.return_value = {
             "scene_analysis": SimpleNamespace(

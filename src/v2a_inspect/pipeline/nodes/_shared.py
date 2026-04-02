@@ -31,6 +31,23 @@ def get_scene_analysis_prompt(options: InspectOptions) -> ResolvedPrompt:
     return resolve_prompt("scene_analysis_default")
 
 
+def append_prompt_evidence(
+    prompt: ResolvedPrompt,
+    *,
+    title: str,
+    evidence: str | None,
+) -> ResolvedPrompt:
+    if evidence is None or not evidence.strip():
+        return prompt
+    return ResolvedPrompt(
+        name=prompt.name,
+        system_text=prompt.system_text,
+        user_text=prompt.user_text + f"\n\n[{title}]\n{evidence.strip()}\n",
+        source=prompt.source,
+        langfuse_prompt=prompt.langfuse_prompt,
+    )
+
+
 def build_text_messages(prompt: ResolvedPrompt) -> list[BaseMessage]:
     messages: list[BaseMessage] = []
     if prompt.system_text.strip():

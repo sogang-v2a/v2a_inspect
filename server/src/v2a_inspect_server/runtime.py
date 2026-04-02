@@ -18,6 +18,7 @@ from .embeddings import EmbeddingClient, LabelClient
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
 from .providers import GpuProvider, RunpodProvider
 from .sam3 import Sam3Client
+from .tool_context import build_tool_context
 
 
 @dataclass(frozen=True)
@@ -243,7 +244,12 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 server_options = options.model_copy(
                     update={"runtime_mode": "remote_adapter"}
                 )
-                state = run_inspect(video_path, options=server_options)
+                tool_context = build_tool_context(video_path, options=server_options)
+                state = run_inspect(
+                    video_path,
+                    options=server_options,
+                    initial_state_overrides=tool_context,
+                )
                 grouped = get_grouped_analysis(state)
                 self._write_json(
                     {

@@ -38,6 +38,7 @@ def run_inspect(
     progress_callback: ProgressCallback | None = None,
     warning_callback: ProgressCallback | None = None,
     trace_context: WorkflowTraceContext | None = None,
+    initial_state_overrides: dict[str, object] | None = None,
 ) -> InspectState:
     """Run the full inspect workflow for a video path."""
 
@@ -50,6 +51,8 @@ def run_inspect(
             options=resolved_options,
         )
     initial_state = build_initial_inspect_state(video_path, options=resolved_options)
+    if initial_state_overrides:
+        initial_state.update(cast(InspectState, initial_state_overrides))
     return _run_workflow(
         initial_state,
         runtime=runtime,

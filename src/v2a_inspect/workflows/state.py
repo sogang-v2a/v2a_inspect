@@ -77,3 +77,5 @@ class InspectState(TypedDict, total=False):
     entity_embeddings: list[EntityEmbedding]
     candidate_groups: list[CandidateGroup]
     routing_decisions: list[GroupRoutingDecision]
+    tool_scene_summary: str
+    tool_grouping_hints: str

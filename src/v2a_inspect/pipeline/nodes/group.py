@@ -12,6 +12,7 @@ from v2a_inspect.workflows.state import InspectState
 
 from ._shared import (
     append_state_message,
+    append_prompt_evidence,
     build_grouping_numbered_list,
     invoke_structured_text,
 )
@@ -44,8 +45,12 @@ def group_tracks(
             ),
         }
 
-    resolved_prompt = resolve_prompt("grouping").render(
-        numbered_list=build_grouping_numbered_list(raw_tracks)
+    resolved_prompt = append_prompt_evidence(
+        resolve_prompt("grouping").render(
+            numbered_list=build_grouping_numbered_list(raw_tracks)
+        ),
+        title="Tool grouping hints",
+        evidence=state.get("tool_grouping_hints"),
     )
     warnings = list(state.get("warnings", []))
 

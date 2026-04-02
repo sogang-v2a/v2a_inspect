@@ -8,6 +8,7 @@ from v2a_inspect.workflows.state import InspectState
 from ..response_models import VideoSceneAnalysis
 from ._shared import (
     append_state_message,
+    append_prompt_evidence,
     get_scene_analysis_prompt,
     invoke_structured_video,
 )
@@ -29,7 +30,11 @@ def analyze_scenes(
     if gemini_file is None:
         raise ValueError("analyze_scenes requires 'gemini_file' in state.")
 
-    resolved_prompt = get_scene_analysis_prompt(options)
+    resolved_prompt = append_prompt_evidence(
+        get_scene_analysis_prompt(options),
+        title="Tool scene summary",
+        evidence=state.get("tool_scene_summary"),
+    )
     scene_analysis = invoke_structured_video(
         llm,
         file_obj=gemini_file,
