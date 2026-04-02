@@ -11,11 +11,9 @@ from v2a_inspect.settings import Settings
 class SettingsTests(unittest.TestCase):
     @patch.dict("os.environ", {}, clear=True)
     def test_extra_environment_like_values_are_ignored(self) -> None:
-        settings = Settings.model_validate(
-            {"gpu_provider_api_key": SecretStr("provider-secret")}
-        )
+        settings = Settings.model_validate({"openrouter_api_key": SecretStr("secret")})
 
-        self.assertIsNotNone(settings.gpu_provider_api_key)
+        self.assertIsNotNone(settings.openrouter_api_key)
         self.assertEqual(Settings.model_config.get("extra"), "ignore")
 
     def test_gpu_policy_is_validated(self) -> None:

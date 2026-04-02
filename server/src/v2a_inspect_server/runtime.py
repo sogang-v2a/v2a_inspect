@@ -1,32 +1,28 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import json
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
+from urllib import request as urllib_request
 
-from v2a_inspect.settings import settings
-from v2a_inspect.tools import RemoteGpuPolicy, RemoteGpuSelection, choose_remote_gpu
 from v2a_inspect.runner import get_grouped_analysis, run_inspect
+from v2a_inspect.settings import settings
 from v2a_inspect.workflows import InspectOptions
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
 from .embeddings import EmbeddingClient, LabelClient
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
-from .providers import GpuProvider, RunpodProvider
 from .sam3 import Sam3Client
 from .tool_context import build_tool_context
 
 
 @dataclass(frozen=True)
 class ToolingRuntime:
-    gpu_selection: RemoteGpuSelection
-    provider: GpuProvider
     sam3_client: Sam3Client
     embedding_client: EmbeddingClient
     label_client: LabelClient
@@ -35,13 +31,6 @@ class ToolingRuntime:
 
 
 def build_tooling_runtime() -> ToolingRuntime:
-    gpu_policy = RemoteGpuPolicy(
-        preferred_sku=settings.remote_gpu_preference,
-        fallback_sku=settings.remote_gpu_fallback,
-        preferred_vram_gb=settings.remote_gpu_vram_preference_gb,
-        max_vram_gb=settings.remote_gpu_vram_cap_gb,
-    )
-    provider = _build_provider()
     bootstrapper = WeightsBootstrapper(
         cache_dir=Path(settings.model_cache_dir),
         hf_token=(
@@ -52,50 +41,11 @@ def build_tooling_runtime() -> ToolingRuntime:
     )
     weights_manifest = bootstrapper.load_manifest(Path(settings.weights_manifest_path))
     return ToolingRuntime(
-        gpu_selection=choose_remote_gpu(gpu_policy),
-        provider=provider,
-        sam3_client=Sam3Client(
-            provider=provider,
-            service=settings.sam3_service,
-            gpu_policy=gpu_policy,
-            mode=settings.provider_mode,
-        ),
-        embedding_client=EmbeddingClient(
-            provider=provider,
-            service=settings.embedding_service,
-            gpu_policy=gpu_policy,
-            mode=settings.provider_mode,
-        ),
-        label_client=LabelClient(
-            provider=provider,
-            service=settings.label_service,
-            gpu_policy=gpu_policy,
-            mode=settings.provider_mode,
-        ),
+        sam3_client=Sam3Client(),
+        embedding_client=EmbeddingClient(),
+        label_client=LabelClient(),
         bootstrapper=bootstrapper,
         weights_manifest=weights_manifest,
-    )
-
-
-def _build_provider() -> GpuProvider:
-    api_key = (
-        settings.gpu_provider_api_key.get_secret_value()
-        if settings.gpu_provider_api_key is not None
-        else None
-    )
-    if settings.gpu_provider != "runpod":
-        raise ValueError(
-            f"Unsupported GPU provider {settings.gpu_provider!r}. Only 'runpod' is implemented in this slice."
-        )
-    if not settings.provider_base_url:
-        raise ValueError(
-            "GPU_PROVIDER_BASE_URL / RUNPOD_BASE_URL must be set for the tooling runtime."
-        )
-
-    return RunpodProvider(
-        base_url=settings.provider_base_url,
-        api_key=api_key,
-        timeout_seconds=settings.remote_timeout_seconds,
     )
 
 
@@ -186,11 +136,20 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 result = inspect_nvidia_runtime(
                     minimum_vram_gb=settings.minimum_gpu_vram_gb
                 )
+                tooling_ready = True
+                tooling_error = None
+                try:
+                    build_tooling_runtime()
+                except Exception as exc:  # noqa: BLE001
+                    tooling_ready = False
+                    tooling_error = str(exc)
                 self._write_json(
                     {
-                        "ok": result.available,
+                        "ok": result.available and tooling_ready,
                         "runtime_mode": settings.runtime_mode,
                         "gpu_check": json.loads(runtime_check_to_json(result)),
+                        "tooling_runtime_ready": tooling_ready,
+                        "tooling_error": tooling_error,
                     }
                 )
                 return
@@ -209,6 +168,21 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
             self.send_error(HTTPStatus.NOT_FOUND, "Unknown endpoint")
 
         def do_POST(self) -> None:  # noqa: N802
+            if self.path.startswith("/upload"):
+                filename = self.headers.get("X-Filename", "video.mp4")
+                content_length = int(self.headers.get("Content-Length", "0"))
+                if content_length <= 0:
+                    self.send_error(
+                        HTTPStatus.BAD_REQUEST, "Upload body must not be empty."
+                    )
+                    return
+                upload_bytes = self.rfile.read(content_length)
+                upload_path = _write_uploaded_video(
+                    filename=filename,
+                    raw_bytes=upload_bytes,
+                )
+                self._write_json({"ok": True, "video_path": upload_path})
+                return
             if self.path == "/bootstrap":
                 bootstrapper = WeightsBootstrapper(
                     cache_dir=Path(settings.model_cache_dir),
@@ -235,14 +209,12 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 payload = self._read_json()
                 video_path = payload.get("video_path")
                 video_filename = payload.get("video_filename")
-                video_base64 = payload.get("video_base64")
+                video_url = payload.get("video_url")
                 options_payload = payload.get("options", {})
-                if not isinstance(video_path, str) and not isinstance(
-                    video_base64, str
-                ):
+                if not isinstance(video_path, str) and not isinstance(video_url, str):
                     self.send_error(
                         HTTPStatus.BAD_REQUEST,
-                        "video_path or video_base64 is required",
+                        "video_path or video_url is required",
                     )
                     return
                 if not isinstance(options_payload, dict):
@@ -255,17 +227,10 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     video_filename=video_filename
                     if isinstance(video_filename, str)
                     else "video.mp4",
-                    video_base64=video_base64
-                    if isinstance(video_base64, str)
-                    else None,
+                    video_url=video_url if isinstance(video_url, str) else None,
                 )
-                server_options = options.model_copy(
-                    update={"runtime_mode": "remote_adapter"}
-                )
-                try:
-                    tooling_runtime = build_tooling_runtime()
-                except Exception:  # noqa: BLE001
-                    tooling_runtime = None
+                server_options = options.model_copy(update={"runtime_mode": "in_process"})
+                tooling_runtime = build_tooling_runtime()
                 tool_context = build_tool_context(
                     resolved_video_path,
                     options=server_options,
@@ -322,14 +287,26 @@ def _resolve_request_video_path(
     *,
     video_path: str,
     video_filename: str,
-    video_base64: str | None,
+    video_url: str | None,
 ) -> str:
     if video_path and Path(video_path).exists():
         return video_path
+    if video_url:
+        target_dir = _prepare_upload_dir()
+        target_path = target_dir / _sanitize_filename(video_filename)
+        urllib_request.urlretrieve(video_url, target_path)  # noqa: S310
+        return str(target_path)
+    raise ValueError("video_url is required when video_path is not accessible.")
 
-    if video_base64 is None:
-        raise ValueError("video_base64 is required when video_path is not accessible.")
 
+def _write_uploaded_video(*, filename: str, raw_bytes: bytes) -> str:
+    target_dir = _prepare_upload_dir()
+    target_path = target_dir / _sanitize_filename(filename)
+    target_path.write_bytes(raw_bytes)
+    return str(target_path)
+
+
+def _prepare_upload_dir() -> Path:
     target_root = settings.shared_video_dir or Path(tempfile.gettempdir())
     resolved_root = Path(target_root)
     try:
@@ -337,21 +314,18 @@ def _resolve_request_video_path(
     except OSError:
         resolved_root = Path(tempfile.gettempdir())
         resolved_root.mkdir(parents=True, exist_ok=True)
-
-    safe_name = (
-        "".join(
-            char
-            for char in Path(video_filename).name
-            if char.isalnum() or char in "._-"
-        )
-        or "video.mp4"
-    )
-    temp_dir = Path(
+    return Path(
         tempfile.mkdtemp(
             prefix="v2a_inspect_server_upload_",
             dir=str(resolved_root),
         )
     )
-    target_path = temp_dir / safe_name
-    target_path.write_bytes(base64.b64decode(video_base64))
-    return str(target_path)
+
+
+def _sanitize_filename(filename: str) -> str:
+    return (
+        "".join(
+            char for char in Path(filename).name if char.isalnum() or char in "._-"
+        )
+        or "video.mp4"
+    )

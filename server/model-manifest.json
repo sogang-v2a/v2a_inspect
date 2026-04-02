@@ -2,7 +2,7 @@
   "artifacts": [
     {
       "name": "sam3",
-      "repo_id": "facebook/sam3",
+      "repo_id": "AEmotionStudio/sam3",
       "filename": "sam3.safetensors",
       "revision": "main",
       "relative_path": "sam3/sam3.safetensors"

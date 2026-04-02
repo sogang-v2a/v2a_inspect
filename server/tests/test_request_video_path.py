@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,19 +16,25 @@ class RequestVideoPathTests(unittest.TestCase):
             resolved = _resolve_request_video_path(
                 video_path=str(video_path),
                 video_filename="clip.mp4",
-                video_base64=None,
+                video_url=None,
             )
         self.assertEqual(resolved, str(video_path))
 
-    def test_decodes_base64_when_path_missing(self) -> None:
+    def test_downloads_video_url_when_path_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             with patch("v2a_inspect.settings.settings.shared_video_dir", Path(tmp_dir)):
-                resolved = _resolve_request_video_path(
-                    video_path="",
-                    video_filename="clip.mp4",
-                    video_base64=base64.b64encode(b"video").decode("ascii"),
-                )
+                with patch("urllib.request.urlretrieve") as mock_urlretrieve:
+                    def _fake_urlretrieve(url: str, target: Path) -> None:
+                        Path(target).write_bytes(b"video")
+
+                    mock_urlretrieve.side_effect = _fake_urlretrieve
+                    resolved = _resolve_request_video_path(
+                        video_path="",
+                        video_filename="clip.mp4",
+                        video_url="https://example.com/video.mp4",
+                    )
             self.assertEqual(Path(resolved).read_bytes(), b"video")
+            self.assertTrue(Path(resolved).name.endswith(".mp4"))
 
 
 if __name__ == "__main__":

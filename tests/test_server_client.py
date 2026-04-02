@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import base64
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from v2a_inspect.clients.server import _build_request_payload, run_server_inspect
+from v2a_inspect.clients.server import _build_request_payload, _upload_video, run_server_inspect
 from v2a_inspect.workflows import InspectOptions
 
 
@@ -26,44 +25,60 @@ class _FakeResponse:
 
 
 class ServerClientTests(unittest.TestCase):
-    def test_build_request_payload_includes_inline_video_data(self) -> None:
+    def test_build_request_payload_uses_remote_video_path(self) -> None:
+        payload = _build_request_payload(
+            video_path="/tmp/clip.mp4",
+            remote_video_path="/server/uploads/clip.mp4",
+            options=InspectOptions(),
+        )
+        self.assertEqual(payload["video_filename"], "clip.mp4")
+        self.assertEqual(payload["video_path"], "/server/uploads/clip.mp4")
+
+    @patch("v2a_inspect.clients.server.request.urlopen")
+    def test_upload_video_returns_remote_path(self, mock_urlopen) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "clip.mp4"
             video_path.write_bytes(b"video-data")
-            payload = _build_request_payload(
-                video_path=str(video_path),
-                options=InspectOptions(),
+            mock_urlopen.return_value = _FakeResponse(
+                {
+                    "ok": True,
+                    "video_path": "/remote/tmp/clip.mp4",
+                }
             )
-        self.assertEqual(payload["video_filename"], "clip.mp4")
-        self.assertEqual(
-            payload["video_base64"],
-            base64.b64encode(b"video-data").decode("ascii"),
-        )
+            remote_path = _upload_video(
+                server_base_url="http://server:8080",
+                video_path=str(video_path),
+                timeout_seconds=30,
+            )
+        self.assertEqual(remote_path, "/remote/tmp/clip.mp4")
 
     @patch("v2a_inspect.clients.server.request.urlopen")
     def test_run_server_inspect_parses_response(self, mock_urlopen) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "clip.mp4"
             video_path.write_bytes(b"video-data")
-            mock_urlopen.return_value = _FakeResponse(
-                {
-                    "scene_analysis": {
-                        "total_duration": 1.0,
-                        "scenes": [],
-                    },
-                    "grouped_analysis": {
+            mock_urlopen.side_effect = [
+                _FakeResponse({"ok": True, "video_path": "/remote/tmp/clip.mp4"}),
+                _FakeResponse(
+                    {
                         "scene_analysis": {
                             "total_duration": 1.0,
                             "scenes": [],
                         },
-                        "raw_tracks": [],
-                        "groups": [],
-                        "track_to_group": {},
-                    },
-                    "warnings": ["warn"],
-                    "progress_messages": ["done"],
-                }
-            )
+                        "grouped_analysis": {
+                            "scene_analysis": {
+                                "total_duration": 1.0,
+                                "scenes": [],
+                            },
+                            "raw_tracks": [],
+                            "groups": [],
+                            "track_to_group": {},
+                        },
+                        "warnings": ["warn"],
+                        "progress_messages": ["done"],
+                    }
+                ),
+            ]
             state = run_server_inspect(
                 server_base_url="http://server:8080",
                 video_path=str(video_path),
