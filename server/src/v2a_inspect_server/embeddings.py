@@ -5,10 +5,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from v2a_inspect.tools import RemoteGpuPolicy
 from v2a_inspect.tools.types import CanonicalLabel, EntityEmbedding, LabelScore
 
 from .execution import execute_service
-from .providers import GpuProvider, ProviderServiceConfig
+from .providers import GpuProvider, ProviderMode, ProviderServiceConfig
 
 
 class EmbeddingRequest(BaseModel):
@@ -20,11 +21,14 @@ class EmbeddingClient:
         self,
         *,
         provider: GpuProvider,
-        service: ProviderServiceConfig,
+        service: str,
+        gpu_policy: RemoteGpuPolicy,
+        mode: ProviderMode = "sync_endpoint",
         model_name: str = "dinov2",
     ) -> None:
         self.provider = provider
-        self.service = service
+        self.service = ProviderServiceConfig(name=service, route=service, mode=mode)
+        self.gpu_policy = gpu_policy
         self.model_name = model_name
 
     def embed_images(
@@ -39,7 +43,12 @@ class EmbeddingClient:
                 for track_id, image_paths in image_paths_by_track.items()
             ]
         ).model_dump(mode="json")
-        result = execute_service(self.provider, self.service, payload)
+        result = execute_service(
+            self.provider,
+            self.service,
+            payload,
+            gpu_policy=self.gpu_policy,
+        )
         embeddings = result.payload.get("embeddings", [])
         return [
             EntityEmbedding(
@@ -57,10 +66,13 @@ class LabelClient:
         self,
         *,
         provider: GpuProvider,
-        service: ProviderServiceConfig,
+        service: str,
+        gpu_policy: RemoteGpuPolicy,
+        mode: ProviderMode = "sync_endpoint",
     ) -> None:
         self.provider = provider
-        self.service = service
+        self.service = ProviderServiceConfig(name=service, route=service, mode=mode)
+        self.gpu_policy = gpu_policy
 
     def score_labels(
         self,
@@ -73,7 +85,12 @@ class LabelClient:
             "images_base64": [_read_base64(path) for path in image_paths],
             "labels": labels,
         }
-        result = execute_service(self.provider, self.service, payload)
+        result = execute_service(
+            self.provider,
+            self.service,
+            payload,
+            gpu_policy=self.gpu_policy,
+        )
         scores = [
             LabelScore(label=item["label"], score=item["score"])
             for item in result.payload.get("scores", [])

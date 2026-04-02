@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from v2a_inspect.tools import RemoteGpuPolicy, choose_remote_gpu
+from v2a_inspect.tools import RemoteGpuPolicy
 from v2a_inspect_server.execution import execute_service
 from v2a_inspect_server.providers import (
     GpuProvider,
@@ -15,27 +15,34 @@ from v2a_inspect_server.providers import (
 
 class _FakeAsyncProvider(GpuProvider):
     provider_name = "fake"
+    mode = "sync_endpoint"
 
     def __init__(self) -> None:
         self.poll_count = 0
 
     def select_gpu(self, policy: RemoteGpuPolicy):
-        return choose_remote_gpu(policy)
+        return policy
 
     def invoke(
         self,
+        *,
         service: ProviderServiceConfig,
         payload: dict[str, object],
+        gpu_policy: RemoteGpuPolicy,
     ) -> ProviderResult:
+        del payload, gpu_policy
         return ProviderResult(
             provider="fake", service=service.name, payload={"ok": True}
         )
 
     def submit_job(
         self,
+        *,
         service: ProviderServiceConfig,
         payload: dict[str, object],
+        gpu_policy: RemoteGpuPolicy,
     ) -> ProviderJobRef:
+        del payload, gpu_policy
         return ProviderJobRef(provider="fake", service=service.name, job_id="job-1")
 
     def poll_job(self, job_ref: ProviderJobRef) -> ProviderJobStatus:
@@ -59,12 +66,21 @@ class _FakeAsyncProvider(GpuProvider):
 
 
 class ExecutionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.gpu_policy = RemoteGpuPolicy(
+            preferred_sku="A4000",
+            fallback_sku="A4500",
+            preferred_vram_gb=16,
+            max_vram_gb=24,
+        )
+
     def test_execute_service_sync(self) -> None:
         provider = _FakeAsyncProvider()
         result = execute_service(
             provider,
             ProviderServiceConfig(name="sam3", route="sam3", mode="sync_endpoint"),
             {"hello": "world"},
+            gpu_policy=self.gpu_policy,
             poll_interval_seconds=0.0,
         )
         self.assertEqual(result.payload, {"ok": True})
@@ -75,6 +91,7 @@ class ExecutionTests(unittest.TestCase):
             provider,
             ProviderServiceConfig(name="sam3", route="sam3", mode="async_job"),
             {"hello": "world"},
+            gpu_policy=self.gpu_policy,
             poll_interval_seconds=0.0,
             max_polls=3,
         )

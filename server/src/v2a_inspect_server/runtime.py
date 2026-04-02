@@ -8,7 +8,7 @@ from v2a_inspect.tools import RemoteGpuPolicy, RemoteGpuSelection, choose_remote
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
 from .embeddings import EmbeddingClient, LabelClient
-from .providers import GpuProvider, ProviderServiceConfig, RunpodProvider
+from .providers import GpuProvider, RunpodProvider
 from .sam3 import Sam3Client
 
 
@@ -20,7 +20,7 @@ class ToolingRuntime:
     embedding_client: EmbeddingClient
     label_client: LabelClient
     bootstrapper: WeightsBootstrapper
-    weights_manifest: WeightsManifest | None
+    weights_manifest: WeightsManifest
 
 
 def build_tooling_runtime() -> ToolingRuntime:
@@ -30,7 +30,7 @@ def build_tooling_runtime() -> ToolingRuntime:
         preferred_vram_gb=settings.remote_gpu_vram_preference_gb,
         max_vram_gb=settings.remote_gpu_vram_cap_gb,
     )
-    provider = _build_provider(gpu_policy)
+    provider = _build_provider()
     bootstrapper = WeightsBootstrapper(
         cache_dir=Path(settings.model_cache_dir),
         hf_token=(
@@ -39,43 +39,34 @@ def build_tooling_runtime() -> ToolingRuntime:
             else None
         ),
     )
-    weights_manifest = _load_manifest(bootstrapper)
+    weights_manifest = bootstrapper.load_manifest(Path(settings.weights_manifest_path))
     return ToolingRuntime(
         gpu_selection=choose_remote_gpu(gpu_policy),
         provider=provider,
         sam3_client=Sam3Client(
             provider=provider,
-            service=ProviderServiceConfig(
-                name="sam3",
-                route=settings.sam3_service,
-                mode=settings.provider_mode,
-                timeout_seconds=settings.remote_timeout_seconds,
-            ),
+            service=settings.sam3_service,
+            gpu_policy=gpu_policy,
+            mode=settings.provider_mode,
         ),
         embedding_client=EmbeddingClient(
             provider=provider,
-            service=ProviderServiceConfig(
-                name="embedding",
-                route=settings.embedding_service,
-                mode=settings.provider_mode,
-                timeout_seconds=settings.remote_timeout_seconds,
-            ),
+            service=settings.embedding_service,
+            gpu_policy=gpu_policy,
+            mode=settings.provider_mode,
         ),
         label_client=LabelClient(
             provider=provider,
-            service=ProviderServiceConfig(
-                name="label",
-                route=settings.label_service,
-                mode=settings.provider_mode,
-                timeout_seconds=settings.remote_timeout_seconds,
-            ),
+            service=settings.label_service,
+            gpu_policy=gpu_policy,
+            mode=settings.provider_mode,
         ),
         bootstrapper=bootstrapper,
         weights_manifest=weights_manifest,
     )
 
 
-def _build_provider(gpu_policy: RemoteGpuPolicy) -> GpuProvider:
+def _build_provider() -> GpuProvider:
     api_key = (
         settings.gpu_provider_api_key.get_secret_value()
         if settings.gpu_provider_api_key is not None
@@ -93,15 +84,5 @@ def _build_provider(gpu_policy: RemoteGpuPolicy) -> GpuProvider:
     return RunpodProvider(
         base_url=settings.provider_base_url,
         api_key=api_key,
-        gpu_policy=gpu_policy,
         timeout_seconds=settings.remote_timeout_seconds,
     )
-
-
-def _load_manifest(
-    bootstrapper: WeightsBootstrapper,
-) -> WeightsManifest | None:
-    manifest_path = Path(settings.weights_manifest_path)
-    if not manifest_path.exists():
-        return None
-    return bootstrapper.load_manifest(manifest_path)

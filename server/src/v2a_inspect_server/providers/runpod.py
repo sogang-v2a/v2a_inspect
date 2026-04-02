@@ -17,18 +17,17 @@ from .base import (
 
 class RunpodProvider(GpuProvider):
     provider_name = "runpod"
+    mode = "sync_endpoint"
 
     def __init__(
         self,
         *,
         base_url: str,
         api_key: str | None = None,
-        gpu_policy: RemoteGpuPolicy,
         timeout_seconds: int = 120,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.gpu_policy = gpu_policy
         self.timeout_seconds = timeout_seconds
 
     def select_gpu(self, policy: RemoteGpuPolicy) -> RemoteGpuSelection:
@@ -36,65 +35,62 @@ class RunpodProvider(GpuProvider):
 
     def invoke(
         self,
+        *,
         service: ProviderServiceConfig,
         payload: dict[str, Any],
+        gpu_policy: RemoteGpuPolicy,
     ) -> ProviderResult:
         response = post_json(
-            f"{self.base_url}/{service.route.lstrip('/')}",
+            f"{self.base_url}/{service.resolved_route.lstrip('/')}",
             {
-                "gpu": self.select_gpu(self.gpu_policy).model_dump(mode="json"),
+                "gpu": self.select_gpu(gpu_policy).model_dump(mode="json"),
                 "input": payload,
             },
             api_key=self.api_key,
-            timeout_seconds=service.timeout_seconds or self.timeout_seconds,
+            timeout_seconds=self.timeout_seconds,
         )
         return ProviderResult(
             provider=self.provider_name,
             service=service.name,
-            payload=response.get("output", response),
+            payload=_extract_output_payload(response),
         )
 
     def submit_job(
         self,
+        *,
         service: ProviderServiceConfig,
         payload: dict[str, Any],
+        gpu_policy: RemoteGpuPolicy,
     ) -> ProviderJobRef:
         response = post_json(
-            f"{self.base_url}/{service.route.lstrip('/')}",
+            f"{self.base_url}/jobs/{service.resolved_route.lstrip('/')}",
             {
-                "gpu": self.select_gpu(self.gpu_policy).model_dump(mode="json"),
+                "gpu": self.select_gpu(gpu_policy).model_dump(mode="json"),
                 "input": payload,
             },
             api_key=self.api_key,
-            timeout_seconds=service.timeout_seconds or self.timeout_seconds,
+            timeout_seconds=self.timeout_seconds,
         )
-        job_id = str(
-            response.get("id")
-            or response.get("job_id")
-            or response.get("request_id")
-            or ""
-        )
-        if not job_id:
-            raise ValueError("Runpod async submission did not return a job id.")
+        job_id = response.get("job_id", response.get("id"))
+        if not isinstance(job_id, str) or not job_id:
+            raise TypeError("Runpod provider did not return a valid job_id.")
         return ProviderJobRef(
-            provider=self.provider_name,
-            service=service.name,
-            job_id=job_id,
+            provider=self.provider_name, service=service.name, job_id=job_id
         )
 
     def poll_job(self, job_ref: ProviderJobRef) -> ProviderJobStatus:
-        payload = get_json(
+        response = get_json(
             f"{self.base_url}/jobs/{job_ref.job_id}",
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
         )
-        state = str(payload.get("state") or payload.get("status") or "queued")
+        raw_state = str(response.get("state") or response.get("status") or "queued")
         normalized_state: ProviderJobState
-        if state in {"queued", "pending"}:
+        if raw_state in {"queued", "pending"}:
             normalized_state = "queued"
-        elif state in {"running", "processing", "in_progress"}:
+        elif raw_state in {"running", "processing", "in_progress"}:
             normalized_state = "running"
-        elif state in {"completed", "success", "succeeded"}:
+        elif raw_state in {"completed", "success", "succeeded"}:
             normalized_state = "completed"
         else:
             normalized_state = "failed"
@@ -103,18 +99,25 @@ class RunpodProvider(GpuProvider):
             service=job_ref.service,
             job_id=job_ref.job_id,
             state=normalized_state,
-            payload=payload,
+            payload=response,
         )
 
     def fetch_result(self, job_ref: ProviderJobRef) -> ProviderResult:
-        payload = get_json(
-            f"{self.base_url}/jobs/{job_ref.job_id}",
+        response = get_json(
+            f"{self.base_url}/jobs/{job_ref.job_id}/result",
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
         )
         return ProviderResult(
             provider=self.provider_name,
             service=job_ref.service,
-            payload=payload.get("output", payload),
+            payload=_extract_output_payload(response),
             job_ref=job_ref,
         )
+
+
+def _extract_output_payload(response: dict[str, Any]) -> dict[str, Any]:
+    payload = response.get("output", response)
+    if isinstance(payload, dict):
+        return payload
+    raise TypeError("Provider response payload must be a JSON object.")
