@@ -37,9 +37,12 @@ class InspectOptions(BaseModel):
     video_timeout_ms: int = Field(default=180_000, ge=1)
     max_retries: int = Field(default=3, ge=0)
     poll_interval_seconds: float = Field(default=2.0, gt=0.0)
-    sam3_provider: Literal["runpod", "huggingface"] = "runpod"
-    embedding_provider: Literal["runpod", "huggingface"] = "runpod"
-    label_provider: Literal["runpod", "huggingface"] = "runpod"
+    gpu_provider: str = "runpod"
+    provider_mode: Literal["sync_endpoint", "async_job"] = "sync_endpoint"
+    provider_base_url: str | None = None
+    sam3_service: str = "sam3"
+    embedding_service: str = "embedding"
+    label_service: str = "label"
     remote_timeout_seconds: int = Field(default=120, ge=1)
     remote_gpu_preference: Literal["A4000", "A4500"] = "A4000"
     remote_gpu_fallback: Literal["A4000", "A4500"] = "A4500"

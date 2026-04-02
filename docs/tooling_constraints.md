@@ -12,12 +12,14 @@ a tool-first visual pipeline.
 ## Remote inference policy
 
 - Primary remote host: **Runpod**
-- Secondary/fallback host: **Hugging Face**
+- Additional GPU providers must plug in behind the same provider interface.
 - Preferred vision backbone: **SAM3**
 - Preferred visual embeddings: **DINOv2**
 - Preferred post-extraction label scorer: **SigLIP2**
 - Remote inference clients and future heavy runtime deps belong in the separate
   **`v2a_inspect_server`** package, not the client package.
+- **Hugging Face is used only as a model/weights source**, not as an inference backend.
+- Inference runs through self-hosted remote GPU containers behind a provider adapter layer.
 
 ## GPU budget policy
 

@@ -20,7 +20,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN"),
     )
-    runpod_api_key: SecretStr | None = None
+    gpu_provider_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GPU_PROVIDER_API_KEY", "RUNPOD_API_KEY"),
+    )
     openrouter_api_key: SecretStr | None = None
     langfuse_public_key: SecretStr | None = None
     langfuse_secret_key: SecretStr | None = None
@@ -43,12 +46,17 @@ class Settings(BaseSettings):
     ui_analysis_acquire_timeout_seconds: int = Field(default=120, ge=1)
     ui_temp_cleanup_max_age_seconds: int = Field(default=3600, ge=1)
     ui_cleanup_interval_seconds: int = Field(default=1800, ge=1)
-    sam3_provider: Literal["runpod", "huggingface"] = "runpod"
-    embedding_provider: Literal["runpod", "huggingface"] = "runpod"
-    label_provider: Literal["runpod", "huggingface"] = "runpod"
-    sam3_endpoint_url: str | None = None
-    embedding_endpoint_url: str | None = None
-    label_endpoint_url: str | None = None
+    gpu_provider: str = "runpod"
+    provider_mode: Literal["sync_endpoint", "async_job"] = "sync_endpoint"
+    provider_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GPU_PROVIDER_BASE_URL", "RUNPOD_BASE_URL"),
+    )
+    sam3_service: str = "sam3"
+    embedding_service: str = "embedding"
+    label_service: str = "label"
+    model_cache_dir: Path = Path(".cache/v2a_inspect_server/models")
+    weights_manifest_path: Path = Path("server/model-manifest.json")
     remote_timeout_seconds: int = Field(default=120, ge=1)
     remote_gpu_preference: Literal["A4000", "A4500"] = "A4000"
     remote_gpu_fallback: Literal["A4000", "A4500"] = "A4500"
@@ -101,6 +109,9 @@ class Settings(BaseSettings):
             raise ValueError(
                 "REMOTE_GPU_VRAM_PREFERENCE_GB cannot exceed REMOTE_GPU_VRAM_CAP_GB."
             )
+
+        if not self.gpu_provider.strip():
+            raise ValueError("GPU_PROVIDER must not be empty.")
 
         return self
 

@@ -13,17 +13,19 @@
 
 ## Mid-level tools
 
-- `post_json(...)` for remote endpoint invocation
-- `Sam3RunpodClient.recover_with_text_prompt(...)` for recovery-only extraction
+- provider adapter methods for sync invoke and async submit/poll/fetch
+- `Sam3Client.recover_with_text_prompt(...)` for recovery-only extraction
 
 ## Package split
 
 - Client-safe tooling and shared types stay in `v2a_inspect`.
-- Remote inference clients and future heavy dependencies stay in
-  `v2a_inspect_server`.
+- Remote inference clients and future heavy dependencies stay in `v2a_inspect_server`.
+- Remote GPU providers are accessed through a provider abstraction; Runpod is only the first implementation.
+- Hugging Face is a weights/artifact source only.
 
 ## Non-goals for this layer
 
 - No audio tools
 - No local CUDA/GPU execution
 - No Gemini upload or Gemini prompt orchestration in the tool contract
+- No Hugging Face inference endpoint interoperability
