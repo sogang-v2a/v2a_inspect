@@ -5,8 +5,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from v2a_inspect.tools.types import CanonicalLabel, EntityEmbedding, LabelScore
+
 from .remote import post_json
-from .types import CanonicalLabel, EntityEmbedding, LabelScore
 
 
 class EmbeddingRequest(BaseModel):

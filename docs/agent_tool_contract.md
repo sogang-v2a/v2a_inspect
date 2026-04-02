@@ -16,6 +16,12 @@
 - `post_json(...)` for remote endpoint invocation
 - `Sam3RunpodClient.recover_with_text_prompt(...)` for recovery-only extraction
 
+## Package split
+
+- Client-safe tooling and shared types stay in `v2a_inspect`.
+- Remote inference clients and future heavy dependencies stay in
+  `v2a_inspect_server`.
+
 ## Non-goals for this layer
 
 - No audio tools

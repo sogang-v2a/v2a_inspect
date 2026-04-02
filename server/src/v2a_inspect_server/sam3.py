@@ -5,8 +5,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from v2a_inspect.tools.types import FrameBatch, Sam3TrackSet
+
 from .remote import post_json
-from .types import FrameBatch, Sam3TrackSet
 
 
 class Sam3ExtractRequest(BaseModel):

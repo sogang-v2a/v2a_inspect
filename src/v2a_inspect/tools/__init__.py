@@ -1,9 +1,7 @@
-from .embeddings import EmbeddingRunpodClient, Siglip2LabelClient
 from .grouping import cosine_similarity, group_entity_embeddings
 from .media import detect_scenes, probe_video, sample_frames
 from .policy import RemoteGpuPolicy, RemoteGpuSelection, choose_remote_gpu
 from .routing import aggregate_group_routes, route_track
-from .sam3 import Sam3RunpodClient
 from .types import (
     CandidateGroup,
     CandidateGroupSet,
@@ -23,9 +21,6 @@ from .types import (
 )
 
 __all__ = [
-    "EmbeddingRunpodClient",
-    "Siglip2LabelClient",
-    "Sam3RunpodClient",
     "RemoteGpuPolicy",
     "RemoteGpuSelection",
     "choose_remote_gpu",

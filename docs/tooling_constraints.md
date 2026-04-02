@@ -16,6 +16,8 @@ a tool-first visual pipeline.
 - Preferred vision backbone: **SAM3**
 - Preferred visual embeddings: **DINOv2**
 - Preferred post-extraction label scorer: **SigLIP2**
+- Remote inference clients and future heavy runtime deps belong in the separate
+  **`v2a_inspect_server`** package, not the client package.
 
 ## GPU budget policy
 
