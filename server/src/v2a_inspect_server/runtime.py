@@ -184,74 +184,98 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 self._write_json({"ok": True, "video_path": upload_path})
                 return
             if self.path == "/bootstrap":
-                bootstrapper = WeightsBootstrapper(
-                    cache_dir=Path(settings.model_cache_dir),
-                    hf_token=(
-                        settings.hf_token.get_secret_value()
-                        if settings.hf_token is not None
-                        else None
-                    ),
-                )
-                manifest = bootstrapper.load_manifest(
-                    Path(settings.weights_manifest_path)
-                )
-                resolved = bootstrapper.ensure_manifest(manifest)
-                self._write_json(
-                    {
-                        "ok": True,
-                        "artifacts": {
-                            name: str(path) for name, path in resolved.items()
+                try:
+                    bootstrapper = WeightsBootstrapper(
+                        cache_dir=Path(settings.model_cache_dir),
+                        hf_token=(
+                            settings.hf_token.get_secret_value()
+                            if settings.hf_token is not None
+                            else None
+                        ),
+                    )
+                    manifest = bootstrapper.load_manifest(
+                        Path(settings.weights_manifest_path)
+                    )
+                    resolved = bootstrapper.ensure_manifest(manifest)
+                    self._write_json(
+                        {
+                            "ok": True,
+                            "artifacts": {
+                                name: str(path) for name, path in resolved.items()
+                            },
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    self._write_json(
+                        {
+                            "ok": False,
+                            "error": str(exc),
                         },
-                    }
-                )
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
                 return
             if self.path == "/analyze":
-                payload = self._read_json()
-                video_path = payload.get("video_path")
-                video_filename = payload.get("video_filename")
-                video_url = payload.get("video_url")
-                options_payload = payload.get("options", {})
-                if not isinstance(video_path, str) and not isinstance(video_url, str):
-                    self.send_error(
-                        HTTPStatus.BAD_REQUEST,
-                        "video_path or video_url is required",
-                    )
-                    return
-                if not isinstance(options_payload, dict):
-                    self.send_error(HTTPStatus.BAD_REQUEST, "options must be an object")
-                    return
+                try:
+                    payload = self._read_json()
+                    video_path = payload.get("video_path")
+                    video_filename = payload.get("video_filename")
+                    video_url = payload.get("video_url")
+                    options_payload = payload.get("options", {})
+                    if not isinstance(video_path, str) and not isinstance(
+                        video_url, str
+                    ):
+                        self.send_error(
+                            HTTPStatus.BAD_REQUEST,
+                            "video_path or video_url is required",
+                        )
+                        return
+                    if not isinstance(options_payload, dict):
+                        self.send_error(
+                            HTTPStatus.BAD_REQUEST, "options must be an object"
+                        )
+                        return
 
-                options = InspectOptions.model_validate(options_payload)
-                resolved_video_path = _resolve_request_video_path(
-                    video_path=video_path if isinstance(video_path, str) else "",
-                    video_filename=video_filename
-                    if isinstance(video_filename, str)
-                    else "video.mp4",
-                    video_url=video_url if isinstance(video_url, str) else None,
-                )
-                server_options = options.model_copy(update={"runtime_mode": "in_process"})
-                tooling_runtime = build_tooling_runtime()
-                tool_context = build_tool_context(
-                    resolved_video_path,
-                    options=server_options,
-                    tooling_runtime=tooling_runtime,
-                )
-                state = run_inspect(
-                    resolved_video_path,
-                    options=server_options,
-                    initial_state_overrides=tool_context,
-                )
-                grouped = get_grouped_analysis(state)
-                self._write_json(
-                    {
-                        "scene_analysis": state["scene_analysis"].model_dump(
-                            mode="json"
-                        ),
-                        "grouped_analysis": grouped.model_dump(mode="json"),
-                        "warnings": state.get("warnings", []),
-                        "progress_messages": state.get("progress_messages", []),
-                    }
-                )
+                    options = InspectOptions.model_validate(options_payload)
+                    resolved_video_path = _resolve_request_video_path(
+                        video_path=video_path if isinstance(video_path, str) else "",
+                        video_filename=video_filename
+                        if isinstance(video_filename, str)
+                        else "video.mp4",
+                        video_url=video_url if isinstance(video_url, str) else None,
+                    )
+                    server_options = options.model_copy(
+                        update={"runtime_mode": "in_process"}
+                    )
+                    tooling_runtime = build_tooling_runtime()
+                    tool_context = build_tool_context(
+                        resolved_video_path,
+                        options=server_options,
+                        tooling_runtime=tooling_runtime,
+                    )
+                    state = run_inspect(
+                        resolved_video_path,
+                        options=server_options,
+                        initial_state_overrides=tool_context,
+                    )
+                    grouped = get_grouped_analysis(state)
+                    self._write_json(
+                        {
+                            "scene_analysis": state["scene_analysis"].model_dump(
+                                mode="json"
+                            ),
+                            "grouped_analysis": grouped.model_dump(mode="json"),
+                            "warnings": state.get("warnings", []),
+                            "progress_messages": state.get("progress_messages", []),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    self._write_json(
+                        {
+                            "ok": False,
+                            "error": str(exc),
+                        },
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
                 return
 
             self.send_error(HTTPStatus.NOT_FOUND, "Unknown endpoint")
