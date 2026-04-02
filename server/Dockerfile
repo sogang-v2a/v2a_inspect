@@ -15,6 +15,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY server/pyproject.toml ./server/pyproject.toml
+COPY server/uv.lock ./server/uv.lock
 COPY server/README.md ./server/README.md
 COPY server/model-manifest.json ./server/model-manifest.json
 COPY server/src ./server/src
