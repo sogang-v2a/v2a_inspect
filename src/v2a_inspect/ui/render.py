@@ -20,7 +20,7 @@ from .video import extract_clip
 def render_page_header() -> None:
     st.title("🔍 V2A Inspect — 트랙 그루핑 검증 시스템")
     st.markdown(
-        "Gemini 장면 분석과 크로스씬 트랙 그루핑 결과를 시각화하여 "
+        "시각 기반 장면 분석과 크로스씬 트랙 그루핑 결과를 시각화하여 "
         "**사람이 직접 검증**할 수 있는 검사 도구입니다.  \n"
         "오디오 생성 없음 — 분석과 그루핑 단계만 실행합니다."
     )
@@ -43,11 +43,11 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
         st.caption("`default`: 간결 | `extended`: Foley 상세")
 
         enable_vlm_verify = st.checkbox("VLM 그룹 검증 사용", value=True)
-        st.caption("Gemini VLM이 실제 영상 프레임으로 그룹핑 결과를 시각적으로 확인")
+        st.caption("시각 검증 단계가 실제 영상 프레임으로 그룹핑 결과를 확인")
 
         enable_model_select = st.checkbox("TTA/VTA 모델 자동 선정", value=False)
         st.caption(
-            "Gemini VLM이 각 씬의 동적 특성(싱크 중요도 vs 트랙 분리 중요도)을 분석하여 "
+            "시각 기반 라우팅 단계가 각 씬의 동적 특성(싱크 중요도 vs 트랙 분리 중요도)을 분석하여 "
             "TTA 또는 VTA 모델을 자동 판정"
         )
 
@@ -60,7 +60,7 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
 📹 Video Upload
       │
       ▼
-🤖 Gemini Scene Analysis
+🤖 Current Scene Analysis Backend
    FPS · Prompt Type
       │
       ▼
@@ -72,11 +72,11 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
       │
       ▼
 🔗 Cross-Scene Text Grouping
-   (Gemini batch call)
+   (Current grouping backend)
       │
       ▼  (VLM verify ON)
 👁️ VLM Group Verification
-   (Gemini + video frames)
+   (Current visual backend + video frames)
       │
       ▼
 📦 GroupedAnalysis
@@ -212,7 +212,7 @@ def render_results(
 def render_footer() -> None:
     st.divider()
     st.caption(
-        "V2A Inspect | Gemini Scene Analysis + Cross-Scene Track Grouping | No Audio Generation"
+        "V2A Inspect | Visual Scene Analysis + Cross-Scene Track Grouping | No Audio Generation"
     )
 
 
