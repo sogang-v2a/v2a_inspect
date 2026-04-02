@@ -6,7 +6,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from v2a_inspect.settings import settings
-from v2a_inspect.tools import FrameBatch, detect_scenes, probe_video, sample_frames
+from v2a_inspect.tools import (
+    FrameBatch,
+    Sam3EntityTrack,
+    group_entity_embeddings,
+    detect_scenes,
+    probe_video,
+    sample_frames,
+)
 from v2a_inspect.workflows import InspectOptions
 
 if TYPE_CHECKING:
@@ -102,6 +109,38 @@ def _append_runtime_tool_evidence(
         progress_messages.append(
             f"Tool pipeline: extracted {len(sam3_track_set.tracks)} SAM3 tracks."
         )
+        track_image_paths = _track_image_paths(
+            frame_batches=frame_batches,
+            tracks=sam3_track_set.tracks,
+        )
+        if track_image_paths:
+            embedding_client = getattr(tooling_runtime, "embedding_client", None)
+            label_client = getattr(tooling_runtime, "label_client", None)
+            if embedding_client is None or label_client is None:
+                context["progress_messages"] = progress_messages
+                return
+
+            embeddings = embedding_client.embed_images(track_image_paths)
+            context["entity_embeddings"] = embeddings
+            tracks_by_id = {track.track_id: track for track in sam3_track_set.tracks}
+            candidate_groups = group_entity_embeddings(
+                embeddings,
+                tracks_by_id=tracks_by_id,
+            )
+            context["candidate_groups"] = candidate_groups.groups
+            context["tool_grouping_hints"] = _grouping_hints_from_groups(
+                candidate_groups.groups,
+                tracks_by_id=tracks_by_id,
+            )
+            progress_messages.append(
+                f"Tool pipeline: proposed {len(candidate_groups.groups)} embedding-based groups."
+            )
+            _append_group_label_hints(
+                context,
+                label_client=label_client,
+                candidate_groups=candidate_groups.groups,
+                track_image_paths=track_image_paths,
+            )
     except Exception as exc:  # noqa: BLE001
         raw_warnings = context.get("warnings", [])
         warnings = (
@@ -126,3 +165,82 @@ def _grouping_hints_from_tracks(track_set: object) -> str:
             f"label_hint={getattr(track, 'label_hint', None)} confidence={getattr(track, 'confidence', 0.0):.2f}"
         )
     return "\n".join(["SAM3 track hints:", *lines])
+
+
+def _track_image_paths(
+    *,
+    frame_batches: Sequence[FrameBatch],
+    tracks: Sequence[Sam3EntityTrack],
+) -> dict[str, list[str]]:
+    images_by_scene = {
+        batch.scene_index: [frame.image_path for frame in batch.frames]
+        for batch in frame_batches
+    }
+    track_paths: dict[str, list[str]] = {}
+    for track in tracks:
+        image_paths = images_by_scene.get(track.scene_index, [])
+        if image_paths:
+            track_paths[track.track_id] = image_paths
+    return track_paths
+
+
+def _grouping_hints_from_groups(
+    groups: Sequence[object],
+    *,
+    tracks_by_id: dict[str, Sam3EntityTrack],
+) -> str:
+    if not groups:
+        return "Embedding grouping found no candidate groups."
+    lines = []
+    for group in groups:
+        member_ids = list(getattr(group, "member_track_ids", []))
+        member_summaries = []
+        for member_id in member_ids:
+            track = tracks_by_id.get(member_id)
+            if track is None:
+                continue
+            member_summaries.append(
+                f"{member_id}(scene={track.scene_index}, conf={track.confidence:.2f}, hint={track.label_hint})"
+            )
+        lines.append(
+            f"- {getattr(group, 'group_id')}: members={', '.join(member_summaries)} confidence={getattr(group, 'confidence', 0.0):.2f}"
+        )
+    return "\n".join(["Embedding/SAM3 grouping hints:", *lines])
+
+
+def _append_group_label_hints(
+    context: dict[str, object],
+    *,
+    label_client: object,
+    candidate_groups: Sequence[object],
+    track_image_paths: dict[str, list[str]],
+) -> None:
+    label_lines: list[str] = []
+    for group in candidate_groups:
+        member_ids = list(getattr(group, "member_track_ids", []))
+        if not member_ids:
+            continue
+        representative_images = track_image_paths.get(member_ids[0], [])
+        if not representative_images:
+            continue
+        label_result = label_client.score_labels(
+            group_id=getattr(group, "group_id"),
+            image_paths=representative_images,
+            labels=["person", "vehicle", "animal", "object", "background"],
+        )
+        label_lines.append(
+            f"- {label_result.group_id}: label={label_result.label} scores="
+            + ", ".join(
+                f"{score.label}:{score.score:.2f}" for score in label_result.scores[:5]
+            )
+        )
+    if label_lines:
+        existing = context.get("tool_grouping_hints", "")
+        context["tool_grouping_hints"] = "\n".join(
+            [
+                str(existing).rstrip(),
+                "",
+                "Label hints:",
+                *label_lines,
+            ]
+        ).strip()
