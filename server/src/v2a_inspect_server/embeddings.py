@@ -7,25 +7,24 @@ from pydantic import BaseModel, Field
 
 from v2a_inspect.tools.types import CanonicalLabel, EntityEmbedding, LabelScore
 
-from .remote import post_json
+from .execution import execute_service
+from .providers import GpuProvider, ProviderServiceConfig
 
 
 class EmbeddingRequest(BaseModel):
     items: list[dict[str, object]] = Field(default_factory=list)
 
 
-class EmbeddingRunpodClient:
+class EmbeddingClient:
     def __init__(
         self,
         *,
-        endpoint_url: str,
-        api_key: str | None = None,
-        timeout_seconds: int = 120,
+        provider: GpuProvider,
+        service: ProviderServiceConfig,
         model_name: str = "dinov2",
     ) -> None:
-        self.endpoint_url = endpoint_url
-        self.api_key = api_key
-        self.timeout_seconds = timeout_seconds
+        self.provider = provider
+        self.service = service
         self.model_name = model_name
 
     def embed_images(
@@ -40,16 +39,8 @@ class EmbeddingRunpodClient:
                 for track_id, image_paths in image_paths_by_track.items()
             ]
         ).model_dump(mode="json")
-        response = post_json(
-            self.endpoint_url,
-            {"input": payload},
-            api_key=self.api_key,
-            timeout_seconds=self.timeout_seconds,
-        )
-        output = response.get("output", response)
-        if not isinstance(output, dict):
-            raise TypeError("Embedding endpoint returned an invalid payload.")
-        embeddings = output.get("embeddings", [])
+        result = execute_service(self.provider, self.service, payload)
+        embeddings = result.payload.get("embeddings", [])
         return [
             EntityEmbedding(
                 track_id=item["track_id"],
@@ -61,17 +52,15 @@ class EmbeddingRunpodClient:
         ]
 
 
-class Siglip2LabelClient:
+class LabelClient:
     def __init__(
         self,
         *,
-        endpoint_url: str,
-        api_key: str | None = None,
-        timeout_seconds: int = 120,
+        provider: GpuProvider,
+        service: ProviderServiceConfig,
     ) -> None:
-        self.endpoint_url = endpoint_url
-        self.api_key = api_key
-        self.timeout_seconds = timeout_seconds
+        self.provider = provider
+        self.service = service
 
     def score_labels(
         self,
@@ -84,22 +73,18 @@ class Siglip2LabelClient:
             "images_base64": [_read_base64(path) for path in image_paths],
             "labels": labels,
         }
-        response = post_json(
-            self.endpoint_url,
-            {"input": payload},
-            api_key=self.api_key,
-            timeout_seconds=self.timeout_seconds,
-        )
-        output = response.get("output", response)
-        if not isinstance(output, dict):
-            raise TypeError("Label endpoint returned an invalid payload.")
+        result = execute_service(self.provider, self.service, payload)
         scores = [
             LabelScore(label=item["label"], score=item["score"])
-            for item in output.get("scores", [])
+            for item in result.payload.get("scores", [])
             if isinstance(item, dict) and "label" in item and "score" in item
         ]
         best_label = max(scores, key=lambda item: item.score).label if scores else ""
         return CanonicalLabel(group_id=group_id, label=best_label, scores=scores)
+
+
+EmbeddingRunpodClient = EmbeddingClient
+Siglip2LabelClient = LabelClient
 
 
 def _read_base64(image_path: str) -> str:

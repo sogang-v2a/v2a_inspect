@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from v2a_inspect_server.remote import build_bearer_headers, post_json
+from v2a_inspect_server.remote import build_bearer_headers, get_json, post_json
 
 
 class _FakeResponse:
@@ -33,6 +33,12 @@ class RemoteToolsTests(unittest.TestCase):
             "https://example.com/run", {"hello": "world"}, api_key="secret"
         )
         self.assertEqual(payload, {"output": {"ok": True}})
+
+    @patch("v2a_inspect_server.remote.request.urlopen")
+    def test_get_json_round_trips_payload(self, mock_urlopen) -> None:
+        mock_urlopen.return_value = _FakeResponse({"ok": True})
+        payload = get_json("https://example.com/jobs/123", api_key="secret")
+        self.assertEqual(payload, {"ok": True})
 
 
 if __name__ == "__main__":

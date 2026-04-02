@@ -1,11 +1,33 @@
-from .embeddings import EmbeddingRunpodClient, Siglip2LabelClient
+from .bootstrap import WeightsArtifact, WeightsBootstrapper, WeightsManifest
+from .embeddings import EmbeddingClient, LabelClient
+from .providers import (
+    GpuProvider,
+    ProviderJobRef,
+    ProviderJobState,
+    ProviderJobStatus,
+    ProviderMode,
+    ProviderResult,
+    ProviderServiceConfig,
+    RunpodProvider,
+)
 from .runtime import ToolingRuntime, build_tooling_runtime
-from .sam3 import Sam3RunpodClient
+from .sam3 import Sam3Client
 
 __all__ = [
-    "EmbeddingRunpodClient",
-    "Siglip2LabelClient",
-    "Sam3RunpodClient",
+    "EmbeddingClient",
+    "GpuProvider",
+    "LabelClient",
+    "ProviderJobRef",
+    "ProviderJobState",
+    "ProviderJobStatus",
+    "ProviderMode",
+    "ProviderResult",
+    "ProviderServiceConfig",
+    "RunpodProvider",
+    "Sam3Client",
     "ToolingRuntime",
+    "WeightsArtifact",
+    "WeightsBootstrapper",
+    "WeightsManifest",
     "build_tooling_runtime",
 ]
