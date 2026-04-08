@@ -1,0 +1,59 @@
+{
+  "version": "stage0-v1",
+  "clips": [
+    {
+      "clip_id": "solo_runner_pavement",
+      "filename": "solo_runner_pavement.mp4",
+      "category": "single_source_action",
+      "visible_sources": ["one runner", "pavement contact region"],
+      "event_notes": ["repeating footstep cadence", "arm swing visible"],
+      "grouping_notes": ["single foreground source", "separate ambience bed if street ambience is visible"],
+      "routing_notes": ["likely TTA for repeated footsteps"]
+    },
+    {
+      "clip_id": "market_crosscut_actor",
+      "filename": "market_crosscut_actor.mp4",
+      "category": "repeated_actor_across_cuts",
+      "visible_sources": ["same vendor across two cuts", "metal cart", "fabric bags"],
+      "event_notes": ["bag rustle bursts", "cart wheel movement"],
+      "grouping_notes": ["same source identity may persist across cuts but event groups can differ"],
+      "routing_notes": ["mixed TTA and VTA candidates depending on event segmentation"]
+    },
+    {
+      "clip_id": "crowd_crosswalk",
+      "filename": "crowd_crosswalk.mp4",
+      "category": "crowd_ambiguity",
+      "visible_sources": ["multiple pedestrians", "traffic signal region"],
+      "event_notes": ["many overlapping footsteps", "possible bag and clothing motion"],
+      "grouping_notes": ["do not force all people into one physical source"],
+      "routing_notes": ["likely VTA for mixed crowd texture"]
+    },
+    {
+      "clip_id": "street_vehicle_pass",
+      "filename": "street_vehicle_pass.mp4",
+      "category": "vehicle_motion",
+      "visible_sources": ["passing car", "road contact region"],
+      "event_notes": ["approach-pass-depart event arc"],
+      "grouping_notes": ["vehicle source identity distinct from ambience bed"],
+      "routing_notes": ["likely VTA for continuous pass-by"]
+    },
+    {
+      "clip_id": "waterfall_wide",
+      "filename": "waterfall_wide.mp4",
+      "category": "ambience_heavy",
+      "visible_sources": ["waterfall region", "spray/mist region"],
+      "event_notes": ["mostly continuous environment texture"],
+      "grouping_notes": ["ambience bed explicit, not trash bin"],
+      "routing_notes": ["likely VTA ambience bed"]
+    },
+    {
+      "clip_id": "kitchen_ambiguous_tools",
+      "filename": "kitchen_ambiguous_tools.mp4",
+      "category": "ambiguous_case",
+      "visible_sources": ["person", "utensil", "pan"],
+      "event_notes": ["short impacts mixed with continuous motion"],
+      "grouping_notes": ["same source can emit multiple event segment types"],
+      "routing_notes": ["requires adjudication between TTA and VTA"]
+    }
+  ]
+}

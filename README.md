@@ -9,6 +9,14 @@ Current target runtime is:
 - Hugging Face used only for weights bootstrap
 - Gemini stays in the pipeline and consumes server-side tool evidence
 
+## Roadmap and architecture docs
+
+- [Roadmap overview](docs/v2a_agent_plan/02_roadmap_overview.md)
+- [Final project blueprint](docs/v2a_agent_plan/01_final_project_blueprint.md)
+- [Agent tool contract](docs/agent_tool_contract.md)
+- [ADR 001: target multitrack architecture](docs/adr/ADR_001_target_multitrack_architecture.md)
+
+
 ## Run locally with Docker Compose
 
 ```bash
