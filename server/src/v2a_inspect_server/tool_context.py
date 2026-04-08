@@ -12,8 +12,14 @@ from v2a_inspect.tools import (
     Sam3VisualFeatures,
     TrackRoutingDecision,
     aggregate_group_routes,
+    build_candidate_cuts,
+    build_evidence_windows,
     detect_scenes,
+    evidence_windows_to_scene_boundaries,
+    export_window_clips,
+    generate_storyboard,
     group_entity_embeddings,
+    hydrate_evidence_windows,
     probe_video,
     route_track,
     sample_frames,
@@ -59,7 +65,19 @@ def build_tool_context(
     tooling_runtime: ToolingRuntime | None = None,
 ) -> dict[str, object]:
     probe = probe_video(video_path)
-    scenes = detect_scenes(video_path, probe=probe, target_scene_seconds=5.0)
+    candidate_cuts = build_candidate_cuts(
+        video_path,
+        probe=probe,
+        target_scene_seconds=5.0,
+    )
+    evidence_windows = build_evidence_windows(
+        probe=probe,
+        candidate_cuts=candidate_cuts,
+    )
+    scenes = evidence_windows_to_scene_boundaries(
+        evidence_windows,
+        candidate_cuts=candidate_cuts,
+    )
     frame_root = _frame_output_dir(video_path)
     frame_batches = sample_frames(
         video_path,
@@ -67,16 +85,41 @@ def build_tool_context(
         output_dir=str(frame_root),
         frames_per_scene=2,
     )
+    storyboard_path = generate_storyboard(
+        frame_batches,
+        output_path=str(frame_root / "storyboard.jpg"),
+    )
+    clip_paths_by_window = export_window_clips(
+        video_path,
+        evidence_windows,
+        output_dir=str(frame_root / "clips"),
+        max_windows=3,
+    )
+    evidence_windows = hydrate_evidence_windows(
+        evidence_windows,
+        frame_batches,
+        storyboard_path=storyboard_path,
+        clip_paths_by_window=clip_paths_by_window,
+    )
 
     context: dict[str, object] = {
         "video_probe": probe,
+        "candidate_cuts": candidate_cuts,
+        "evidence_windows": evidence_windows,
         "scene_boundaries": scenes,
         "frame_batches": frame_batches,
-        "tool_scene_summary": _scene_summary(probe=probe, scenes=scenes),
+        "storyboard_path": storyboard_path,
+        "tool_scene_summary": _scene_summary(
+            probe=probe,
+            candidate_cuts=candidate_cuts,
+            evidence_windows=evidence_windows,
+        ),
         "progress_messages": [
             f"Tool pipeline: probed video ({probe.width}x{probe.height}, {probe.duration_seconds:.1f}s).",
-            f"Tool pipeline: planned {len(scenes)} scene windows.",
+            f"Tool pipeline: proposed {len(candidate_cuts)} candidate cuts.",
+            f"Tool pipeline: built {len(evidence_windows)} evidence windows.",
             f"Tool pipeline: sampled {sum(len(batch.frames) for batch in frame_batches)} frames.",
+            f"Tool pipeline: generated storyboard artifact at {storyboard_path}.",
         ],
     }
     if tooling_runtime is not None:
@@ -107,20 +150,31 @@ def _frame_output_dir(video_path: str) -> Path:
     )
 
 
-def _scene_summary(*, probe: object, scenes: Sequence[object]) -> str:
+def _scene_summary(
+    *,
+    probe: object,
+    candidate_cuts: Sequence[object],
+    evidence_windows: Sequence[object],
+) -> str:
     probe_duration = getattr(probe, "duration_seconds", None)
     probe_fps = getattr(probe, "fps", None)
     probe_width = getattr(probe, "width", None)
     probe_height = getattr(probe, "height", None)
-    lines = [
-        f"- scene {getattr(scene, 'scene_index')}: {getattr(scene, 'start_seconds'):.1f}s to {getattr(scene, 'end_seconds'):.1f}s ({getattr(scene, 'strategy')})"
-        for scene in scenes[:12]
+    cut_lines = [
+        f"- cut {getattr(cut, 'cut_id')}: {getattr(cut, 'timestamp_seconds'):.1f}s"
+        for cut in candidate_cuts[:12]
+    ]
+    window_lines = [
+        f"- window {getattr(window, 'window_id')}: {getattr(window, 'start_time'):.1f}s to {getattr(window, 'end_time'):.1f}s"
+        for window in evidence_windows[:12]
     ]
     return "\n".join(
         [
             f"Probe: duration={probe_duration:.1f}s, fps={probe_fps}, resolution={probe_width}x{probe_height}.",
-            "Tool-detected scene windows:",
-            *lines,
+            "Candidate cuts:",
+            *cut_lines,
+            "Evidence windows:",
+            *window_lines,
         ]
     )
 

@@ -1,5 +1,17 @@
+from v2a_inspect.contracts import CandidateCut, CutReason, EvidenceWindow
+
 from .grouping import cosine_similarity, group_entity_embeddings
-from .media import detect_scenes, probe_video, sample_frames
+from .media import (
+    build_candidate_cuts,
+    build_evidence_windows,
+    detect_scenes,
+    evidence_windows_to_scene_boundaries,
+    export_window_clips,
+    generate_storyboard,
+    hydrate_evidence_windows,
+    probe_video,
+    sample_frames,
+)
 from .policy import RemoteGpuPolicy, RemoteGpuSelection, choose_remote_gpu
 from .routing import aggregate_group_routes, route_track
 from .types import (
@@ -24,9 +36,18 @@ __all__ = [
     "RemoteGpuPolicy",
     "RemoteGpuSelection",
     "choose_remote_gpu",
+    "CandidateCut",
+    "CutReason",
+    "EvidenceWindow",
     "probe_video",
+    "build_candidate_cuts",
+    "build_evidence_windows",
     "detect_scenes",
+    "evidence_windows_to_scene_boundaries",
     "sample_frames",
+    "generate_storyboard",
+    "hydrate_evidence_windows",
+    "export_window_clips",
     "cosine_similarity",
     "group_entity_embeddings",
     "route_track",

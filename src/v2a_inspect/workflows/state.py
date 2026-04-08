@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from v2a_inspect.clients import DEFAULT_GEMINI_MODEL
+from v2a_inspect.contracts import CandidateCut, EvidenceWindow
 from v2a_inspect.pipeline.response_models import (
     GroupedAnalysis,
     RawTrack,
@@ -65,8 +66,11 @@ class InspectState(TypedDict, total=False):
     warnings: list[str]
     progress_messages: list[str]
     video_probe: VideoProbe
+    candidate_cuts: list[CandidateCut]
+    evidence_windows: list[EvidenceWindow]
     scene_boundaries: list[SceneBoundary]
     frame_batches: list[FrameBatch]
+    storyboard_path: str
     sam3_track_set: Sam3TrackSet
     entity_embeddings: list[EntityEmbedding]
     candidate_groups: list[CandidateGroup]

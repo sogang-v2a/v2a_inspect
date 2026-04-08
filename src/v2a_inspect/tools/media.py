@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 from pathlib import Path
 
+from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageStat
+
+from v2a_inspect.contracts import CandidateCut, CutReason, EvidenceWindow
+
 from .types import FrameBatch, SampledFrame, SceneBoundary, VideoProbe
+
+_DEFAULT_ANALYSIS_FPS = 2.0
+_DEFAULT_HARD_CUT_THRESHOLD = 0.35
+_DEFAULT_SOFT_CUT_THRESHOLD = 0.18
+_DEFAULT_MOTION_DELTA_THRESHOLD = 0.12
+_DEFAULT_MINIMUM_CUT_SPACING = 0.75
+_DEFAULT_MINIMUM_WINDOW_SECONDS = 1.0
 
 
 def probe_video(video_path: str) -> VideoProbe:
@@ -53,6 +65,214 @@ def probe_video(video_path: str) -> VideoProbe:
     )
 
 
+def build_candidate_cuts(
+    video_path: str,
+    *,
+    probe: VideoProbe | None = None,
+    target_scene_seconds: float = 5.0,
+    analysis_fps: float = _DEFAULT_ANALYSIS_FPS,
+    hard_cut_threshold: float = _DEFAULT_HARD_CUT_THRESHOLD,
+    soft_cut_threshold: float = _DEFAULT_SOFT_CUT_THRESHOLD,
+    minimum_spacing_seconds: float = _DEFAULT_MINIMUM_CUT_SPACING,
+) -> list[CandidateCut]:
+    resolved_probe = probe or probe_video(video_path)
+    if resolved_probe.duration_seconds <= 0.0:
+        return []
+
+    proposals: list[CandidateCut] = []
+    previous_difference: float | None = None
+    with tempfile.TemporaryDirectory(prefix=f"{Path(video_path).stem}_analysis_") as tmp_dir:
+        analysis_frames = _extract_analysis_frames(
+            video_path,
+            probe=resolved_probe,
+            output_dir=Path(tmp_dir),
+            analysis_fps=analysis_fps,
+        )
+        for previous_frame, current_frame in zip(
+            analysis_frames, analysis_frames[1:], strict=False
+        ):
+            difference = _frame_difference(
+                previous_frame.image_path,
+                current_frame.image_path,
+            )
+            reason_kind: str | None = None
+            if difference >= hard_cut_threshold:
+                reason_kind = "shot_boundary"
+            elif difference >= soft_cut_threshold:
+                reason_kind = "composition_change"
+            elif (
+                previous_difference is not None
+                and abs(difference - previous_difference)
+                >= _DEFAULT_MOTION_DELTA_THRESHOLD
+                and difference >= (soft_cut_threshold * 0.75)
+            ):
+                reason_kind = "motion_regime_change"
+
+            if reason_kind is not None:
+                proposals.append(
+                    CandidateCut(
+                        cut_id=f"proposal-{len(proposals)}",
+                        timestamp_seconds=round(current_frame.timestamp_seconds, 3),
+                        confidence=round(min(max(difference, 0.0), 1.0), 3),
+                        reasons=[
+                            CutReason(
+                                kind=reason_kind,
+                                confidence=round(min(max(difference, 0.0), 1.0), 3),
+                                rationale=f"frame_difference={difference:.3f}",
+                            )
+                        ],
+                    )
+                )
+            previous_difference = difference
+
+    proposals.extend(
+        _fallback_candidate_cuts(
+            duration_seconds=resolved_probe.duration_seconds,
+            target_scene_seconds=target_scene_seconds,
+        )
+    )
+    return merge_candidate_cuts(
+        proposals,
+        minimum_spacing_seconds=minimum_spacing_seconds,
+    )
+
+
+def merge_candidate_cuts(
+    candidate_cuts: list[CandidateCut],
+    *,
+    minimum_spacing_seconds: float = _DEFAULT_MINIMUM_CUT_SPACING,
+) -> list[CandidateCut]:
+    if not candidate_cuts:
+        return []
+    ordered = sorted(candidate_cuts, key=lambda cut: cut.timestamp_seconds)
+    merged: list[CandidateCut] = []
+    current_group: list[CandidateCut] = [ordered[0]]
+
+    for candidate in ordered[1:]:
+        if (
+            candidate.timestamp_seconds - current_group[-1].timestamp_seconds
+            <= minimum_spacing_seconds
+        ):
+            current_group.append(candidate)
+            continue
+        merged.append(_merge_cut_group(current_group, len(merged)))
+        current_group = [candidate]
+    merged.append(_merge_cut_group(current_group, len(merged)))
+    return merged
+
+
+def build_evidence_windows(
+    *,
+    probe: VideoProbe,
+    candidate_cuts: list[CandidateCut],
+    minimum_window_seconds: float = _DEFAULT_MINIMUM_WINDOW_SECONDS,
+) -> list[EvidenceWindow]:
+    accepted_cuts: list[CandidateCut] = []
+    last_boundary = 0.0
+    for cut in sorted(candidate_cuts, key=lambda item: item.timestamp_seconds):
+        if cut.timestamp_seconds <= 0.0 or cut.timestamp_seconds >= probe.duration_seconds:
+            continue
+        if cut.timestamp_seconds - last_boundary < minimum_window_seconds:
+            continue
+        if probe.duration_seconds - cut.timestamp_seconds < minimum_window_seconds * 0.5:
+            continue
+        accepted_cuts.append(cut)
+        last_boundary = cut.timestamp_seconds
+
+    boundaries = [0.0, *[cut.timestamp_seconds for cut in accepted_cuts], probe.duration_seconds]
+    windows: list[EvidenceWindow] = []
+    for index, (start_time, end_time) in enumerate(
+        zip(boundaries, boundaries[1:], strict=False)
+    ):
+        previous_cut = accepted_cuts[index - 1] if index > 0 else None
+        next_cut = accepted_cuts[index] if index < len(accepted_cuts) else None
+        cut_refs = [
+            cut.cut_id
+            for cut in (previous_cut, next_cut)
+            if cut is not None
+        ]
+        reason_labels = [
+            reason.kind
+            for cut in (previous_cut, next_cut)
+            if cut is not None
+            for reason in cut.reasons
+        ]
+        rationale = (
+            f"window created from {', '.join(reason_labels)}"
+            if reason_labels
+            else "window created from fallback coverage"
+        )
+        windows.append(
+            EvidenceWindow(
+                window_id=f"window-{index:04d}",
+                start_time=round(start_time, 3),
+                end_time=round(end_time, 3),
+                cut_refs=cut_refs,
+                rationale=rationale,
+            )
+        )
+    return windows
+
+
+def evidence_windows_to_scene_boundaries(
+    evidence_windows: list[EvidenceWindow],
+    *,
+    candidate_cuts: list[CandidateCut] | None = None,
+) -> list[SceneBoundary]:
+    cut_by_id = {
+        candidate.cut_id: candidate
+        for candidate in candidate_cuts or []
+    }
+    boundaries: list[SceneBoundary] = []
+    for index, window in enumerate(evidence_windows):
+        reason_kinds = {
+            reason.kind
+            for cut_ref in window.cut_refs
+            for reason in cut_by_id.get(cut_ref, CandidateCut(cut_id=cut_ref, timestamp_seconds=window.start_time, confidence=0.0)).reasons
+        }
+        strategy = (
+            "ffmpeg_scene_detect"
+            if any(kind != "fallback_window" for kind in reason_kinds)
+            else "fixed_window"
+        )
+        boundaries.append(
+            SceneBoundary(
+                scene_index=index,
+                start_seconds=window.start_time,
+                end_seconds=window.end_time,
+                strategy=strategy,
+            )
+        )
+    return boundaries
+
+
+def hydrate_evidence_windows(
+    evidence_windows: list[EvidenceWindow],
+    frame_batches: list[FrameBatch],
+    *,
+    storyboard_path: str | None = None,
+    clip_paths_by_window: dict[str, str] | None = None,
+) -> list[EvidenceWindow]:
+    hydrated: list[EvidenceWindow] = []
+    for index, window in enumerate(evidence_windows):
+        batch = frame_batches[index] if index < len(frame_batches) else None
+        frame_ids = [frame.image_path for frame in batch.frames] if batch else []
+        artifact_refs = list(window.artifact_refs)
+        if storyboard_path is not None:
+            artifact_refs.append(storyboard_path)
+        if clip_paths_by_window and window.window_id in clip_paths_by_window:
+            artifact_refs.append(clip_paths_by_window[window.window_id])
+        hydrated.append(
+            window.model_copy(
+                update={
+                    "sampled_frame_ids": frame_ids,
+                    "artifact_refs": artifact_refs,
+                }
+            )
+        )
+    return hydrated
+
+
 def detect_scenes(
     video_path: str,
     *,
@@ -63,24 +283,19 @@ def detect_scenes(
     if resolved_probe.duration_seconds <= 0.0:
         return [SceneBoundary(scene_index=0, start_seconds=0.0, end_seconds=0.0)]
 
-    scenes: list[SceneBoundary] = []
-    start = 0.0
-    scene_index = 0
-    while start < resolved_probe.duration_seconds:
-        end = min(start + target_scene_seconds, resolved_probe.duration_seconds)
-        scenes.append(
-            SceneBoundary(
-                scene_index=scene_index,
-                start_seconds=round(start, 3),
-                end_seconds=round(end, 3),
-                strategy="fixed_window",
-            )
-        )
-        if end >= resolved_probe.duration_seconds:
-            break
-        start = end
-        scene_index += 1
-    return scenes
+    candidate_cuts = build_candidate_cuts(
+        video_path,
+        probe=resolved_probe,
+        target_scene_seconds=target_scene_seconds,
+    )
+    evidence_windows = build_evidence_windows(
+        probe=resolved_probe,
+        candidate_cuts=candidate_cuts,
+    )
+    return evidence_windows_to_scene_boundaries(
+        evidence_windows,
+        candidate_cuts=candidate_cuts,
+    )
 
 
 def sample_frames(
@@ -112,6 +327,79 @@ def sample_frames(
             )
         frame_batches.append(FrameBatch(scene_index=scene.scene_index, frames=frames))
     return frame_batches
+
+
+def generate_storyboard(
+    frame_batches: list[FrameBatch],
+    *,
+    output_path: str,
+    columns: int = 3,
+    tile_size: tuple[int, int] = (220, 124),
+) -> str:
+    all_frames = [frame for batch in frame_batches for frame in batch.frames]
+    if not all_frames:
+        raise ValueError("Storyboard requires at least one sampled frame.")
+
+    width, height = tile_size
+    rows = (len(all_frames) + columns - 1) // columns
+    canvas = Image.new("RGB", (columns * width, rows * (height + 24)), color=(20, 20, 20))
+    draw = ImageDraw.Draw(canvas)
+
+    for index, frame in enumerate(all_frames):
+        with Image.open(frame.image_path) as image:
+            tile = ImageOps.contain(image.convert("RGB"), tile_size)
+            x = (index % columns) * width
+            y = (index // columns) * (height + 24)
+            canvas.paste(tile, (x, y))
+            draw.text(
+                (x + 6, y + height + 4),
+                f"scene {frame.scene_index} @ {frame.timestamp_seconds:.2f}s",
+                fill=(235, 235, 235),
+            )
+
+    resolved_path = Path(output_path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(resolved_path, format="JPEG")
+    return str(resolved_path)
+
+
+def export_window_clips(
+    video_path: str,
+    evidence_windows: list[EvidenceWindow],
+    *,
+    output_dir: str,
+    max_windows: int | None = None,
+) -> dict[str, str]:
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    clip_paths: dict[str, str] = {}
+    selected_windows = evidence_windows[:max_windows] if max_windows is not None else evidence_windows
+    for window in selected_windows:
+        duration = max(window.end_time - window.start_time, 0.0)
+        if duration <= 0.0:
+            continue
+        clip_path = output_root / f"{window.window_id}.mp4"
+        command = [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{window.start_time:.3f}",
+            "-i",
+            video_path,
+            "-t",
+            f"{duration:.3f}",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(clip_path),
+        ]
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        clip_paths[window.window_id] = str(clip_path)
+    return clip_paths
 
 
 def _extract_single_frame(
@@ -176,6 +464,105 @@ def _extract_single_frame(
                 capture_output=True,
                 text=True,
             )
+
+
+def _extract_analysis_frames(
+    video_path: str,
+    *,
+    probe: VideoProbe,
+    output_dir: Path,
+    analysis_fps: float,
+) -> list[SampledFrame]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    effective_fps = max(0.5, min(analysis_fps, probe.fps or analysis_fps, 4.0))
+    pattern = output_dir / "analysis_%06d.jpg"
+    command = [
+        "ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        video_path,
+        "-vf",
+        f"fps={effective_fps}",
+        str(pattern),
+    ]
+    subprocess.run(command, check=True, capture_output=True, text=True)
+    frame_paths = sorted(output_dir.glob("analysis_*.jpg"))
+    if not frame_paths:
+        fallback_path = output_dir / "analysis_000001.jpg"
+        _extract_single_frame(video_path, 0.0, fallback_path)
+        frame_paths = [fallback_path]
+    return [
+        SampledFrame(
+            scene_index=0,
+            timestamp_seconds=round(min(index / effective_fps, probe.duration_seconds), 3),
+            image_path=str(path),
+        )
+        for index, path in enumerate(frame_paths)
+    ]
+
+
+def _frame_difference(previous_image_path: str, current_image_path: str) -> float:
+    with Image.open(previous_image_path) as previous_image, Image.open(
+        current_image_path
+    ) as current_image:
+        previous_gray = ImageOps.grayscale(previous_image.resize((64, 64)))
+        current_gray = ImageOps.grayscale(current_image.resize((64, 64)))
+        difference = ImageChops.difference(previous_gray, current_gray)
+        return float(ImageStat.Stat(difference).mean[0] / 255.0)
+
+
+def _fallback_candidate_cuts(
+    *,
+    duration_seconds: float,
+    target_scene_seconds: float,
+) -> list[CandidateCut]:
+    if target_scene_seconds <= 0:
+        return []
+    cuts: list[CandidateCut] = []
+    timestamp = target_scene_seconds
+    while timestamp < duration_seconds:
+        cuts.append(
+            CandidateCut(
+                cut_id=f"fallback-{len(cuts)}",
+                timestamp_seconds=round(timestamp, 3),
+                confidence=0.2,
+                reasons=[
+                    CutReason(
+                        kind="fallback_window",
+                        confidence=0.2,
+                        rationale=f"target_scene_seconds={target_scene_seconds}",
+                    )
+                ],
+            )
+        )
+        timestamp += target_scene_seconds
+    return cuts
+
+
+def _merge_cut_group(cut_group: list[CandidateCut], group_index: int) -> CandidateCut:
+    total_confidence = sum(max(cut.confidence, 0.001) for cut in cut_group)
+    weighted_timestamp = sum(
+        cut.timestamp_seconds * max(cut.confidence, 0.001)
+        for cut in cut_group
+    ) / total_confidence
+    reasons: list[CutReason] = []
+    seen_reasons: set[tuple[str, str]] = set()
+    for cut in cut_group:
+        for reason in cut.reasons:
+            key = (reason.kind, reason.rationale)
+            if key in seen_reasons:
+                continue
+            seen_reasons.add(key)
+            reasons.append(reason)
+    confidence = max(cut.confidence for cut in cut_group)
+    return CandidateCut(
+        cut_id=f"cut-{group_index:04d}",
+        timestamp_seconds=round(weighted_timestamp, 3),
+        confidence=round(confidence, 3),
+        reasons=reasons,
+    )
 
 
 def _scene_sample_timestamps(
