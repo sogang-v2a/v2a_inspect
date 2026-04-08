@@ -34,9 +34,33 @@ class EvidenceWindow(BaseModel):
     rationale: str = ""
 
 
+class TrackCrop(BaseModel):
+    crop_id: str
+    track_id: str
+    scene_index: int = Field(ge=0)
+    frame_path: str
+    crop_path: str
+    timestamp_seconds: float = Field(ge=0.0)
+    bbox_xyxy: list[float] = Field(default_factory=list, min_length=4, max_length=4)
+    mask_rle: str | None = None
+
+
 class LabelCandidate(BaseModel):
     label: str
     score: float = Field(ge=0.0, le=1.0)
+
+
+class IdentityEdge(BaseModel):
+    edge_id: str
+    source_track_id: str
+    target_track_id: str
+    similarity: float = Field(ge=0.0, le=1.0)
+    same_window: bool = False
+    temporal_gap_seconds: float = Field(ge=0.0)
+    label_compatibility: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    accepted: bool = False
+    rationale: str = ""
 
 
 class PhysicalSourceTrack(BaseModel):

@@ -1,4 +1,12 @@
-from v2a_inspect.contracts import CandidateCut, CutReason, EvidenceWindow
+from v2a_inspect.contracts import (
+    CandidateCut,
+    CutReason,
+    EvidenceWindow,
+    IdentityEdge,
+    LabelCandidate,
+    PhysicalSourceTrack,
+    TrackCrop,
+)
 
 from .grouping import cosine_similarity, group_entity_embeddings
 from .media import (
@@ -39,6 +47,10 @@ __all__ = [
     "CandidateCut",
     "CutReason",
     "EvidenceWindow",
+    "IdentityEdge",
+    "LabelCandidate",
+    "PhysicalSourceTrack",
+    "TrackCrop",
     "probe_video",
     "build_candidate_cuts",
     "build_evidence_windows",

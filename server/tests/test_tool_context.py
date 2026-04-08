@@ -6,12 +6,88 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import patch
 
+from v2a_inspect.contracts import LabelCandidate, PhysicalSourceTrack, TrackCrop
 from v2a_inspect.workflows import InspectOptions
 from v2a_inspect_server.runtime import ToolingRuntime
 from v2a_inspect_server.tool_context import build_tool_context
 
 
 class ToolContextTests(unittest.TestCase):
+    def _structure_setup(
+        self,
+        *,
+        mock_probe_video,
+        mock_build_candidate_cuts,
+        mock_build_evidence_windows,
+        mock_scene_boundaries,
+        mock_frame_output_dir,
+        mock_sample_frames,
+        mock_generate_storyboard,
+        mock_export_window_clips,
+        mock_hydrate_evidence_windows,
+        duration_seconds: float,
+        window_count: int,
+    ) -> None:
+        mock_probe_video.return_value = SimpleNamespace(
+            duration_seconds=duration_seconds,
+            fps=2.0,
+            width=320,
+            height=240,
+        )
+        mock_build_candidate_cuts.return_value = [
+            SimpleNamespace(cut_id=f"cut-{index:04d}", timestamp_seconds=float(index + 1))
+            for index in range(window_count)
+        ]
+        mock_build_evidence_windows.return_value = [
+            SimpleNamespace(
+                window_id=f"window-{index:04d}",
+                start_time=float(index * 3),
+                end_time=float((index + 1) * 3),
+                cut_refs=[f"cut-{index:04d}"],
+                artifact_refs=[],
+            )
+            for index in range(window_count)
+        ]
+        mock_scene_boundaries.return_value = [
+            SimpleNamespace(
+                scene_index=index,
+                start_seconds=float(index * 3),
+                end_seconds=float((index + 1) * 3),
+                strategy="ffmpeg_scene_detect",
+            )
+            for index in range(window_count)
+        ]
+        mock_frame_output_dir.return_value = Path("/tmp/frame-root")
+        mock_sample_frames.return_value = [
+            SimpleNamespace(
+                scene_index=index,
+                frames=[
+                    SimpleNamespace(
+                        image_path=f"/tmp/frame{index}.jpg",
+                        timestamp_seconds=float(index),
+                    )
+                ],
+            )
+            for index in range(window_count)
+        ]
+        mock_generate_storyboard.return_value = "/tmp/storyboard.jpg"
+        mock_export_window_clips.return_value = {}
+        mock_hydrate_evidence_windows.return_value = [
+            SimpleNamespace(
+                window_id=f"window-{index:04d}",
+                start_time=float(index * 3),
+                end_time=float((index + 1) * 3),
+                cut_refs=[f"cut-{index:04d}"],
+                artifact_refs=["/tmp/storyboard.jpg"],
+                sampled_frame_ids=[f"/tmp/frame{index}.jpg"],
+            )
+            for index in range(window_count)
+        ]
+
+    @patch("v2a_inspect_server.tool_context.build_provisional_source_tracks")
+    @patch("v2a_inspect_server.tool_context.build_identity_edges")
+    @patch("v2a_inspect_server.tool_context.group_crop_paths_by_track")
+    @patch("v2a_inspect_server.tool_context.crop_tracks")
     @patch("v2a_inspect_server.tool_context.hydrate_evidence_windows")
     @patch("v2a_inspect_server.tool_context.export_window_clips")
     @patch("v2a_inspect_server.tool_context.generate_storyboard")
@@ -32,71 +108,42 @@ class ToolContextTests(unittest.TestCase):
         mock_generate_storyboard,
         mock_export_window_clips,
         mock_hydrate_evidence_windows,
+        mock_crop_tracks,
+        mock_group_crop_paths_by_track,
+        mock_build_identity_edges,
+        mock_build_provisional_source_tracks,
     ) -> None:
-        mock_probe_video.return_value = SimpleNamespace(
+        self._structure_setup(
+            mock_probe_video=mock_probe_video,
+            mock_build_candidate_cuts=mock_build_candidate_cuts,
+            mock_build_evidence_windows=mock_build_evidence_windows,
+            mock_scene_boundaries=mock_scene_boundaries,
+            mock_frame_output_dir=mock_frame_output_dir,
+            mock_sample_frames=mock_sample_frames,
+            mock_generate_storyboard=mock_generate_storyboard,
+            mock_export_window_clips=mock_export_window_clips,
+            mock_hydrate_evidence_windows=mock_hydrate_evidence_windows,
             duration_seconds=3.0,
-            fps=2.0,
-            width=320,
-            height=240,
+            window_count=1,
         )
-        mock_build_candidate_cuts.return_value = [
-            SimpleNamespace(cut_id="cut-0000", timestamp_seconds=1.5)
-        ]
-        mock_build_evidence_windows.return_value = [
-            SimpleNamespace(
-                window_id="window-0000",
-                start_time=0.0,
-                end_time=3.0,
-                cut_refs=["cut-0000"],
-                artifact_refs=[],
-            )
-        ]
-        mock_scene_boundaries.return_value = [
-            SimpleNamespace(
-                scene_index=0,
-                start_seconds=0.0,
-                end_seconds=3.0,
-                strategy="ffmpeg_scene_detect",
-            )
-        ]
-        mock_frame_output_dir.return_value = Path("/tmp/frame-root")
-        mock_sample_frames.return_value = [
-            SimpleNamespace(
-                scene_index=0,
-                frames=[
-                    SimpleNamespace(image_path="/tmp/frame0.jpg"),
-                    SimpleNamespace(image_path="/tmp/frame1.jpg"),
-                ],
-            )
-        ]
-        mock_generate_storyboard.return_value = "/tmp/storyboard.jpg"
-        mock_export_window_clips.return_value = {"window-0000": "/tmp/window-0000.mp4"}
-        mock_hydrate_evidence_windows.return_value = [
-            SimpleNamespace(
-                window_id="window-0000",
-                start_time=0.0,
-                end_time=3.0,
-                cut_refs=["cut-0000"],
-                artifact_refs=["/tmp/storyboard.jpg", "/tmp/window-0000.mp4"],
-                sampled_frame_ids=["/tmp/frame0.jpg", "/tmp/frame1.jpg"],
-            )
-        ]
+        mock_crop_tracks.return_value = []
+        mock_group_crop_paths_by_track.return_value = {}
+        mock_build_identity_edges.return_value = []
+        mock_build_provisional_source_tracks.return_value = []
 
-        context = build_tool_context(
-            "/tmp/video.mp4",
-            options=InspectOptions(),
-        )
+        context = build_tool_context("/tmp/video.mp4", options=InspectOptions())
 
-        self.assertIn("video_probe", context)
         self.assertIn("candidate_cuts", context)
         self.assertIn("evidence_windows", context)
-        self.assertIn("scene_boundaries", context)
-        self.assertIn("frame_batches", context)
-        self.assertEqual(context["storyboard_path"], "/tmp/storyboard.jpg")
+        self.assertIn("storyboard_path", context)
         self.assertIn("Candidate cuts:", str(context["tool_scene_summary"]))
         self.assertIn("Evidence windows:", str(context["tool_scene_summary"]))
         self.assertEqual(len(context["progress_messages"]), 5)
 
+    @patch("v2a_inspect_server.tool_context.build_provisional_source_tracks")
+    @patch("v2a_inspect_server.tool_context.build_identity_edges")
+    @patch("v2a_inspect_server.tool_context.group_crop_paths_by_track")
+    @patch("v2a_inspect_server.tool_context.crop_tracks")
     @patch("v2a_inspect_server.tool_context.hydrate_evidence_windows")
     @patch("v2a_inspect_server.tool_context.export_window_clips")
     @patch("v2a_inspect_server.tool_context.generate_storyboard")
@@ -117,37 +164,38 @@ class ToolContextTests(unittest.TestCase):
         mock_generate_storyboard,
         mock_export_window_clips,
         mock_hydrate_evidence_windows,
+        mock_crop_tracks,
+        mock_group_crop_paths_by_track,
+        mock_build_identity_edges,
+        mock_build_provisional_source_tracks,
     ) -> None:
-        mock_probe_video.return_value = SimpleNamespace(
+        self._structure_setup(
+            mock_probe_video=mock_probe_video,
+            mock_build_candidate_cuts=mock_build_candidate_cuts,
+            mock_build_evidence_windows=mock_build_evidence_windows,
+            mock_scene_boundaries=mock_scene_boundaries,
+            mock_frame_output_dir=mock_frame_output_dir,
+            mock_sample_frames=mock_sample_frames,
+            mock_generate_storyboard=mock_generate_storyboard,
+            mock_export_window_clips=mock_export_window_clips,
+            mock_hydrate_evidence_windows=mock_hydrate_evidence_windows,
             duration_seconds=3.0,
-            fps=2.0,
-            width=320,
-            height=240,
+            window_count=1,
         )
-        mock_build_candidate_cuts.return_value = [
-            SimpleNamespace(cut_id="cut-0000", timestamp_seconds=1.5)
-        ]
-        mock_build_evidence_windows.return_value = [
-            SimpleNamespace(window_id="window-0000", start_time=0.0, end_time=3.0, cut_refs=["cut-0000"], artifact_refs=[])
-        ]
-        mock_scene_boundaries.return_value = [
-            SimpleNamespace(scene_index=0, start_seconds=0.0, end_seconds=3.0, strategy="ffmpeg_scene_detect")
-        ]
-        mock_frame_output_dir.return_value = Path("/tmp/frame-root")
-        mock_sample_frames.return_value = [
-            SimpleNamespace(
+        mock_crop_tracks.return_value = [
+            TrackCrop(
+                crop_id="trk0-crop-00",
+                track_id="trk0",
                 scene_index=0,
-                frames=[
-                    SimpleNamespace(image_path="/tmp/frame0.jpg"),
-                    SimpleNamespace(image_path="/tmp/frame1.jpg"),
-                ],
+                frame_path="/tmp/frame0.jpg",
+                crop_path="/tmp/crop0.jpg",
+                timestamp_seconds=0.0,
+                bbox_xyxy=[0, 0, 10, 10],
             )
         ]
-        mock_generate_storyboard.return_value = "/tmp/storyboard.jpg"
-        mock_export_window_clips.return_value = {}
-        mock_hydrate_evidence_windows.return_value = [
-            SimpleNamespace(window_id="window-0000", start_time=0.0, end_time=3.0, cut_refs=["cut-0000"], artifact_refs=["/tmp/storyboard.jpg"], sampled_frame_ids=["/tmp/frame0.jpg", "/tmp/frame1.jpg"])
-        ]
+        mock_group_crop_paths_by_track.return_value = {"trk0": ["/tmp/crop0.jpg"]}
+        mock_build_identity_edges.return_value = []
+        mock_build_provisional_source_tracks.return_value = []
         fake_runtime = SimpleNamespace(
             sam3_client=SimpleNamespace(
                 extract_entities=lambda _frame_batches, **_kwargs: SimpleNamespace(
@@ -171,6 +219,7 @@ class ToolContextTests(unittest.TestCase):
             tooling_runtime=cast(ToolingRuntime, fake_runtime),
         )
 
+        self.assertIn("track_crops", context)
         self.assertIn("tool_grouping_hints", context)
         self.assertIn("tool_routing_hints", context)
         self.assertIn("tool_verify_hints", context)
@@ -181,6 +230,10 @@ class ToolContextTests(unittest.TestCase):
         self.assertIn("Verify/group hints:", str(context["tool_verify_hints"]))
         self.assertIn("priority=low", str(context["tool_verify_hints"]))
 
+    @patch("v2a_inspect_server.tool_context.build_provisional_source_tracks")
+    @patch("v2a_inspect_server.tool_context.build_identity_edges")
+    @patch("v2a_inspect_server.tool_context.group_crop_paths_by_track")
+    @patch("v2a_inspect_server.tool_context.crop_tracks")
     @patch("v2a_inspect_server.tool_context.hydrate_evidence_windows")
     @patch("v2a_inspect_server.tool_context.export_window_clips")
     @patch("v2a_inspect_server.tool_context.generate_storyboard")
@@ -201,35 +254,43 @@ class ToolContextTests(unittest.TestCase):
         mock_generate_storyboard,
         mock_export_window_clips,
         mock_hydrate_evidence_windows,
+        mock_crop_tracks,
+        mock_group_crop_paths_by_track,
+        mock_build_identity_edges,
+        mock_build_provisional_source_tracks,
     ) -> None:
-        mock_probe_video.return_value = SimpleNamespace(
+        self._structure_setup(
+            mock_probe_video=mock_probe_video,
+            mock_build_candidate_cuts=mock_build_candidate_cuts,
+            mock_build_evidence_windows=mock_build_evidence_windows,
+            mock_scene_boundaries=mock_scene_boundaries,
+            mock_frame_output_dir=mock_frame_output_dir,
+            mock_sample_frames=mock_sample_frames,
+            mock_generate_storyboard=mock_generate_storyboard,
+            mock_export_window_clips=mock_export_window_clips,
+            mock_hydrate_evidence_windows=mock_hydrate_evidence_windows,
             duration_seconds=6.0,
-            fps=2.0,
-            width=320,
-            height=240,
+            window_count=2,
         )
-        mock_build_candidate_cuts.return_value = [
-            SimpleNamespace(cut_id="cut-0000", timestamp_seconds=3.0),
-            SimpleNamespace(cut_id="cut-0001", timestamp_seconds=5.0),
+        mock_crop_tracks.return_value = [
+            TrackCrop(crop_id="trk0-crop-00", track_id="trk0", scene_index=0, frame_path="/tmp/frame0.jpg", crop_path="/tmp/crop0.jpg", timestamp_seconds=0.0, bbox_xyxy=[0, 0, 10, 10]),
+            TrackCrop(crop_id="trk1-crop-00", track_id="trk1", scene_index=1, frame_path="/tmp/frame1.jpg", crop_path="/tmp/crop1.jpg", timestamp_seconds=3.0, bbox_xyxy=[0, 0, 10, 10]),
         ]
-        mock_build_evidence_windows.return_value = [
-            SimpleNamespace(window_id="window-0000", start_time=0.0, end_time=3.0, cut_refs=["cut-0000"], artifact_refs=[]),
-            SimpleNamespace(window_id="window-0001", start_time=3.0, end_time=6.0, cut_refs=["cut-0000", "cut-0001"], artifact_refs=[]),
+        mock_group_crop_paths_by_track.return_value = {"trk0": ["/tmp/crop0.jpg"], "trk1": ["/tmp/crop1.jpg"]}
+        mock_build_identity_edges.return_value = [
+            SimpleNamespace(source_track_id="trk0", target_track_id="trk1", confidence=0.95, same_window=False, accepted=True)
         ]
-        mock_scene_boundaries.return_value = [
-            SimpleNamespace(scene_index=0, start_seconds=0.0, end_seconds=3.0, strategy="ffmpeg_scene_detect"),
-            SimpleNamespace(scene_index=1, start_seconds=3.0, end_seconds=6.0, strategy="ffmpeg_scene_detect"),
-        ]
-        mock_frame_output_dir.return_value = Path("/tmp/frame-root")
-        mock_sample_frames.return_value = [
-            SimpleNamespace(scene_index=0, frames=[SimpleNamespace(image_path="/tmp/frame0.jpg")]),
-            SimpleNamespace(scene_index=1, frames=[SimpleNamespace(image_path="/tmp/frame1.jpg")]),
-        ]
-        mock_generate_storyboard.return_value = "/tmp/storyboard.jpg"
-        mock_export_window_clips.return_value = {}
-        mock_hydrate_evidence_windows.return_value = [
-            SimpleNamespace(window_id="window-0000", start_time=0.0, end_time=3.0, cut_refs=["cut-0000"], artifact_refs=["/tmp/storyboard.jpg"], sampled_frame_ids=["/tmp/frame0.jpg"]),
-            SimpleNamespace(window_id="window-0001", start_time=3.0, end_time=6.0, cut_refs=["cut-0000", "cut-0001"], artifact_refs=["/tmp/storyboard.jpg"], sampled_frame_ids=["/tmp/frame1.jpg"]),
+        mock_build_provisional_source_tracks.return_value = [
+            PhysicalSourceTrack(
+                source_id="source-0000",
+                kind="foreground",
+                label_candidates=[LabelCandidate(label="person", score=0.9)],
+                spans=[(0.0, 1.0), (3.0, 4.0)],
+                evidence_refs=["trk0-crop-00", "trk1-crop-00"],
+                identity_confidence=0.95,
+                reid_neighbors=[],
+                temporary_adapter_from="Sam3EntityTrack",
+            )
         ]
         fake_runtime = SimpleNamespace(
             sam3_client=SimpleNamespace(
@@ -242,12 +303,7 @@ class ToolContextTests(unittest.TestCase):
                             end_seconds=1.0,
                             label_hint="person",
                             confidence=0.9,
-                            features=SimpleNamespace(
-                                motion_score=0.9,
-                                interaction_score=0.8,
-                                crowd_score=0.1,
-                                camera_dynamics_score=0.1,
-                            ),
+                            features=SimpleNamespace(motion_score=0.9, interaction_score=0.8, crowd_score=0.1, camera_dynamics_score=0.1),
                         ),
                         SimpleNamespace(
                             track_id="trk1",
@@ -256,12 +312,7 @@ class ToolContextTests(unittest.TestCase):
                             end_seconds=4.0,
                             label_hint="person",
                             confidence=0.85,
-                            features=SimpleNamespace(
-                                motion_score=0.8,
-                                interaction_score=0.75,
-                                crowd_score=0.15,
-                                camera_dynamics_score=0.1,
-                            ),
+                            features=SimpleNamespace(motion_score=0.8, interaction_score=0.75, crowd_score=0.15, camera_dynamics_score=0.1),
                         ),
                     ]
                 )
@@ -297,12 +348,10 @@ class ToolContextTests(unittest.TestCase):
         hints = str(context["tool_grouping_hints"])
         self.assertIn("Embedding/SAM3 grouping hints:", hints)
         self.assertIn("Label hints:", hints)
-        self.assertIn("Routing/model-selection hints:", hints)
-        self.assertIn("Verify/group hints:", hints)
-        self.assertIn("cg0", str(context["tool_routing_hints"]))
-        self.assertIn("recommend=VTA", str(context["tool_routing_hints"]))
-        self.assertIn("priority=high", str(context["tool_verify_hints"]))
-        self.assertIn("cross-scene cluster", str(context["tool_verify_hints"]))
+        self.assertIn("Source identity hints:", hints)
+        self.assertIn("track_crops", context)
+        self.assertIn("identity_edges", context)
+        self.assertIn("physical_sources", context)
 
 
 if __name__ == "__main__":

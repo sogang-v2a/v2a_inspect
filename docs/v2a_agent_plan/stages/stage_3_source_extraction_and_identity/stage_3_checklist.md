@@ -6,38 +6,38 @@ Use this checklist as the stage exit gate. If a blocking item is still incomplet
 
 ## Extraction and crops
 
-- [ ] Implement real crop generation from masks or boxes.
-- [ ] Store crop artifacts with stable IDs.
-- [ ] Retain source-to-frame provenance.
+- [x] Implement real crop generation from masks or boxes.
+- [x] Store crop artifacts with stable IDs.
+- [x] Retain source-to-frame provenance.
 
 ## Embeddings and labels
 
-- [ ] Run DINOv2 on crops only.
-- [ ] Run SigLIP2 on crops only.
-- [ ] Store multiple label candidates with scores.
+- [x] Run DINOv2 on crops only.
+- [x] Run SigLIP2 on crops only.
+- [x] Store multiple label candidates with scores.
 
 ## Identity
 
-- [ ] Implement a provisional re-id graph or equivalent source-track builder.
-- [ ] Store identity confidence.
-- [ ] Prevent same-window over-merging with stricter thresholds.
-- [ ] Preserve unresolved ambiguity instead of forcing merges.
+- [x] Implement a provisional re-id graph or equivalent source-track builder.
+- [x] Store identity confidence.
+- [x] Prevent same-window over-merging with stricter thresholds.
+- [x] Preserve unresolved ambiguity instead of forcing merges.
 
 ## Recovery path
 
-- [ ] Separate manual text recovery from default extraction.
-- [ ] Document when recovery may be invoked.
+- [x] Separate manual text recovery from default extraction.
+- [x] Document when recovery may be invoked.
 
 ## Tests
 
-- [ ] Add crop tests.
-- [ ] Add re-id tests.
-- [ ] Add crop-based embedding tests.
-- [ ] Add label-scoring tests.
+- [x] Add crop tests.
+- [x] Add re-id tests.
+- [x] Add crop-based embedding tests.
+- [x] Add label-scoring tests.
 
 ## Final sign-off
 
-- [ ] Stage outputs are linked from the top-level README or docs index.
-- [ ] New or changed tests have been run.
-- [ ] Temporary adapters are labeled as temporary.
-- [ ] The next stage can name its inputs concretely rather than vaguely.
+- [x] Stage outputs are linked from the top-level README or docs index.
+- [x] New or changed tests have been run.
+- [x] Temporary adapters are labeled as temporary.
+- [x] The next stage can name its inputs concretely rather than vaguely.

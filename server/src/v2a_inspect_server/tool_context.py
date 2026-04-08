@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 from .settings import get_server_runtime_settings
+from v2a_inspect.contracts import IdentityEdge, LabelCandidate, PhysicalSourceTrack, TrackCrop
 from v2a_inspect.tools import (
     FrameBatch,
     Sam3EntityTrack,
@@ -14,7 +15,6 @@ from v2a_inspect.tools import (
     aggregate_group_routes,
     build_candidate_cuts,
     build_evidence_windows,
-    detect_scenes,
     evidence_windows_to_scene_boundaries,
     export_window_clips,
     generate_storyboard,
@@ -25,6 +25,9 @@ from v2a_inspect.tools import (
     sample_frames,
 )
 from v2a_inspect.workflows import InspectOptions
+
+from .crops import crop_tracks, group_crop_paths_by_track
+from .reid import build_identity_edges, build_provisional_source_tracks
 
 if TYPE_CHECKING:
     from v2a_inspect_server.runtime import ToolingRuntime
@@ -209,10 +212,16 @@ def _append_runtime_tool_evidence(
         )
 
         tracks_by_id = {track.track_id: track for track in normalized_tracks}
-        track_image_paths = _track_image_paths(
+        track_crops = crop_tracks(
             frame_batches=frame_batches,
             tracks=normalized_tracks,
+            output_dir=str(Path(context.get("storyboard_path", "")).parent / "crops"),
         )
+        context["track_crops"] = track_crops
+        progress_messages.append(
+            f"Tool pipeline: generated {len(track_crops)} track crops."
+        )
+        track_image_paths = group_crop_paths_by_track(track_crops)
         track_routing_decisions = _build_track_routing_decisions(normalized_tracks)
         group_objects: Sequence[object] = _singleton_groups_for_tracks(
             normalized_tracks
@@ -223,6 +232,24 @@ def _append_runtime_tool_evidence(
             if embedding_client is not None and label_client is not None:
                 embeddings = embedding_client.embed_images(track_image_paths)
                 context["entity_embeddings"] = embeddings
+                track_label_candidates = _score_track_label_candidates(
+                    label_client=label_client,
+                    track_image_paths=track_image_paths,
+                )
+                context["track_label_candidates"] = track_label_candidates
+                identity_edges = build_identity_edges(
+                    normalized_tracks,
+                    embeddings,
+                    label_candidates_by_track=track_label_candidates,
+                )
+                physical_sources = build_provisional_source_tracks(
+                    normalized_tracks,
+                    identity_edges,
+                    track_crops=track_crops,
+                    label_candidates_by_track=track_label_candidates,
+                )
+                context["identity_edges"] = identity_edges
+                context["physical_sources"] = physical_sources
                 candidate_groups = group_entity_embeddings(
                     embeddings,
                     tracks_by_id=tracks_by_id,
@@ -235,6 +262,10 @@ def _append_runtime_tool_evidence(
                 )
                 progress_messages.append(
                     f"Tool pipeline: proposed {len(candidate_groups.groups)} embedding-based groups."
+                )
+                context["tool_grouping_hints"] = _append_hint_section(
+                    context.get("tool_grouping_hints", ""),
+                    _identity_hints(identity_edges, physical_sources),
                 )
                 _append_group_label_hints(
                     context,
@@ -286,50 +317,21 @@ def _scene_prompt_candidates(
     frame_batches: Sequence[FrameBatch],
     label_client: _LabelClientLike,
 ) -> dict[int, list[str]]:
+    del label_client
     candidate_labels = [
         "person",
-        "man",
-        "woman",
-        "child",
         "cat",
         "dog",
-        "vehicle",
         "car",
-        "truck",
-        "bus",
-        "bicycle",
-        "motorcycle",
         "boat",
         "animal",
-        "bird",
-        "tree",
-        "plant",
-        "building",
-        "screen",
-        "laptop",
         "object",
-        "background",
     ]
-    prompts_by_scene: dict[int, list[str]] = {}
-    for batch in frame_batches:
-        image_paths = [frame.image_path for frame in batch.frames]
-        if not image_paths:
-            continue
-        scores = list(
-            label_client.score_image_labels(
-                image_paths=image_paths,
-                labels=candidate_labels,
-            )
-        )
-        prompts = [
-            score.label
-            for score in scores
-            if score.label != "background" and score.score >= 0.2
-        ][:3]
-        if not prompts:
-            prompts = ["object"]
-        prompts_by_scene[batch.scene_index] = prompts
-    return prompts_by_scene
+    return {
+        batch.scene_index: list(candidate_labels)
+        for batch in frame_batches
+        if batch.frames
+    }
 
 
 def _normalize_tracks(tracks: Sequence[object]) -> list[Sam3EntityTrack]:
@@ -442,23 +444,6 @@ def _grouping_hints_from_tracks(tracks: Sequence[Sam3EntityTrack]) -> str:
     return "\n".join(["SAM3 track hints:", *lines])
 
 
-def _track_image_paths(
-    *,
-    frame_batches: Sequence[FrameBatch],
-    tracks: Sequence[Sam3EntityTrack],
-) -> dict[str, list[str]]:
-    images_by_scene = {
-        batch.scene_index: [frame.image_path for frame in batch.frames]
-        for batch in frame_batches
-    }
-    track_paths: dict[str, list[str]] = {}
-    for track in tracks:
-        image_paths = images_by_scene.get(track.scene_index, [])
-        if image_paths:
-            track_paths[track.track_id] = image_paths
-    return track_paths
-
-
 def _grouping_hints_from_groups(
     groups: Sequence[object],
     *,
@@ -481,6 +466,45 @@ def _grouping_hints_from_groups(
             f"- {_group_id(group)}: members={', '.join(member_summaries)} confidence={_group_confidence(group):.2f}"
         )
     return "\n".join(["Embedding/SAM3 grouping hints:", *lines])
+
+
+def _score_track_label_candidates(
+    *,
+    label_client: _LabelClientLike,
+    track_image_paths: dict[str, list[str]],
+) -> dict[str, list[LabelCandidate]]:
+    candidates_by_track: dict[str, list[LabelCandidate]] = {}
+    for track_id, image_paths in track_image_paths.items():
+        scores = label_client.score_image_labels(
+            image_paths=image_paths,
+            labels=["person", "vehicle", "animal", "object", "background"],
+        )
+        candidates_by_track[track_id] = [
+            LabelCandidate(label=score.label, score=round(score.score, 4))
+            for score in scores[:5]
+        ]
+    return candidates_by_track
+
+
+def _identity_hints(
+    identity_edges: Sequence[IdentityEdge],
+    physical_sources: Sequence[PhysicalSourceTrack],
+) -> str:
+    if not identity_edges and not physical_sources:
+        return ""
+    lines = ["Source identity hints:"]
+    for source in physical_sources:
+        lines.append(
+            f"- {source.source_id}: spans={len(source.spans)} evidence={len(source.evidence_refs)} identity_confidence={source.identity_confidence:.2f}"
+        )
+    ambiguous_edges = [edge for edge in identity_edges if not edge.accepted]
+    if ambiguous_edges:
+        lines.append("Ambiguous identity edges:")
+        for edge in ambiguous_edges[:5]:
+            lines.append(
+                f"- {edge.source_track_id}->{edge.target_track_id}: confidence={edge.confidence:.2f} same_window={edge.same_window}"
+            )
+    return "\n".join(lines)
 
 
 def _build_track_routing_decisions(
