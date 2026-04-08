@@ -123,6 +123,7 @@ class GenerationGroup(BaseModel):
 
 
 class ValidationIssue(BaseModel):
+    issue_id: str | None = None
     issue_type: Literal[
         "low_confidence_identity_merge",
         "suspicious_cross_scene_generation_merge",
@@ -176,6 +177,7 @@ class ReviewMetadata(BaseModel):
 class ValidationReport(BaseModel):
     status: Literal["pass", "pass_with_warnings", "fail"]
     issues: list[ValidationIssue] = Field(default_factory=list)
+    reviewed_issue_ids: list[str] = Field(default_factory=list)
 
 
 class ArtifactRefs(BaseModel):

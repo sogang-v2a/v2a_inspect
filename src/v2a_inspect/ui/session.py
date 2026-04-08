@@ -16,8 +16,10 @@ SESSION_DEFAULTS: tuple[str, ...] = (
     "video_path",
     "scene_analysis",
     "grouped",
+    "multitrack_bundle",
     "inspect_state",
     "clip_dir",
+    "review_bundle_path",
 )
 
 
@@ -71,7 +73,9 @@ def cleanup_stale_temp(
     max_age_seconds: int | None = None,
 ) -> None:
     client_settings = get_client_runtime_settings()
-    resolved_max_age = max_age_seconds or client_settings.ui_temp_cleanup_max_age_seconds
+    resolved_max_age = (
+        max_age_seconds or client_settings.ui_temp_cleanup_max_age_seconds
+    )
     now = time.time()
     tmp_base = tempfile.gettempdir()
 

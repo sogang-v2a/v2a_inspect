@@ -7,6 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from v2a_inspect.observability import WorkflowTraceContext
+from v2a_inspect.review import persist_bundle
 from v2a_inspect.runner import get_grouped_analysis, run_inspect
 from v2a_inspect.settings import settings
 from v2a_inspect.ui.auth import require_authentication
@@ -147,6 +148,12 @@ def run_analysis(video_path: str, options: InspectOptions) -> None:
                 st.session_state.inspect_state = state
                 st.session_state.scene_analysis = scene_analysis
                 st.session_state.grouped = grouped
+                bundle = state.get("multitrack_bundle")
+                if bundle is not None:
+                    bundle_path = Path(clip_dir) / "review_bundle.json"
+                    persist_bundle(bundle, bundle_path)
+                    st.session_state.multitrack_bundle = bundle
+                    st.session_state.review_bundle_path = str(bundle_path)
 
                 n_model_assigned = sum(
                     1

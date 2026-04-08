@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import streamlit as st
 
+from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.observability import build_score_id, create_trace_score
 from v2a_inspect.pipeline.response_models import (
     GroupedAnalysis,
@@ -12,6 +14,14 @@ from v2a_inspect.pipeline.response_models import (
     VideoSceneAnalysis,
 )
 from v2a_inspect.workflows import InspectOptions, InspectState
+from v2a_inspect.review import (
+    apply_route_override,
+    approve_validation_issue,
+    merge_generation_groups,
+    persist_bundle,
+    rename_source,
+    split_generation_group,
+)
 
 from .session import reset_state
 from .video import extract_clip
@@ -206,6 +216,14 @@ def render_results(
             video_path=video_path,
             clip_dir=clip_dir,
             trace_id=inspect_state.get("trace_id") if inspect_state else None,
+        )
+
+    bundle = inspect_state.get("multitrack_bundle") if inspect_state else None
+    if isinstance(bundle, MultitrackDescriptionBundle):
+        st.divider()
+        st.header("Step 4: Multitrack bundle review")
+        _render_bundle_review(
+            bundle=bundle, inspect_state=inspect_state, clip_dir=clip_dir
         )
 
 
@@ -498,3 +516,160 @@ def _render_group_review_controls(
             st.success(f"Saved model override for {group.group_id}.")
         else:
             st.warning("Langfuse is not configured, so the score was not sent.")
+
+
+def _render_bundle_review(
+    *,
+    bundle: MultitrackDescriptionBundle,
+    inspect_state: InspectState,
+    clip_dir: str,
+) -> None:
+    st.caption(
+        "Evidence windows, source tracks, event segments, generation groups, validation issues, and persisted review edits."
+    )
+    with st.expander("📦 Final bundle JSON", expanded=False):
+        st.json(bundle.model_dump(mode="json"))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Evidence windows", len(bundle.evidence_windows))
+    c2.metric("Physical sources", len(bundle.physical_sources))
+    c3.metric("Sound events", len(bundle.sound_events))
+    c4.metric("Generation groups", len(bundle.generation_groups))
+
+    with st.expander("🪟 Evidence windows & crops", expanded=False):
+        for window in bundle.evidence_windows:
+            st.markdown(
+                f"- `{window.window_id}` {window.start_time:.1f}s–{window.end_time:.1f}s | frames={len(window.sampled_frame_ids)} | artifacts={len(window.artifact_refs)}"
+            )
+        for source in bundle.physical_sources:
+            top_label = (
+                source.label_candidates[0].label
+                if source.label_candidates
+                else "unknown"
+            )
+            st.markdown(
+                f"- `{source.source_id}` label={top_label} spans={len(source.spans)} evidence={len(source.evidence_refs)}"
+            )
+
+    with st.expander("🔉 Event segments & generation groups", expanded=True):
+        for group in bundle.generation_groups:
+            st.markdown(f"### `{group.group_id}` — {group.canonical_description}")
+            st.caption(
+                f"route={group.route_decision.model_type} conf={group.route_decision.confidence:.0%} | events={len(group.member_event_ids)} | ambience={len(group.member_ambience_ids)}"
+            )
+            override = st.selectbox(
+                f"Route override for {group.group_id}",
+                [group.route_decision.model_type, "TTA", "VTA"],
+                key=f"bundle_route_override_{group.group_id}",
+            )
+            if st.button(
+                f"Apply route override {group.group_id}",
+                key=f"apply_route_override_{group.group_id}",
+            ):
+                updated = apply_route_override(
+                    bundle,
+                    group_id=group.group_id,
+                    model_type=override,
+                    author="ui",
+                )
+                _persist_review_bundle(updated, inspect_state, clip_dir)
+                st.rerun()
+
+    with st.expander("🛠 Review edits", expanded=False):
+        source_options = [source.source_id for source in bundle.physical_sources]
+        if source_options:
+            selected_source = st.selectbox(
+                "Rename source", source_options, key="rename_source_id"
+            )
+            renamed_label = st.text_input("New source label", key="rename_source_label")
+            if (
+                st.button("Apply source rename", key="apply_source_rename")
+                and renamed_label.strip()
+            ):
+                updated = rename_source(
+                    bundle,
+                    source_id=selected_source,
+                    new_label=renamed_label.strip(),
+                    author="ui",
+                )
+                _persist_review_bundle(updated, inspect_state, clip_dir)
+                st.rerun()
+
+        group_ids = [group.group_id for group in bundle.generation_groups]
+        if group_ids:
+            selected_group = st.selectbox(
+                "Split generation group", group_ids, key="split_group_id"
+            )
+            selected_group_obj = next(
+                group
+                for group in bundle.generation_groups
+                if group.group_id == selected_group
+            )
+            split_events = st.multiselect(
+                "Events to split into a new group",
+                selected_group_obj.member_event_ids,
+                key="split_group_events",
+            )
+            if st.button("Apply split", key="apply_group_split") and split_events:
+                updated = split_generation_group(
+                    bundle, group_id=selected_group, event_ids=split_events, author="ui"
+                )
+                _persist_review_bundle(updated, inspect_state, clip_dir)
+                st.rerun()
+
+        if len(group_ids) >= 2:
+            groups_to_merge = st.multiselect(
+                "Merge generation groups",
+                group_ids,
+                key="merge_group_ids",
+            )
+            if (
+                st.button("Apply merge", key="apply_group_merge")
+                and len(groups_to_merge) >= 2
+            ):
+                updated = merge_generation_groups(
+                    bundle, source_group_ids=groups_to_merge, author="ui"
+                )
+                _persist_review_bundle(updated, inspect_state, clip_dir)
+                st.rerun()
+
+    with st.expander("✅ Validation issues", expanded=False):
+        for index, issue in enumerate(bundle.validation.issues):
+            issue_id = issue.issue_id or f"issue-{index:04d}"
+            reviewed = issue_id in bundle.validation.reviewed_issue_ids
+            badge = "✅" if reviewed else "⚠️"
+            st.markdown(
+                f"- {badge} `{issue_id}` {issue.issue_type} ({issue.severity}) — {issue.message} | action={issue.recommended_action}"
+            )
+            if not reviewed and st.button(
+                f"Approve {issue_id}", key=f"approve_issue_{issue_id}"
+            ):
+                updated = approve_validation_issue(
+                    bundle, issue_id=issue_id, author="ui"
+                )
+                _persist_review_bundle(updated, inspect_state, clip_dir)
+                st.rerun()
+
+    if bundle.review_metadata.applied_edits:
+        with st.expander("📝 Persisted review edits", expanded=False):
+            for edit in bundle.review_metadata.applied_edits:
+                st.write(
+                    f"- {edit.action} target={edit.target_ids} rationale={edit.rationale}"
+                )
+
+
+def _persist_review_bundle(
+    bundle: MultitrackDescriptionBundle,
+    inspect_state: InspectState,
+    clip_dir: str,
+) -> None:
+    bundle_path = inspect_state.get("review_bundle_path") or st.session_state.get(
+        "review_bundle_path"
+    )
+    if not bundle_path:
+        bundle_path = str(Path(clip_dir) / "review_bundle.json")
+    persist_bundle(bundle, bundle_path)
+    st.session_state.multitrack_bundle = bundle
+    st.session_state.review_bundle_path = bundle_path
+    if inspect_state is not None:
+        inspect_state["multitrack_bundle"] = bundle
