@@ -7,7 +7,6 @@ from v2a_inspect.contracts import (
     MultitrackDescriptionBundle,
     ReviewMetadata,
     RoutingDecision,
-    ValidationIssue,
     ValidationReport,
     VideoMeta,
 )

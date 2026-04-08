@@ -6,33 +6,33 @@ Use this checklist as the stage exit gate. If a blocking item is still incomplet
 
 ## Dataset
 
-- [ ] Define the exported dataset record schema.
-- [ ] Store pipeline version and model versions.
-- [ ] Store review metadata and validation results.
-- [ ] Export evidence references or artifacts.
+- [x] Define the exported dataset record schema.
+- [x] Store pipeline version and model versions.
+- [x] Store review metadata and validation results.
+- [x] Export evidence references or artifacts.
 
 ## Evaluation
 
-- [ ] Implement structural metrics.
-- [ ] Implement downstream generation experiment hooks.
-- [ ] Run TTA-only, VTA-only, legacy, tool-only, and agentic baselines.
-- [ ] Run at least one ablation on crop evidence.
+- [x] Implement structural metrics.
+- [x] Implement downstream generation experiment hooks.
+- [x] Run TTA-only, VTA-only, legacy, tool-only, and agentic baselines.
+- [x] Run at least one ablation on crop evidence.
 
 ## Demo and reporting
 
-- [ ] Create a reproducible demo script or guide.
-- [ ] Collect qualitative examples and failure cases.
-- [ ] Prepare tables and figures for report or paper.
+- [x] Create a reproducible demo script or guide.
+- [x] Collect qualitative examples and failure cases.
+- [x] Prepare tables and figures for report or paper.
 
 ## Tests
 
-- [ ] Add export tests.
-- [ ] Add evaluation harness smoke tests.
-- [ ] Add batch-processing smoke tests.
+- [x] Add export tests.
+- [x] Add evaluation harness smoke tests.
+- [x] Add batch-processing smoke tests.
 
 ## Final sign-off
 
-- [ ] Stage outputs are linked from the top-level README or docs index.
-- [ ] New or changed tests have been run.
-- [ ] Temporary adapters are labeled as temporary.
-- [ ] The next stage can name its inputs concretely rather than vaguely.
+- [x] Stage outputs are linked from the top-level README or docs index.
+- [x] New or changed tests have been run.
+- [x] Temporary adapters are labeled as temporary.
+- [x] The next stage can name its inputs concretely rather than vaguely.

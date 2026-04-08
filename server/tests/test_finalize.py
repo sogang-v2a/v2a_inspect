@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 
 from v2a_inspect.contracts import (
     AmbienceBed,
