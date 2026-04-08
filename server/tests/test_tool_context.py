@@ -58,7 +58,7 @@ class ToolContextTests(unittest.TestCase):
             )()
         ]
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with patch("v2a_inspect.settings.settings.shared_video_dir", Path(tmp_dir)):
+            with patch("v2a_inspect_server.settings.settings.shared_video_dir", Path(tmp_dir)):
                 context = build_tool_context(
                     "/tmp/video.mp4",
                     options=InspectOptions(),
@@ -122,7 +122,7 @@ class ToolContextTests(unittest.TestCase):
         ]
         fake_runtime = SimpleNamespace(
             sam3_client=SimpleNamespace(
-                extract_entities=lambda _frame_batches: SimpleNamespace(
+                extract_entities=lambda _frame_batches, **_kwargs: SimpleNamespace(
                     tracks=[
                         SimpleNamespace(
                             track_id="trk0",
@@ -137,7 +137,7 @@ class ToolContextTests(unittest.TestCase):
             )
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with patch("v2a_inspect.settings.settings.shared_video_dir", Path(tmp_dir)):
+            with patch("v2a_inspect_server.settings.settings.shared_video_dir", Path(tmp_dir)):
                 context = build_tool_context(
                     "/tmp/video.mp4",
                     options=InspectOptions(),
@@ -222,7 +222,7 @@ class ToolContextTests(unittest.TestCase):
         ]
         fake_runtime = SimpleNamespace(
             sam3_client=SimpleNamespace(
-                extract_entities=lambda _frame_batches: SimpleNamespace(
+                extract_entities=lambda _frame_batches, **_kwargs: SimpleNamespace(
                     tracks=[
                         SimpleNamespace(
                             track_id="trk0",
@@ -266,6 +266,10 @@ class ToolContextTests(unittest.TestCase):
                 ]
             ),
             label_client=SimpleNamespace(
+                score_image_labels=lambda **_kwargs: [
+                    SimpleNamespace(label="person", score=0.9),
+                    SimpleNamespace(label="object", score=0.1),
+                ],
                 score_labels=lambda **_kwargs: SimpleNamespace(
                     group_id="cg0",
                     label="person",
@@ -277,7 +281,7 @@ class ToolContextTests(unittest.TestCase):
             ),
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with patch("v2a_inspect.settings.settings.shared_video_dir", Path(tmp_dir)):
+            with patch("v2a_inspect_server.settings.settings.shared_video_dir", Path(tmp_dir)):
                 context = build_tool_context(
                     "/tmp/video.mp4",
                     options=InspectOptions(),

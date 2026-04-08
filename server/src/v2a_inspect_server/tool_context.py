@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
-from v2a_inspect.settings import settings
+from .settings import get_server_runtime_settings
 from v2a_inspect.tools import (
     FrameBatch,
     Sam3EntityTrack,
@@ -90,7 +90,9 @@ def build_tool_context(
 
 
 def _frame_output_dir(video_path: str) -> Path:
-    base_dir = settings.shared_video_dir or Path(tempfile.gettempdir())
+    base_dir = get_server_runtime_settings().shared_video_dir or Path(
+        tempfile.gettempdir()
+    )
     resolved_base = Path(base_dir)
     try:
         resolved_base.mkdir(parents=True, exist_ok=True)

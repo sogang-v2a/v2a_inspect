@@ -18,7 +18,7 @@ class _FakeUpload:
 
 
 class UiVideoTests(unittest.TestCase):
-    @patch("v2a_inspect.settings.settings")
+    @patch("v2a_inspect.settings_views.settings")
     def test_save_uploaded_file_uses_shared_dir(self, mock_settings) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             mock_settings.shared_video_dir = Path(tmp_dir)

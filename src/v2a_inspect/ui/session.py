@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import streamlit as st
 
-from v2a_inspect.settings import settings
+from v2a_inspect.settings_views import get_client_runtime_settings
 
 SESSION_DEFAULTS: tuple[str, ...] = (
     "video_path",
@@ -62,13 +62,16 @@ def get_langfuse_session_id() -> str:
 
 @st.cache_resource
 def get_analysis_semaphore() -> threading.Semaphore:
-    return threading.Semaphore(settings.ui_analysis_concurrency_limit)
+    return threading.Semaphore(
+        get_client_runtime_settings().ui_analysis_concurrency_limit
+    )
 
 
 def cleanup_stale_temp(
     max_age_seconds: int | None = None,
 ) -> None:
-    resolved_max_age = max_age_seconds or settings.ui_temp_cleanup_max_age_seconds
+    client_settings = get_client_runtime_settings()
+    resolved_max_age = max_age_seconds or client_settings.ui_temp_cleanup_max_age_seconds
     now = time.time()
     tmp_base = tempfile.gettempdir()
 
@@ -88,7 +91,7 @@ def cleanup_stale_temp(
 def start_cleanup_thread() -> threading.Thread:
     def loop() -> None:
         while True:
-            time.sleep(settings.ui_cleanup_interval_seconds)
+            time.sleep(get_client_runtime_settings().ui_cleanup_interval_seconds)
             cleanup_stale_temp()
 
     thread = threading.Thread(target=loop, daemon=True)

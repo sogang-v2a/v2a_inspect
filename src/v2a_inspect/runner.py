@@ -14,7 +14,7 @@ from v2a_inspect.observability import (
 )
 from v2a_inspect.clients import run_server_inspect
 from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
-from v2a_inspect.settings import settings
+from v2a_inspect.settings_views import get_client_runtime_settings
 from v2a_inspect.runtime import build_inspect_runtime
 from v2a_inspect.workflows import (
     InspectOptions,
@@ -44,9 +44,10 @@ def run_inspect(
 
     resolved_options = options or InspectOptions()
     if resolved_options.runtime_mode == "nvidia_docker":
+        client_settings = get_client_runtime_settings()
         return run_server_inspect(
             server_base_url=resolved_options.server_base_url
-            or settings.server_base_url,
+            or client_settings.server_base_url,
             video_path=video_path,
             options=resolved_options,
         )

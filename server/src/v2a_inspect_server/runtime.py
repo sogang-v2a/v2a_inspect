@@ -12,7 +12,7 @@ import tempfile
 from urllib import request as urllib_request
 
 from v2a_inspect.runner import get_grouped_analysis, run_inspect
-from v2a_inspect.settings import settings
+from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
@@ -34,15 +34,14 @@ class ToolingRuntime:
 
 @lru_cache(maxsize=1)
 def build_tooling_runtime() -> ToolingRuntime:
+    server_settings = get_server_runtime_settings()
     bootstrapper = WeightsBootstrapper(
-        cache_dir=Path(settings.model_cache_dir),
-        hf_token=(
-            settings.hf_token.get_secret_value()
-            if settings.hf_token is not None
-            else None
-        ),
+        cache_dir=Path(server_settings.model_cache_dir),
+        hf_token=server_settings.hf_token,
     )
-    weights_manifest = bootstrapper.load_manifest(Path(settings.weights_manifest_path))
+    weights_manifest = bootstrapper.load_manifest(
+        Path(server_settings.weights_manifest_path)
+    )
     resolved_artifacts = bootstrapper.resolve_manifest(weights_manifest)
     missing = [
         name for name, path in resolved_artifacts.items() if not path.exists()
@@ -85,50 +84,51 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_runtime_info() -> int:
+    server_settings = get_server_runtime_settings()
     payload = {
-        "runtime_mode": settings.runtime_mode,
-        "model_cache_dir": str(settings.model_cache_dir),
-        "weights_manifest_path": str(settings.weights_manifest_path),
-        "minimum_gpu_vram_gb": settings.minimum_gpu_vram_gb,
-        "server_bind_host": settings.server_bind_host,
-        "server_bind_port": settings.server_bind_port,
+        "runtime_mode": server_settings.runtime_mode,
+        "model_cache_dir": str(server_settings.model_cache_dir),
+        "weights_manifest_path": str(server_settings.weights_manifest_path),
+        "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
+        "server_bind_host": server_settings.server_bind_host,
+        "server_bind_port": server_settings.server_bind_port,
     }
     print(json.dumps(payload, indent=2))
     return 0
 
 
 def _run_bootstrap() -> int:
+    server_settings = get_server_runtime_settings()
     bootstrapper = WeightsBootstrapper(
-        cache_dir=Path(settings.model_cache_dir),
-        hf_token=(
-            settings.hf_token.get_secret_value()
-            if settings.hf_token is not None
-            else None
-        ),
+        cache_dir=Path(server_settings.model_cache_dir),
+        hf_token=server_settings.hf_token,
     )
-    manifest = bootstrapper.load_manifest(Path(settings.weights_manifest_path))
+    manifest = bootstrapper.load_manifest(Path(server_settings.weights_manifest_path))
     resolved = bootstrapper.ensure_manifest(manifest)
     print(json.dumps({name: str(path) for name, path in resolved.items()}, indent=2))
     return 0
 
 
 def _run_check() -> int:
-    result = inspect_nvidia_runtime(minimum_vram_gb=settings.minimum_gpu_vram_gb)
+    result = inspect_nvidia_runtime(
+        minimum_vram_gb=get_server_runtime_settings().minimum_gpu_vram_gb
+    )
     print(runtime_check_to_json(result))
     return 0 if result.available else 1
 
 
 def _run_serve() -> int:
+    server_settings = get_server_runtime_settings()
     server = ThreadingHTTPServer(
-        (settings.server_bind_host, settings.server_bind_port),
+        (server_settings.server_bind_host, server_settings.server_bind_port),
         _build_handler(),
     )
     print(
         json.dumps(
             {
                 "message": "v2a-inspect-server listening",
-                "host": settings.server_bind_host,
-                "port": settings.server_bind_port,
+                "host": server_settings.server_bind_host,
+                "port": server_settings.server_bind_port,
             }
         )
     )
@@ -145,8 +145,9 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
     class RuntimeHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             if self.path == "/health":
+                server_settings = get_server_runtime_settings()
                 result = inspect_nvidia_runtime(
-                    minimum_vram_gb=settings.minimum_gpu_vram_gb
+                    minimum_vram_gb=server_settings.minimum_gpu_vram_gb
                 )
                 tooling_ready = True
                 tooling_error = None
@@ -158,7 +159,7 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 self._write_json(
                     {
                         "ok": result.available and tooling_ready,
-                        "runtime_mode": settings.runtime_mode,
+                        "runtime_mode": server_settings.runtime_mode,
                         "gpu_check": json.loads(runtime_check_to_json(result)),
                         "tooling_runtime_ready": tooling_ready,
                         "tooling_error": tooling_error,
@@ -166,13 +167,14 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 )
                 return
             if self.path == "/runtime-info":
+                server_settings = get_server_runtime_settings()
                 payload = {
-                    "runtime_mode": settings.runtime_mode,
-                    "model_cache_dir": str(settings.model_cache_dir),
-                    "weights_manifest_path": str(settings.weights_manifest_path),
-                    "minimum_gpu_vram_gb": settings.minimum_gpu_vram_gb,
-                    "server_bind_host": settings.server_bind_host,
-                    "server_bind_port": settings.server_bind_port,
+                    "runtime_mode": server_settings.runtime_mode,
+                    "model_cache_dir": str(server_settings.model_cache_dir),
+                    "weights_manifest_path": str(server_settings.weights_manifest_path),
+                    "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
+                    "server_bind_host": server_settings.server_bind_host,
+                    "server_bind_port": server_settings.server_bind_port,
                 }
                 self._write_json(payload)
                 return
@@ -197,16 +199,13 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/bootstrap":
                 try:
+                    server_settings = get_server_runtime_settings()
                     bootstrapper = WeightsBootstrapper(
-                        cache_dir=Path(settings.model_cache_dir),
-                        hf_token=(
-                            settings.hf_token.get_secret_value()
-                            if settings.hf_token is not None
-                            else None
-                        ),
+                        cache_dir=Path(server_settings.model_cache_dir),
+                        hf_token=server_settings.hf_token,
                     )
                     manifest = bootstrapper.load_manifest(
-                        Path(settings.weights_manifest_path)
+                        Path(server_settings.weights_manifest_path)
                     )
                     resolved = bootstrapper.ensure_manifest(manifest)
                     build_tooling_runtime.cache_clear()
@@ -344,7 +343,9 @@ def _write_uploaded_video(*, filename: str, raw_bytes: bytes) -> str:
 
 
 def _prepare_upload_dir() -> Path:
-    target_root = settings.shared_video_dir or Path(tempfile.gettempdir())
+    target_root = (
+        get_server_runtime_settings().shared_video_dir or Path(tempfile.gettempdir())
+    )
     resolved_root = Path(target_root)
     try:
         resolved_root.mkdir(parents=True, exist_ok=True)

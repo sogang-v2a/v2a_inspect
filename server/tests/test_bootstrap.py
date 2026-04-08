@@ -13,20 +13,6 @@ from v2a_inspect_server.bootstrap import (
 )
 
 
-class _FakeBinaryResponse:
-    def __init__(self, body: bytes) -> None:
-        self.body = body
-
-    def read(self) -> bytes:
-        return self.body
-
-    def __enter__(self) -> "_FakeBinaryResponse":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        return None
-
-
 class BootstrapTests(unittest.TestCase):
     def test_load_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -38,8 +24,8 @@ class BootstrapTests(unittest.TestCase):
                             {
                                 "name": "sam3",
                                 "repository": "facebook/sam3",
-                                "filename": "sam3.safetensors",
-                                "relative_path": "sam3/sam3.safetensors",
+                                "relative_path": "sam3",
+                                "allow_patterns": ["*.json"],
                             }
                         ]
                     }
@@ -50,18 +36,8 @@ class BootstrapTests(unittest.TestCase):
             manifest = bootstrapper.load_manifest(manifest_path)
             self.assertEqual(len(manifest.artifacts), 1)
 
-    @patch("v2a_inspect_server.bootstrap.download_file")
-    def test_ensure_artifact_downloads_only_once(self, mock_download_file) -> None:
-        def _fake_download(
-            _url: str,
-            destination: Path,
-            *,
-            api_key: str | None = None,
-            timeout_seconds: int = 120,
-        ) -> None:
-            destination.write_bytes(b"weights")
-
-        mock_download_file.side_effect = _fake_download
+    @patch("v2a_inspect_server.bootstrap.snapshot_download")
+    def test_ensure_artifact_downloads_only_once(self, mock_snapshot_download) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             bootstrapper = WeightsBootstrapper(
                 cache_dir=Path(tmp_dir), hf_token="token"
@@ -69,34 +45,40 @@ class BootstrapTests(unittest.TestCase):
             artifact = WeightsArtifact(
                 name="sam3",
                 repository="facebook/sam3",
-                filename="sam3.safetensors",
-                relative_path="sam3/sam3.safetensors",
+                relative_path="sam3",
+                allow_patterns=["*.json"],
             )
+
+            def _fake_snapshot_download(**kwargs):
+                Path(kwargs["local_dir"]).mkdir(parents=True, exist_ok=True)
+                (Path(kwargs["local_dir"]) / "config.json").write_text("{}", encoding="utf-8")
+                return str(kwargs["local_dir"])
+
+            mock_snapshot_download.side_effect = _fake_snapshot_download
             first = bootstrapper.ensure_artifact(artifact)
             second = bootstrapper.ensure_artifact(artifact)
             self.assertEqual(first, second)
-            self.assertEqual(first.read_bytes(), b"weights")
-            self.assertEqual(mock_download_file.call_count, 1)
+            self.assertTrue((first / "config.json").exists())
+            self.assertEqual(mock_snapshot_download.call_count, 1)
 
     def test_ensure_manifest_returns_mapping(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache_dir = Path(tmp_dir)
             bootstrapper = WeightsBootstrapper(cache_dir=cache_dir)
-            artifact = cache_dir / "sam3/sam3.safetensors"
-            artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_bytes(b"ok")
+            artifact_dir = cache_dir / "sam3"
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            (artifact_dir / "config.json").write_text("{}", encoding="utf-8")
             manifest = WeightsManifest(
                 artifacts=[
                     WeightsArtifact(
                         name="sam3",
                         repository="facebook/sam3",
-                        filename="sam3.safetensors",
-                        relative_path="sam3/sam3.safetensors",
+                        relative_path="sam3",
                     )
                 ]
             )
             resolved = bootstrapper.ensure_manifest(manifest)
-            self.assertEqual(resolved["sam3"], artifact)
+            self.assertEqual(resolved["sam3"], artifact_dir)
 
 
 if __name__ == "__main__":

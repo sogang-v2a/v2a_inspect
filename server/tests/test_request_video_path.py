@@ -22,7 +22,7 @@ class RequestVideoPathTests(unittest.TestCase):
 
     def test_downloads_video_url_when_path_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with patch("v2a_inspect.settings.settings.shared_video_dir", Path(tmp_dir)):
+            with patch("v2a_inspect_server.settings.settings.shared_video_dir", Path(tmp_dir)):
                 with patch("urllib.request.urlretrieve") as mock_urlretrieve:
                     def _fake_urlretrieve(url: str, target: Path) -> None:
                         Path(target).write_bytes(b"video")

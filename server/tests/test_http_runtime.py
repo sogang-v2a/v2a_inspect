@@ -13,11 +13,21 @@ from v2a_inspect_server.runtime import _build_handler
 
 
 class RuntimeHttpTests(unittest.TestCase):
-    @patch("v2a_inspect_server.runtime.settings")
+    @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    @patch("v2a_inspect_server.runtime.build_tooling_runtime")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
-    def test_health_endpoint_returns_json(self, mock_check, mock_settings) -> None:
-        mock_settings.runtime_mode = "nvidia_docker"
-        mock_settings.minimum_gpu_vram_gb = 16
+    def test_health_endpoint_returns_json(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
+        mock_server_settings.return_value = SimpleNamespace(
+            runtime_mode="nvidia_docker",
+            minimum_gpu_vram_gb=16,
+            model_cache_dir=Path('.cache/models'),
+            weights_manifest_path=Path('server/model-manifest.json'),
+            server_bind_host='127.0.0.1',
+            server_bind_port=8080,
+            shared_video_dir=Path('/tmp'),
+            hf_token=None,
+        )
+        mock_build_tooling_runtime.return_value = SimpleNamespace()
         mock_check.return_value = SimpleNamespace(
             available=True,
             devices=[],
@@ -40,8 +50,9 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["runtime_mode"], "nvidia_docker")
 
-    @patch("v2a_inspect_server.runtime.settings")
+    @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.get_grouped_analysis")
+    @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime.run_inspect")
     @patch("v2a_inspect_server.runtime.build_tool_context")
     @patch("v2a_inspect_server.runtime.build_tooling_runtime")
@@ -50,11 +61,20 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_build_tooling_runtime,
         mock_build_tool_context,
         mock_run_inspect,
+        mock_resolve_request_video_path,
         mock_get_grouped_analysis,
-        mock_settings,
+        mock_server_settings,
     ) -> None:
-        mock_settings.runtime_mode = "nvidia_docker"
-        mock_settings.minimum_gpu_vram_gb = 16
+        mock_server_settings.return_value = SimpleNamespace(
+            runtime_mode="nvidia_docker",
+            minimum_gpu_vram_gb=16,
+            model_cache_dir=Path('.cache/models'),
+            weights_manifest_path=Path('server/model-manifest.json'),
+            server_bind_host='127.0.0.1',
+            server_bind_port=8080,
+            shared_video_dir=Path('/tmp'),
+            hf_token=None,
+        )
         mock_build_tooling_runtime.return_value = SimpleNamespace()
         mock_build_tool_context.return_value = {
             "progress_messages": ["tool-step"],
@@ -67,6 +87,7 @@ class RuntimeHttpTests(unittest.TestCase):
             "warnings": ["warn"],
             "progress_messages": ["done"],
         }
+        mock_resolve_request_video_path.return_value = "/tmp/fake.mp4"
         mock_get_grouped_analysis.return_value = SimpleNamespace(
             model_dump=lambda mode="json": {
                 "scene_analysis": {"total_duration": 1.0, "scenes": []},
@@ -102,28 +123,28 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertEqual(payload["warnings"], ["warn"])
         self.assertEqual(payload["progress_messages"], ["done"])
 
-    @patch("v2a_inspect_server.runtime.settings")
-    def test_upload_endpoint_writes_raw_bytes(self, mock_settings) -> None:
-        with patch.object(mock_settings, "shared_video_dir", Path("/tmp")):
-            server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
-            thread = threading.Thread(target=server.handle_request, daemon=True)
-            thread.start()
-            try:
-                response = request.urlopen(
-                    request.Request(
-                        f"http://127.0.0.1:{server.server_port}/upload",
-                        data=b"video",
-                        headers={
-                            "Content-Type": "application/octet-stream",
-                            "Content-Length": "5",
-                            "X-Filename": "clip.mp4",
-                        },
-                        method="POST",
-                    )
-                ).read()
-            finally:
-                server.server_close()
-                thread.join(timeout=1)
+    @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    def test_upload_endpoint_writes_raw_bytes(self, mock_server_settings) -> None:
+        mock_server_settings.return_value = SimpleNamespace(shared_video_dir=Path("/tmp"))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            response = request.urlopen(
+                request.Request(
+                    f"http://127.0.0.1:{server.server_port}/upload",
+                    data=b"video",
+                    headers={
+                        "Content-Type": "application/octet-stream",
+                        "Content-Length": "5",
+                        "X-Filename": "clip.mp4",
+                    },
+                    method="POST",
+                )
+            ).read()
+        finally:
+            server.server_close()
+            thread.join(timeout=1)
 
         payload = json.loads(response.decode("utf-8"))
         self.assertTrue(payload["ok"])

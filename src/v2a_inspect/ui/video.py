@@ -7,13 +7,15 @@ from typing import Any
 
 
 def save_uploaded_file(uploaded_file: Any) -> str:
-    from v2a_inspect.settings import settings
+    from v2a_inspect.settings_views import get_client_runtime_settings
 
-    if settings.shared_video_dir is not None:
-        Path(settings.shared_video_dir).mkdir(parents=True, exist_ok=True)
+    client_settings = get_client_runtime_settings()
+
+    if client_settings.shared_video_dir is not None:
+        Path(client_settings.shared_video_dir).mkdir(parents=True, exist_ok=True)
         temp_dir = tempfile.mkdtemp(
             prefix="v2a_inspect_upload_",
-            dir=str(settings.shared_video_dir),
+            dir=str(client_settings.shared_video_dir),
         )
     else:
         temp_dir = tempfile.mkdtemp(prefix="v2a_inspect_upload_")

@@ -15,6 +15,7 @@ Current target runtime is:
 - [Final project blueprint](docs/v2a_agent_plan/01_final_project_blueprint.md)
 - [Agent tool contract](docs/agent_tool_contract.md)
 - [ADR 001: target multitrack architecture](docs/adr/ADR_001_target_multitrack_architecture.md)
+- [Runtime environment boundaries](docs/runtime_env.md)
 
 
 ## Run locally with Docker Compose
