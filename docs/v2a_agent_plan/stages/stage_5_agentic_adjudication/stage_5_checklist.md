@@ -6,35 +6,35 @@ Use this checklist as the stage exit gate. If a blocking item is still incomplet
 
 ## Agent core
 
-- [ ] Create planner state.
-- [ ] Create executor layer.
-- [ ] Create issue queue or equivalent ambiguity queue.
-- [ ] Implement bounded retry policies.
+- [x] Create planner state.
+- [x] Create executor layer.
+- [x] Create issue queue or equivalent ambiguity queue.
+- [x] Implement bounded retry policies.
 
 ## Tool surface
 
-- [ ] Expose direct structural tools.
-- [ ] Expose direct extraction and recovery tools.
-- [ ] Expose direct crop, embedding, and label tools.
-- [ ] Expose direct grouping and routing-prior tools.
-- [ ] Expose direct validators.
+- [x] Expose direct structural tools.
+- [x] Expose direct extraction and recovery tools.
+- [x] Expose direct crop, embedding, and label tools.
+- [x] Expose direct grouping and routing-prior tools.
+- [x] Expose direct validators.
 
 ## Logging
 
-- [ ] Log every tool call with inputs and output refs.
-- [ ] Log every merge/split acceptance decision.
-- [ ] Support replay of agent traces for debugging.
+- [x] Log every tool call with inputs and output refs.
+- [x] Log every merge/split acceptance decision.
+- [x] Support replay of agent traces for debugging.
 
 ## Tests
 
-- [ ] Add planner tests.
-- [ ] Add executor tests.
-- [ ] Add budget enforcement tests.
-- [ ] Add trace replay tests.
+- [x] Add planner tests.
+- [x] Add executor tests.
+- [x] Add budget enforcement tests.
+- [x] Add trace replay tests.
 
 ## Final sign-off
 
-- [ ] Stage outputs are linked from the top-level README or docs index.
-- [ ] New or changed tests have been run.
-- [ ] Temporary adapters are labeled as temporary.
-- [ ] The next stage can name its inputs concretely rather than vaguely.
+- [x] Stage outputs are linked from the top-level README or docs index.
+- [x] New or changed tests have been run.
+- [x] Temporary adapters are labeled as temporary.
+- [x] The next stage can name its inputs concretely rather than vaguely.
