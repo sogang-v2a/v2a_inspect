@@ -16,6 +16,7 @@ from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
+from .agentic import run_agent_review_pass
 from .embeddings import EmbeddingClient, LabelClient
 from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
@@ -272,6 +273,14 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     )
                     grouped = get_grouped_analysis(state)
                     bundle = build_final_bundle(state)
+                    planner_state, trace_path = run_agent_review_pass(
+                        inspect_state=state,
+                        tooling_runtime=tooling_runtime,
+                        bundle=bundle,
+                    )
+                    bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
+                    bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
+                    bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
                     state["multitrack_bundle"] = bundle
                     self._write_json(
                         {

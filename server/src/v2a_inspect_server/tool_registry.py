@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from v2a_inspect.contracts import (
     EvidenceWindow,
@@ -27,7 +27,6 @@ from v2a_inspect.tools.types import EntityEmbedding, FrameBatch, Sam3EntityTrack
 from .constants import DEFAULT_TRACK_LABELS
 from .crops import crop_tracks
 from .reid import build_identity_edges, build_provisional_source_tracks
-from .runtime import ToolingRuntime
 from .semantics import (
     build_ambience_beds,
     build_generation_groups,
@@ -55,7 +54,11 @@ def _dump_items(items: Sequence[_Dumpable]) -> list[dict[str, object]]:
     return [item.model_dump(mode="json") for item in items]
 
 
-def build_tool_registry(tooling_runtime: ToolingRuntime) -> dict[str, ToolDefinition]:
+if TYPE_CHECKING:
+    from .runtime import ToolingRuntime
+
+
+def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefinition]:
     def structural_overview(
         *, video_path: str, target_scene_seconds: float = 5.0
     ) -> dict[str, object]:

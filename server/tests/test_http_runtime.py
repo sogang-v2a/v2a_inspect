@@ -51,6 +51,7 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertEqual(payload["runtime_mode"], "nvidia_docker")
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    @patch("v2a_inspect_server.runtime.run_agent_review_pass")
     @patch("v2a_inspect_server.runtime.get_grouped_analysis")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime.run_inspect")
@@ -63,6 +64,7 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_run_inspect,
         mock_resolve_request_video_path,
         mock_get_grouped_analysis,
+        mock_run_agent_review_pass,
         mock_server_settings,
     ) -> None:
         mock_server_settings.return_value = SimpleNamespace(
@@ -76,6 +78,7 @@ class RuntimeHttpTests(unittest.TestCase):
             hf_token=None,
         )
         mock_build_tooling_runtime.return_value = SimpleNamespace()
+        mock_run_agent_review_pass.return_value = (SimpleNamespace(issues=[], tool_calls=[]), "/tmp/agent-trace.jsonl")
         mock_build_tool_context.return_value = {
             "progress_messages": ["tool-step"],
         }
@@ -99,6 +102,7 @@ class RuntimeHttpTests(unittest.TestCase):
         with patch(
             "v2a_inspect_server.runtime.build_final_bundle",
             return_value=SimpleNamespace(
+                pipeline_metadata={},
                 model_dump=lambda mode="json": {
                     "video_id": "video",
                     "video_meta": {

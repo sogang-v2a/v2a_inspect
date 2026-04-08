@@ -28,7 +28,7 @@ class ToolExecutor:
             call_id=uuid4().hex,
             issue_id=action.issue_id,
             tool_name=action.tool_name,
-            request_payload=action.request_payload,
+            request_payload=_sanitize_payload(action.request_payload),
             output_refs=_extract_output_refs(result),
         )
         updated = state.model_copy(deep=True)
@@ -99,3 +99,19 @@ def _extract_output_refs(result: object) -> list[str]:
     elif isinstance(result, _Dumpable):
         return _extract_output_refs(result.model_dump(mode="json"))
     return refs
+
+
+def _sanitize_payload(payload: dict[str, object]) -> dict[str, object]:
+    sanitized: dict[str, object] = {}
+    for key, value in payload.items():
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            sanitized[key] = value
+        elif isinstance(value, list):
+            sanitized[key] = [str(item) for item in value[:10]]
+        elif isinstance(value, dict):
+            sanitized[key] = {str(item_key): str(item_value) for item_key, item_value in list(value.items())[:10]}
+        elif isinstance(value, _Dumpable):
+            sanitized[key] = value.model_dump(mode="json")
+        else:
+            sanitized[key] = repr(value)
+    return sanitized
