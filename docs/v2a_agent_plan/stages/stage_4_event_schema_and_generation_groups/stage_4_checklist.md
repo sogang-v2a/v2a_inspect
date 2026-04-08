@@ -6,33 +6,33 @@ Use this checklist as the stage exit gate. If a blocking item is still incomplet
 
 ## Contracts
 
-- [ ] Add `PhysicalSourceTrack`.
-- [ ] Add `SoundEventSegment`.
-- [ ] Add `AmbienceBed`.
-- [ ] Add `GenerationGroup`.
+- [x] Add `PhysicalSourceTrack`.
+- [x] Add `SoundEventSegment`.
+- [x] Add `AmbienceBed`.
+- [x] Add `GenerationGroup`.
 
 ## Semantics
 
-- [ ] Define event-splitting rules.
-- [ ] Define ambience criteria.
-- [ ] Define acoustic-equivalence grouping rules.
-- [ ] Document examples of same-identity/different-group and different-identity/same-group.
+- [x] Define event-splitting rules.
+- [x] Define ambience criteria.
+- [x] Define acoustic-equivalence grouping rules.
+- [x] Document examples of same-identity/different-group and different-identity/same-group.
 
 ## Migration
 
-- [ ] Add adapters to the legacy export shape.
-- [ ] Document deprecation status of `RawTrack` and `TrackGroup`.
+- [x] Add adapters to the legacy export shape.
+- [x] Document deprecation status of `RawTrack` and `TrackGroup`.
 
 ## Tests
 
-- [ ] Add schema tests.
-- [ ] Add adapter tests.
-- [ ] Add event-splitting tests.
-- [ ] Add grouping-semantic tests.
+- [x] Add schema tests.
+- [x] Add adapter tests.
+- [x] Add event-splitting tests.
+- [x] Add grouping-semantic tests.
 
 ## Final sign-off
 
-- [ ] Stage outputs are linked from the top-level README or docs index.
-- [ ] New or changed tests have been run.
-- [ ] Temporary adapters are labeled as temporary.
-- [ ] The next stage can name its inputs concretely rather than vaguely.
+- [x] Stage outputs are linked from the top-level README or docs index.
+- [x] New or changed tests have been run.
+- [x] Temporary adapters are labeled as temporary.
+- [x] The next stage can name its inputs concretely rather than vaguely.

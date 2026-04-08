@@ -28,6 +28,7 @@ from v2a_inspect.workflows import InspectOptions
 
 from .crops import crop_tracks, group_crop_paths_by_track
 from .reid import build_identity_edges, build_provisional_source_tracks
+from .semantics import build_ambience_beds, build_generation_groups, build_sound_event_segments
 
 if TYPE_CHECKING:
     from v2a_inspect_server.runtime import ToolingRuntime
@@ -250,6 +251,22 @@ def _append_runtime_tool_evidence(
                 )
                 context["identity_edges"] = identity_edges
                 context["physical_sources"] = physical_sources
+                sound_event_segments = build_sound_event_segments(
+                    physical_sources,
+                    tracks_by_id=tracks_by_id,
+                )
+                ambience_beds = build_ambience_beds(
+                    list(context.get("evidence_windows", [])),
+                    physical_sources,
+                )
+                generation_groups = build_generation_groups(
+                    sound_event_segments,
+                    ambience_beds,
+                    physical_sources=physical_sources,
+                )
+                context["sound_event_segments"] = sound_event_segments
+                context["ambience_beds"] = ambience_beds
+                context["generation_groups"] = generation_groups
                 candidate_groups = group_entity_embeddings(
                     embeddings,
                     tracks_by_id=tracks_by_id,
@@ -266,6 +283,10 @@ def _append_runtime_tool_evidence(
                 context["tool_grouping_hints"] = _append_hint_section(
                     context.get("tool_grouping_hints", ""),
                     _identity_hints(identity_edges, physical_sources),
+                )
+                context["tool_grouping_hints"] = _append_hint_section(
+                    context.get("tool_grouping_hints", ""),
+                    _semantic_hints(sound_event_segments, ambience_beds, generation_groups),
                 )
                 _append_group_label_hints(
                     context,
@@ -504,6 +525,27 @@ def _identity_hints(
             lines.append(
                 f"- {edge.source_track_id}->{edge.target_track_id}: confidence={edge.confidence:.2f} same_window={edge.same_window}"
             )
+    return "\n".join(lines)
+
+
+def _semantic_hints(
+    sound_event_segments: Sequence[object],
+    ambience_beds: Sequence[object],
+    generation_groups: Sequence[object],
+) -> str:
+    lines = ["Event and generation hints:"]
+    for event in sound_event_segments[:5]:
+        lines.append(
+            f"- event {getattr(event, 'event_id')}: source={getattr(event, 'source_id')} type={getattr(event, 'event_type')} range={getattr(event, 'start_time'):.1f}-{getattr(event, 'end_time'):.1f}"
+        )
+    for ambience in ambience_beds[:3]:
+        lines.append(
+            f"- ambience {getattr(ambience, 'ambience_id')}: {getattr(ambience, 'environment_type')} range={getattr(ambience, 'start_time'):.1f}-{getattr(ambience, 'end_time'):.1f}"
+        )
+    for group in generation_groups[:5]:
+        lines.append(
+            f"- generation {getattr(group, 'group_id')}: label={getattr(group, 'canonical_label')} events={len(getattr(group, 'member_event_ids', []))} ambience={len(getattr(group, 'member_ambience_ids', []))}"
+        )
     return "\n".join(lines)
 
 

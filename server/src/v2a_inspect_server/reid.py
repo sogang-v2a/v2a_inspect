@@ -103,11 +103,11 @@ def build_provisional_source_tracks(
                 for track in member_tracks
             }
         )
-        evidence_refs = [
+        evidence_refs = [track.track_id for track in member_tracks] + [
             crop.crop_id
             for track in member_tracks
             for crop in crops_by_track.get(track.track_id, [])
-        ] or [track.track_id for track in member_tracks]
+        ]
         label_candidates = _aggregate_label_candidates(
             label_candidates_by_track,
             [track.track_id for track in member_tracks],
