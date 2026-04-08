@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from urllib import parse, request
 
+from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
 from v2a_inspect.workflows import InspectOptions, InspectState
 
@@ -53,6 +54,7 @@ def run_server_inspect(
 
     scene_analysis = VideoSceneAnalysis.model_validate(scene_analysis_payload)
     grouped_analysis = GroupedAnalysis.model_validate(grouped_analysis_payload)
+    bundle_payload = decoded.get("multitrack_bundle")
     warnings = list(decoded.get("warnings", []))
     progress_messages = list(decoded.get("progress_messages", []))
     state: InspectState = {
@@ -61,6 +63,10 @@ def run_server_inspect(
         "warnings": [str(item) for item in warnings],
         "progress_messages": [str(item) for item in progress_messages],
     }
+    if isinstance(bundle_payload, dict):
+        state["multitrack_bundle"] = MultitrackDescriptionBundle.model_validate(
+            bundle_payload
+        )
     return state
 
 

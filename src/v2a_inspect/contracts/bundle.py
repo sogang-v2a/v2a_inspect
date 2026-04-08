@@ -114,6 +114,8 @@ class GenerationGroup(BaseModel):
     member_ambience_ids: list[str] = Field(default_factory=list)
     canonical_label: str
     canonical_description: str
+    description_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    description_rationale: str | None = None
     group_confidence: float = Field(ge=0.0, le=1.0)
     route_decision: RoutingDecision
     reasoning_summary: str = ""
@@ -133,6 +135,42 @@ class ValidationIssue(BaseModel):
     severity: Literal["info", "warning", "error"]
     message: str
     related_ids: list[str] = Field(default_factory=list)
+    recommended_action: Literal[
+        "none",
+        "rerun_tool",
+        "human_review",
+        "override_route",
+        "split_group",
+        "merge_groups",
+        "rename_source",
+        "approve",
+    ] = "none"
+    repair_tool: str | None = None
+
+
+class ReviewEdit(BaseModel):
+    edit_id: str
+    action: Literal[
+        "route_override",
+        "split_generation_group",
+        "merge_generation_groups",
+        "rename_source",
+        "approve_issue",
+        "mark_missing_extraction",
+    ]
+    target_ids: list[str] = Field(default_factory=list)
+    payload: dict[str, object] = Field(default_factory=dict)
+    author: str | None = None
+    rationale: str = ""
+    created_at: str | None = None
+
+
+class ReviewMetadata(BaseModel):
+    approval_status: Literal["unreviewed", "approved", "approved_with_notes"] = (
+        "unreviewed"
+    )
+    notes: list[str] = Field(default_factory=list)
+    applied_edits: list[ReviewEdit] = Field(default_factory=list)
 
 
 class ValidationReport(BaseModel):
@@ -164,4 +202,5 @@ class MultitrackDescriptionBundle(BaseModel):
     generation_groups: list[GenerationGroup] = Field(default_factory=list)
     validation: ValidationReport
     artifacts: ArtifactRefs = Field(default_factory=ArtifactRefs)
+    review_metadata: ReviewMetadata = Field(default_factory=ReviewMetadata)
     pipeline_metadata: dict[str, object] = Field(default_factory=dict)

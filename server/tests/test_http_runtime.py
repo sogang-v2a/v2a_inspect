@@ -96,32 +96,57 @@ class RuntimeHttpTests(unittest.TestCase):
                 "track_to_group": {},
             }
         )
+        with patch(
+            "v2a_inspect_server.runtime.build_final_bundle",
+            return_value=SimpleNamespace(
+                model_dump=lambda mode="json": {
+                    "video_id": "video",
+                    "video_meta": {
+                        "duration_seconds": 1.0,
+                        "fps": 2.0,
+                        "width": 320,
+                        "height": 240,
+                    },
+                    "candidate_cuts": [],
+                    "evidence_windows": [],
+                    "physical_sources": [],
+                    "sound_events": [],
+                    "ambience_beds": [],
+                    "generation_groups": [],
+                    "validation": {"status": "pass_with_warnings", "issues": []},
+                    "artifacts": {},
+                    "review_metadata": {"approval_status": "unreviewed", "notes": [], "applied_edits": []},
+                    "pipeline_metadata": {},
+                }
+            ),
+        ):
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
-        thread = threading.Thread(target=server.handle_request, daemon=True)
-        thread.start()
-        try:
-            response = request.urlopen(
-                request.Request(
-                    f"http://127.0.0.1:{server.server_port}/analyze",
-                    data=json.dumps(
-                        {
-                            "video_path": "/data/uploads/video.mp4",
-                            "video_filename": "video.mp4",
-                            "options": {},
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-            ).read()
-        finally:
-            server.server_close()
-            thread.join(timeout=1)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
+            thread = threading.Thread(target=server.handle_request, daemon=True)
+            thread.start()
+            try:
+                response = request.urlopen(
+                    request.Request(
+                        f"http://127.0.0.1:{server.server_port}/analyze",
+                        data=json.dumps(
+                            {
+                                "video_path": "/data/uploads/video.mp4",
+                                "video_filename": "video.mp4",
+                                "options": {},
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                ).read()
+            finally:
+                server.server_close()
+                thread.join(timeout=1)
 
         payload = json.loads(response.decode("utf-8"))
         self.assertEqual(payload["warnings"], ["warn"])
         self.assertEqual(payload["progress_messages"], ["done"])
+        self.assertIn("multitrack_bundle", payload)
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     def test_upload_endpoint_writes_raw_bytes(self, mock_server_settings) -> None:

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from v2a_inspect.clients import DEFAULT_GEMINI_MODEL
-from v2a_inspect.contracts import CandidateCut, EvidenceWindow
+from v2a_inspect.contracts import CandidateCut, EvidenceWindow, MultitrackDescriptionBundle
 from v2a_inspect.pipeline.response_models import (
     GroupedAnalysis,
     RawTrack,
@@ -60,6 +60,7 @@ class InspectState(TypedDict, total=False):
     verified_groups: list[TrackGroup]
     final_groups: list[TrackGroup]
     grouped_analysis: GroupedAnalysis
+    multitrack_bundle: MultitrackDescriptionBundle
     trace_id: str
     root_observation_id: str
     errors: list[str]

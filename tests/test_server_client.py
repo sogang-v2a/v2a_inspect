@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.clients.server import _build_request_payload, _upload_video, run_server_inspect
 from v2a_inspect.workflows import InspectOptions
 
@@ -74,6 +75,25 @@ class ServerClientTests(unittest.TestCase):
                             "groups": [],
                             "track_to_group": {},
                         },
+                        "multitrack_bundle": {
+                            "video_id": "clip",
+                            "video_meta": {
+                                "duration_seconds": 1.0,
+                                "fps": 2.0,
+                                "width": 320,
+                                "height": 240,
+                            },
+                            "candidate_cuts": [],
+                            "evidence_windows": [],
+                            "physical_sources": [],
+                            "sound_events": [],
+                            "ambience_beds": [],
+                            "generation_groups": [],
+                            "validation": {"status": "pass_with_warnings", "issues": []},
+                            "artifacts": {},
+                            "review_metadata": {"approval_status": "unreviewed", "notes": [], "applied_edits": []},
+                            "pipeline_metadata": {},
+                        },
                         "warnings": ["warn"],
                         "progress_messages": ["done"],
                     }
@@ -86,6 +106,7 @@ class ServerClientTests(unittest.TestCase):
             )
         self.assertEqual(state["warnings"], ["warn"])
         self.assertEqual(state["progress_messages"], ["done"])
+        self.assertIsInstance(state.get("multitrack_bundle"), MultitrackDescriptionBundle)
 
 
 if __name__ == "__main__":

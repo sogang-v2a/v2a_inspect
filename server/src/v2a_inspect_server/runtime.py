@@ -17,6 +17,7 @@ from v2a_inspect.workflows import InspectOptions
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
 from .embeddings import EmbeddingClient, LabelClient
+from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
 from .sam3 import Sam3Client
 from .tool_context import build_tool_context
@@ -270,12 +271,15 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         initial_state_overrides=tool_context,
                     )
                     grouped = get_grouped_analysis(state)
+                    bundle = build_final_bundle(state)
+                    state["multitrack_bundle"] = bundle
                     self._write_json(
                         {
                             "scene_analysis": state["scene_analysis"].model_dump(
                                 mode="json"
                             ),
                             "grouped_analysis": grouped.model_dump(mode="json"),
+                            "multitrack_bundle": bundle.model_dump(mode="json"),
                             "warnings": state.get("warnings", []),
                             "progress_messages": state.get("progress_messages", []),
                         }
