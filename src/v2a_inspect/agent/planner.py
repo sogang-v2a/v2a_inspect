@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from v2a_inspect.agent.policies import can_retry_issue
-from v2a_inspect.agent.state import AgentIssue, PlannedAction, PlannerState
+from v2a_inspect.agent.state import PlannedAction, PlannerState
 
 
 _TOOL_BY_ISSUE = {

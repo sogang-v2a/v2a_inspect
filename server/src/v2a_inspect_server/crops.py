@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from PIL import Image
 
 from v2a_inspect.contracts import TrackCrop
-from v2a_inspect.tools.types import FrameBatch, Sam3EntityTrack, Sam3TrackPoint
+from v2a_inspect.tools.types import (
+    FrameBatch,
+    Sam3EntityTrack,
+    Sam3TrackPoint,
+    SampledFrame,
+)
 
 
 def crop_tracks(
@@ -30,7 +36,9 @@ def crop_tracks(
             if frame is None:
                 continue
             with Image.open(frame.image_path) as image:
-                crop_box = _resolve_crop_box(point, image.size, padding_ratio=padding_ratio)
+                crop_box = _resolve_crop_box(
+                    point, image.size, padding_ratio=padding_ratio
+                )
                 if crop_box is None:
                     continue
                 crop = image.crop(crop_box)
@@ -61,7 +69,10 @@ def group_crop_paths_by_track(track_crops: list[TrackCrop]) -> dict[str, list[st
     return grouped
 
 
-def _match_frame(scene_frames: list[object], point: Sam3TrackPoint) -> object | None:
+def _match_frame(
+    scene_frames: Sequence[SampledFrame],
+    point: Sam3TrackPoint,
+) -> SampledFrame | None:
     if not scene_frames:
         return None
     return min(
@@ -82,10 +93,15 @@ def _resolve_crop_box(
     if point.mask_rle:
         mask_box = _mask_rle_to_bbox(point.mask_rle)
         if mask_box is not None:
-            return _pad_box(mask_box, width=width, height=height, padding_ratio=padding_ratio)
+            return _pad_box(
+                mask_box, width=width, height=height, padding_ratio=padding_ratio
+            )
     if point.bbox_xyxy is not None:
-        raw_box = tuple(int(round(value)) for value in point.bbox_xyxy)
-        return _pad_box(raw_box, width=width, height=height, padding_ratio=padding_ratio)
+        left, top, right, bottom = (int(round(value)) for value in point.bbox_xyxy)
+        raw_box = (left, top, right, bottom)
+        return _pad_box(
+            raw_box, width=width, height=height, padding_ratio=padding_ratio
+        )
     return None
 
 

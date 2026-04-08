@@ -3,10 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
-from v2a_inspect.agent.state import DecisionRecord, PlannedAction, PlannerState, ToolCallRecord
+from v2a_inspect.agent.state import (
+    DecisionRecord,
+    PlannedAction,
+    PlannerState,
+    ToolCallRecord,
+)
 
 
 @dataclass(frozen=True)
@@ -14,7 +19,9 @@ class ToolExecutor:
     registry: dict[str, Callable[..., object]]
     trace_path: Path | None = None
 
-    def execute(self, state: PlannerState, action: PlannedAction) -> tuple[PlannerState, object]:
+    def execute(
+        self, state: PlannerState, action: PlannedAction
+    ) -> tuple[PlannerState, object]:
         handler = self.registry[action.tool_name]
         result = handler(**action.request_payload)
         record = ToolCallRecord(
@@ -35,7 +42,7 @@ class ToolExecutor:
         state: PlannerState,
         *,
         issue_id: str,
-        decision: str,
+        decision: Literal["accept", "reject", "retry", "skip"],
         rationale: str,
         confidence: float,
     ) -> PlannerState:
@@ -54,7 +61,11 @@ class ToolExecutor:
     def replay_trace(self) -> list[dict[str, object]]:
         if self.trace_path is None or not self.trace_path.exists():
             return []
-        return [json.loads(line) for line in self.trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [
+            json.loads(line)
+            for line in self.trace_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
     def _append_trace(self, payload: dict[str, object]) -> None:
         if self.trace_path is None:
@@ -64,14 +75,27 @@ class ToolExecutor:
             file_obj.write(json.dumps(payload) + "\n")
 
 
+@runtime_checkable
+class _Dumpable(Protocol):
+    def model_dump(self, *, mode: str = "json") -> dict[str, object]: ...
+
+
 def _extract_output_refs(result: object) -> list[str]:
     refs: list[str] = []
     if isinstance(result, dict):
         for key, value in result.items():
-            if key.endswith("_path") and isinstance(value, str):
+            if (
+                isinstance(key, str)
+                and key.endswith("_path")
+                and isinstance(value, str)
+            ):
                 refs.append(value)
-            if key.endswith("_ids") and isinstance(value, list):
+            if (
+                isinstance(key, str)
+                and key.endswith("_ids")
+                and isinstance(value, list)
+            ):
                 refs.extend(str(item) for item in value)
-    elif hasattr(result, "model_dump"):
+    elif isinstance(result, _Dumpable):
         return _extract_output_refs(result.model_dump(mode="json"))
     return refs

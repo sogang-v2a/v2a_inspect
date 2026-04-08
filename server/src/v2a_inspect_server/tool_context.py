@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 from .settings import get_server_runtime_settings
-from v2a_inspect.contracts import IdentityEdge, LabelCandidate, PhysicalSourceTrack, TrackCrop
+from v2a_inspect.contracts import IdentityEdge, LabelCandidate, PhysicalSourceTrack
 from v2a_inspect.tools import (
     FrameBatch,
     Sam3EntityTrack,
@@ -27,8 +27,13 @@ from v2a_inspect.tools import (
 from v2a_inspect.workflows import InspectOptions
 
 from .crops import crop_tracks, group_crop_paths_by_track
+from .constants import DEFAULT_SCENE_PROMPTS, DEFAULT_TRACK_LABELS
 from .reid import build_identity_edges, build_provisional_source_tracks
-from .semantics import build_ambience_beds, build_generation_groups, build_sound_event_segments
+from .semantics import (
+    build_ambience_beds,
+    build_generation_groups,
+    build_sound_event_segments,
+)
 
 if TYPE_CHECKING:
     from v2a_inspect_server.runtime import ToolingRuntime
@@ -214,9 +219,9 @@ def _append_runtime_tool_evidence(
 
         tracks_by_id = {track.track_id: track for track in normalized_tracks}
         track_crops = crop_tracks(
-            frame_batches=frame_batches,
+            frame_batches=list(frame_batches),
             tracks=normalized_tracks,
-            output_dir=str(Path(context.get("storyboard_path", "")).parent / "crops"),
+            output_dir=str(_storyboard_root(context) / "crops"),
         )
         context["track_crops"] = track_crops
         progress_messages.append(
@@ -256,7 +261,7 @@ def _append_runtime_tool_evidence(
                     tracks_by_id=tracks_by_id,
                 )
                 ambience_beds = build_ambience_beds(
-                    list(context.get("evidence_windows", [])),
+                    _evidence_windows_from_context(context),
                     physical_sources,
                 )
                 generation_groups = build_generation_groups(
@@ -286,7 +291,9 @@ def _append_runtime_tool_evidence(
                 )
                 context["tool_grouping_hints"] = _append_hint_section(
                     context.get("tool_grouping_hints", ""),
-                    _semantic_hints(sound_event_segments, ambience_beds, generation_groups),
+                    _semantic_hints(
+                        sound_event_segments, ambience_beds, generation_groups
+                    ),
                 )
                 _append_group_label_hints(
                     context,
@@ -336,20 +343,10 @@ def _append_runtime_tool_evidence(
 
 def _scene_prompt_candidates(
     frame_batches: Sequence[FrameBatch],
-    label_client: _LabelClientLike,
+    _label_client: _LabelClientLike,
 ) -> dict[int, list[str]]:
-    del label_client
-    candidate_labels = [
-        "person",
-        "cat",
-        "dog",
-        "car",
-        "boat",
-        "animal",
-        "object",
-    ]
     return {
-        batch.scene_index: list(candidate_labels)
+        batch.scene_index: list(DEFAULT_SCENE_PROMPTS)
         for batch in frame_batches
         if batch.frames
     }
@@ -498,7 +495,7 @@ def _score_track_label_candidates(
     for track_id, image_paths in track_image_paths.items():
         scores = label_client.score_image_labels(
             image_paths=image_paths,
-            labels=["person", "vehicle", "animal", "object", "background"],
+            labels=list(DEFAULT_TRACK_LABELS),
         )
         candidates_by_track[track_id] = [
             LabelCandidate(label=score.label, score=round(score.score, 4))
@@ -547,6 +544,20 @@ def _semantic_hints(
             f"- generation {getattr(group, 'group_id')}: label={getattr(group, 'canonical_label')} events={len(getattr(group, 'member_event_ids', []))} ambience={len(getattr(group, 'member_ambience_ids', []))}"
         )
     return "\n".join(lines)
+
+
+def _storyboard_root(context: dict[str, object]) -> Path:
+    storyboard_path = context.get("storyboard_path")
+    if isinstance(storyboard_path, str) and storyboard_path:
+        return Path(storyboard_path).parent
+    return Path(tempfile.gettempdir())
+
+
+def _evidence_windows_from_context(context: dict[str, object]) -> list[object]:
+    evidence_windows = context.get("evidence_windows")
+    if isinstance(evidence_windows, list):
+        return list(evidence_windows)
+    return []
 
 
 def _build_track_routing_decisions(
@@ -671,7 +682,7 @@ def _append_group_label_hints(
         label_result = label_client.score_labels(
             group_id=_group_id(group),
             image_paths=representative_images,
-            labels=["person", "vehicle", "animal", "object", "background"],
+            labels=list(DEFAULT_TRACK_LABELS),
         )
         label_lines.append(
             f"- {label_result.group_id}: label={label_result.label} scores="

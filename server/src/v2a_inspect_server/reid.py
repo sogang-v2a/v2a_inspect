@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from v2a_inspect.contracts import IdentityEdge, LabelCandidate, PhysicalSourceTrack, TrackCrop
+from v2a_inspect.contracts import (
+    IdentityEdge,
+    LabelCandidate,
+    PhysicalSourceTrack,
+    TrackCrop,
+)
 from v2a_inspect.tools.grouping import cosine_similarity
 from v2a_inspect.tools.types import EntityEmbedding, Sam3EntityTrack
 
@@ -25,14 +30,18 @@ def build_identity_edges(
             right_embedding = embeddings_by_track.get(right_track.track_id)
             if left_embedding is None or right_embedding is None:
                 continue
-            similarity = cosine_similarity(left_embedding.vector, right_embedding.vector)
+            similarity = cosine_similarity(
+                left_embedding.vector, right_embedding.vector
+            )
             same_window = left_track.scene_index == right_track.scene_index
             threshold = same_window_threshold if same_window else cross_window_threshold
             label_compatibility = _label_compatibility(
                 label_candidates_by_track.get(left_track.track_id, []),
                 label_candidates_by_track.get(right_track.track_id, []),
             )
-            confidence = max(0.0, min(1.0, (similarity * 0.8) + (label_compatibility * 0.2)))
+            confidence = max(
+                0.0, min(1.0, (similarity * 0.8) + (label_compatibility * 0.2))
+            )
             accepted = confidence >= threshold
             edges.append(
                 IdentityEdge(
@@ -41,7 +50,9 @@ def build_identity_edges(
                     target_track_id=right_track.track_id,
                     similarity=round(similarity, 4),
                     same_window=same_window,
-                    temporal_gap_seconds=round(abs(right_track.start_seconds - left_track.end_seconds), 3),
+                    temporal_gap_seconds=round(
+                        abs(right_track.start_seconds - left_track.end_seconds), 3
+                    ),
                     label_compatibility=round(label_compatibility, 4),
                     confidence=round(confidence, 4),
                     accepted=accepted,
@@ -119,7 +130,9 @@ def build_provisional_source_tracks(
             and edge.source_track_id in {track.track_id for track in member_tracks}
             and edge.target_track_id in {track.track_id for track in member_tracks}
         ]
-        base_confidence = sum(track.confidence for track in member_tracks) / len(member_tracks)
+        base_confidence = sum(track.confidence for track in member_tracks) / len(
+            member_tracks
+        )
         identity_confidence = (
             sum(supporting_edges) / len(supporting_edges)
             if supporting_edges

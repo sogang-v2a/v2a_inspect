@@ -7,7 +7,12 @@ from pathlib import Path
 
 from PIL import Image
 
-from v2a_inspect.tools.types import FrameBatch, SampledFrame, Sam3EntityTrack, Sam3TrackPoint
+from v2a_inspect.tools.types import (
+    FrameBatch,
+    SampledFrame,
+    Sam3EntityTrack,
+    Sam3TrackPoint,
+)
 from v2a_inspect_server.crops import crop_tracks, group_crop_paths_by_track
 
 
@@ -21,7 +26,11 @@ class CropTrackTests(unittest.TestCase):
                 FrameBatch(
                     scene_index=0,
                     frames=[
-                        SampledFrame(scene_index=0, timestamp_seconds=0.0, image_path=str(frame_path))
+                        SampledFrame(
+                            scene_index=0,
+                            timestamp_seconds=0.0,
+                            image_path=str(frame_path),
+                        )
                     ],
                 )
             ]
@@ -52,7 +61,11 @@ class CropTrackTests(unittest.TestCase):
                 FrameBatch(
                     scene_index=0,
                     frames=[
-                        SampledFrame(scene_index=0, timestamp_seconds=0.0, image_path=str(frame_path))
+                        SampledFrame(
+                            scene_index=0,
+                            timestamp_seconds=0.0,
+                            image_path=str(frame_path),
+                        )
                     ],
                 )
             ]

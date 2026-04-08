@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 
 from v2a_inspect.contracts import (
     AmbienceBed,
@@ -61,9 +62,7 @@ def build_sound_event_segments(
                     ),
                     material_or_surface=material_hint,
                     intensity=(
-                        "strong"
-                        if track.features.motion_score >= 0.7
-                        else "light"
+                        "strong" if track.features.motion_score >= 0.7 else "light"
                     ),
                     texture=(
                         "continuous"
@@ -82,7 +81,7 @@ def build_sound_event_segments(
 
 
 def build_ambience_beds(
-    evidence_windows: list[object],
+    evidence_windows: Sequence[object],
     physical_sources: list[PhysicalSourceTrack],
 ) -> list[AmbienceBed]:
     beds: list[AmbienceBed] = []
@@ -95,7 +94,9 @@ def build_ambience_beds(
         covered = 0.0
         for source in physical_sources:
             for span_start, span_end in source.spans:
-                overlap = max(min(span_end, end_time) - max(span_start, start_time), 0.0)
+                overlap = max(
+                    min(span_end, end_time) - max(span_start, start_time), 0.0
+                )
                 covered += overlap
         coverage_ratio = min(covered / window_duration, 1.0)
         if coverage_ratio < 0.6:
@@ -126,7 +127,9 @@ def build_generation_groups(
     }
     grouped_events: dict[str, list[SoundEventSegment]] = defaultdict(list)
     for event in sound_events:
-        grouped_events[_event_group_key(event, labels_by_source.get(event.source_id))].append(event)
+        grouped_events[
+            _event_group_key(event, labels_by_source.get(event.source_id))
+        ].append(event)
 
     groups: list[GenerationGroup] = []
     for index, (group_key, events) in enumerate(grouped_events.items()):
@@ -136,8 +139,12 @@ def build_generation_groups(
                 member_event_ids=[event.event_id for event in events],
                 canonical_label=group_key,
                 canonical_description=f"provisional acoustic recipe for {group_key}",
-                group_confidence=round(sum(event.confidence for event in events) / len(events), 4),
-                route_decision=_provisional_route(event_type=events[0].event_type, ambience=False),
+                group_confidence=round(
+                    sum(event.confidence for event in events) / len(events), 4
+                ),
+                route_decision=_provisional_route(
+                    event_type=events[0].event_type, ambience=False
+                ),
                 reasoning_summary="heuristic acoustic-equivalence grouping from event type and source label",
             )
         )
@@ -150,7 +157,9 @@ def build_generation_groups(
                 canonical_label=f"ambience:{ambience.environment_type}",
                 canonical_description=ambience.acoustic_profile,
                 group_confidence=ambience.confidence,
-                route_decision=_provisional_route(event_type=ambience.environment_type, ambience=True),
+                route_decision=_provisional_route(
+                    event_type=ambience.environment_type, ambience=True
+                ),
                 reasoning_summary="ambience beds are grouped by environment profile rather than source identity",
             )
         )
@@ -193,7 +202,9 @@ def _provisional_route(*, event_type: str, ambience: bool) -> RoutingDecision:
             reasoning="ambience beds prefer continuous video-to-audio generation",
             rule_based=True,
         )
-    model_type = "VTA" if event_type in {"continuous_motion", "active_interaction"} else "TTA"
+    model_type = (
+        "VTA" if event_type in {"continuous_motion", "active_interaction"} else "TTA"
+    )
     return RoutingDecision(
         model_type=model_type,
         confidence=0.7,
