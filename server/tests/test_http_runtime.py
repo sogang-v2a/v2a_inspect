@@ -51,6 +51,7 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertEqual(payload["runtime_mode"], "nvidia_docker")
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
     @patch("v2a_inspect_server.runtime.run_agent_review_pass")
     @patch("v2a_inspect_server.runtime.get_grouped_analysis")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
@@ -65,6 +66,7 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_resolve_request_video_path,
         mock_get_grouped_analysis,
         mock_run_agent_review_pass,
+        mock_inspect_nvidia_runtime,
         mock_server_settings,
     ) -> None:
         mock_server_settings.return_value = SimpleNamespace(
@@ -78,6 +80,12 @@ class RuntimeHttpTests(unittest.TestCase):
             hf_token=None,
         )
         mock_build_tooling_runtime.return_value = SimpleNamespace()
+        mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
+            available=True,
+            devices=[],
+            minimum_vram_gb=16,
+            message="ok",
+        )
         mock_run_agent_review_pass.return_value = (SimpleNamespace(issues=[], tool_calls=[]), "/tmp/agent-trace.jsonl")
         mock_build_tool_context.return_value = {
             "progress_messages": ["tool-step"],
@@ -151,6 +159,47 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertEqual(payload["warnings"], ["warn"])
         self.assertEqual(payload["progress_messages"], ["done"])
         self.assertIn("multitrack_bundle", payload)
+
+    @patch("v2a_inspect_server.runtime._resolve_request_video_path")
+    @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
+    def test_analyze_endpoint_rejects_when_gpu_runtime_is_unavailable(
+        self,
+        mock_inspect_nvidia_runtime,
+        mock_resolve_request_video_path,
+    ) -> None:
+        mock_resolve_request_video_path.return_value = "/tmp/fake.mp4"
+        mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
+            available=False,
+            devices=[],
+            minimum_vram_gb=16,
+            message="missing gpu",
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            with self.assertRaises(request.HTTPError) as raised:
+                request.urlopen(
+                    request.Request(
+                        f"http://127.0.0.1:{server.server_port}/analyze",
+                        data=json.dumps(
+                            {
+                                "video_path": "/data/uploads/video.mp4",
+                                "video_filename": "video.mp4",
+                                "options": {},
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                )
+            payload = json.loads(raised.exception.read().decode("utf-8"))
+        finally:
+            server.server_close()
+            thread.join(timeout=1)
+
+        self.assertFalse(payload["ok"])
+        self.assertIn("Remote GPU runtime is unavailable", payload["error"])
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     def test_upload_endpoint_writes_raw_bytes(self, mock_server_settings) -> None:

@@ -263,6 +263,21 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         else "video.mp4",
                         video_url=video_url if isinstance(video_url, str) else None,
                     )
+                    gpu_check = inspect_nvidia_runtime(
+                        minimum_vram_gb=get_server_runtime_settings().minimum_gpu_vram_gb
+                    )
+                    if not gpu_check.available:
+                        self._write_json(
+                            {
+                                "ok": False,
+                                "error": "Remote GPU runtime is unavailable for /analyze.",
+                                "gpu_check": json.loads(
+                                    runtime_check_to_json(gpu_check)
+                                ),
+                            },
+                            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                        )
+                        return
                     server_options = options.model_copy(
                         update={"runtime_mode": "in_process"}
                     )

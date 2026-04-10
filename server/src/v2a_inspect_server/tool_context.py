@@ -199,43 +199,60 @@ def _append_runtime_tool_evidence(
     progress_messages = (
         [str(item) for item in raw_progress] if isinstance(raw_progress, list) else []
     )
+    label_client = getattr(tooling_runtime, "label_client", None)
+    scene_prompts = (
+        _scene_prompt_candidates(frame_batches, label_client)
+        if label_client is not None
+        else {}
+    )
     try:
-        label_client = getattr(tooling_runtime, "label_client", None)
-        scene_prompts = (
-            _scene_prompt_candidates(frame_batches, label_client)
-            if label_client is not None
-            else {}
-        )
         sam3_track_set = tooling_runtime.sam3_client.extract_entities(
             list(frame_batches),
             prompts_by_scene=scene_prompts,
         )
-        context["sam3_track_set"] = sam3_track_set
-        normalized_tracks = _normalize_tracks(getattr(sam3_track_set, "tracks", []))
-        context["tool_grouping_hints"] = _grouping_hints_from_tracks(normalized_tracks)
-        progress_messages.append(
-            f"Tool pipeline: extracted {len(normalized_tracks)} SAM3 tracks."
+    except Exception as exc:  # noqa: BLE001
+        _append_tool_warning(
+            context,
+            "SAM3 extraction unavailable",
+            exc,
         )
+        context["progress_messages"] = progress_messages
+        return
 
-        tracks_by_id = {track.track_id: track for track in normalized_tracks}
+    context["sam3_track_set"] = sam3_track_set
+    normalized_tracks = _normalize_tracks(getattr(sam3_track_set, "tracks", []))
+    context["tool_grouping_hints"] = _grouping_hints_from_tracks(normalized_tracks)
+    progress_messages.append(
+        f"Tool pipeline: extracted {len(normalized_tracks)} SAM3 tracks."
+    )
+
+    tracks_by_id = {track.track_id: track for track in normalized_tracks}
+    group_objects: Sequence[object] = _singleton_groups_for_tracks(normalized_tracks)
+    track_routing_decisions = _build_track_routing_decisions(normalized_tracks)
+
+    try:
         track_crops = crop_tracks(
             frame_batches=list(frame_batches),
             tracks=normalized_tracks,
             output_dir=str(_storyboard_root(context) / "crops"),
         )
-        context["track_crops"] = track_crops
-        progress_messages.append(
-            f"Tool pipeline: generated {len(track_crops)} track crops."
+    except Exception as exc:  # noqa: BLE001
+        _append_tool_warning(
+            context,
+            "Track crop generation unavailable",
+            exc,
         )
-        track_image_paths = group_crop_paths_by_track(track_crops)
-        track_routing_decisions = _build_track_routing_decisions(normalized_tracks)
-        group_objects: Sequence[object] = _singleton_groups_for_tracks(
-            normalized_tracks
-        )
+        track_crops = []
+    context["track_crops"] = track_crops
+    progress_messages.append(
+        f"Tool pipeline: generated {len(track_crops)} track crops."
+    )
+    track_image_paths = group_crop_paths_by_track(track_crops)
 
-        if track_image_paths:
-            embedding_client = getattr(tooling_runtime, "embedding_client", None)
-            if embedding_client is not None and label_client is not None:
+    if track_image_paths:
+        embedding_client = getattr(tooling_runtime, "embedding_client", None)
+        if embedding_client is not None and label_client is not None:
+            try:
                 embeddings = embedding_client.embed_images(track_image_paths)
                 context["entity_embeddings"] = embeddings
                 track_label_candidates = _score_track_label_candidates(
@@ -301,43 +318,40 @@ def _append_runtime_tool_evidence(
                     candidate_groups=candidate_groups.groups,
                     track_image_paths=track_image_paths,
                 )
+            except Exception as exc:  # noqa: BLE001
+                _append_tool_warning(
+                    context,
+                    "Crop embedding/label enrichment unavailable",
+                    exc,
+                )
 
-        routing_decisions = _build_group_routing_decisions(
-            group_objects=group_objects,
+    routing_decisions = _build_group_routing_decisions(
+        group_objects=group_objects,
+        track_decisions_by_track_id=track_routing_decisions,
+    )
+    if routing_decisions:
+        routing_hints = _routing_hints_from_decisions(
+            routing_decisions,
             track_decisions_by_track_id=track_routing_decisions,
         )
-        if routing_decisions:
-            routing_hints = _routing_hints_from_decisions(
-                routing_decisions,
-                track_decisions_by_track_id=track_routing_decisions,
-            )
-            context["routing_decisions"] = routing_decisions
-            context["tool_routing_hints"] = routing_hints
-            context["tool_grouping_hints"] = _append_hint_section(
-                context.get("tool_grouping_hints", ""),
-                routing_hints,
-            )
+        context["routing_decisions"] = routing_decisions
+        context["tool_routing_hints"] = routing_hints
+        context["tool_grouping_hints"] = _append_hint_section(
+            context.get("tool_grouping_hints", ""),
+            routing_hints,
+        )
 
-        verify_hints = _verify_hints_from_groups(
-            group_objects=group_objects,
-            tracks_by_id=tracks_by_id,
-            minimum_group_size=2 if options.enable_vlm_verify else 1,
+    verify_hints = _verify_hints_from_groups(
+        group_objects=group_objects,
+        tracks_by_id=tracks_by_id,
+        minimum_group_size=2 if options.enable_vlm_verify else 1,
+    )
+    if verify_hints:
+        context["tool_verify_hints"] = verify_hints
+        context["tool_grouping_hints"] = _append_hint_section(
+            context.get("tool_grouping_hints", ""),
+            verify_hints,
         )
-        if verify_hints:
-            context["tool_verify_hints"] = verify_hints
-            context["tool_grouping_hints"] = _append_hint_section(
-                context.get("tool_grouping_hints", ""),
-                verify_hints,
-            )
-    except Exception as exc:  # noqa: BLE001
-        raw_warnings = context.get("warnings", [])
-        warnings = (
-            [str(item) for item in raw_warnings]
-            if isinstance(raw_warnings, list)
-            else []
-        )
-        warnings.append(f"Tool runtime: SAM3 extraction unavailable ({exc}).")
-        context["warnings"] = warnings
     context["progress_messages"] = progress_messages
 
 
@@ -676,7 +690,10 @@ def _append_group_label_hints(
         member_ids = _group_member_ids(group)
         if not member_ids:
             continue
-        representative_images = track_image_paths.get(member_ids[0], [])
+        representative_images = _representative_group_images(
+            member_ids,
+            track_image_paths=track_image_paths,
+        )
         if not representative_images:
             continue
         label_result = label_client.score_labels(
@@ -700,3 +717,35 @@ def _append_group_label_hints(
                 *label_lines,
             ]
         ).strip()
+
+
+def _append_tool_warning(
+    context: dict[str, object],
+    label: str,
+    exc: Exception,
+) -> None:
+    raw_warnings = context.get("warnings", [])
+    warnings = (
+        [str(item) for item in raw_warnings]
+        if isinstance(raw_warnings, list)
+        else []
+    )
+    warnings.append(f"Tool runtime: {label} ({exc}).")
+    context["warnings"] = warnings
+
+
+def _representative_group_images(
+    member_ids: Sequence[str],
+    *,
+    track_image_paths: Mapping[str, list[str]],
+    max_images_per_group: int = 4,
+) -> list[str]:
+    representative_images: list[str] = []
+    for member_id in member_ids:
+        for image_path in track_image_paths.get(member_id, []):
+            if image_path in representative_images:
+                continue
+            representative_images.append(image_path)
+            if len(representative_images) >= max_images_per_group:
+                return representative_images
+    return representative_images

@@ -353,6 +353,103 @@ class ToolContextTests(unittest.TestCase):
         self.assertIn("identity_edges", context)
         self.assertIn("physical_sources", context)
 
+    @patch("v2a_inspect_server.tool_context.build_provisional_source_tracks")
+    @patch("v2a_inspect_server.tool_context.build_identity_edges")
+    @patch("v2a_inspect_server.tool_context.group_crop_paths_by_track")
+    @patch("v2a_inspect_server.tool_context.crop_tracks")
+    @patch("v2a_inspect_server.tool_context.hydrate_evidence_windows")
+    @patch("v2a_inspect_server.tool_context.export_window_clips")
+    @patch("v2a_inspect_server.tool_context.generate_storyboard")
+    @patch("v2a_inspect_server.tool_context.sample_frames")
+    @patch("v2a_inspect_server.tool_context._frame_output_dir")
+    @patch("v2a_inspect_server.tool_context.evidence_windows_to_scene_boundaries")
+    @patch("v2a_inspect_server.tool_context.build_evidence_windows")
+    @patch("v2a_inspect_server.tool_context.build_candidate_cuts")
+    @patch("v2a_inspect_server.tool_context.probe_video")
+    def test_build_tool_context_attributes_embedding_failures_separately(
+        self,
+        mock_probe_video,
+        mock_build_candidate_cuts,
+        mock_build_evidence_windows,
+        mock_scene_boundaries,
+        mock_frame_output_dir,
+        mock_sample_frames,
+        mock_generate_storyboard,
+        mock_export_window_clips,
+        mock_hydrate_evidence_windows,
+        mock_crop_tracks,
+        mock_group_crop_paths_by_track,
+        mock_build_identity_edges,
+        mock_build_provisional_source_tracks,
+    ) -> None:
+        self._structure_setup(
+            mock_probe_video=mock_probe_video,
+            mock_build_candidate_cuts=mock_build_candidate_cuts,
+            mock_build_evidence_windows=mock_build_evidence_windows,
+            mock_scene_boundaries=mock_scene_boundaries,
+            mock_frame_output_dir=mock_frame_output_dir,
+            mock_sample_frames=mock_sample_frames,
+            mock_generate_storyboard=mock_generate_storyboard,
+            mock_export_window_clips=mock_export_window_clips,
+            mock_hydrate_evidence_windows=mock_hydrate_evidence_windows,
+            duration_seconds=3.0,
+            window_count=1,
+        )
+        mock_crop_tracks.return_value = [
+            TrackCrop(
+                crop_id="trk0-crop-00",
+                track_id="trk0",
+                scene_index=0,
+                frame_path="/tmp/frame0.jpg",
+                crop_path="/tmp/crop0.jpg",
+                timestamp_seconds=0.0,
+                bbox_xyxy=[0, 0, 10, 10],
+            )
+        ]
+        mock_group_crop_paths_by_track.return_value = {"trk0": ["/tmp/crop0.jpg"]}
+        mock_build_identity_edges.return_value = []
+        mock_build_provisional_source_tracks.return_value = []
+        fake_runtime = SimpleNamespace(
+            sam3_client=SimpleNamespace(
+                extract_entities=lambda _frame_batches, **_kwargs: SimpleNamespace(
+                    tracks=[
+                        SimpleNamespace(
+                            track_id="trk0",
+                            scene_index=0,
+                            start_seconds=0.0,
+                            end_seconds=1.0,
+                            label_hint="person",
+                            confidence=0.9,
+                            points=[],
+                        )
+                    ]
+                )
+            ),
+            embedding_client=SimpleNamespace(
+                embed_images=lambda _track_image_paths: (_ for _ in ()).throw(
+                    RuntimeError("embedding failed")
+                )
+            ),
+            label_client=SimpleNamespace(
+                score_image_labels=lambda **_kwargs: [],
+                score_labels=lambda **_kwargs: SimpleNamespace(
+                    group_id="g0",
+                    label="object",
+                    scores=[],
+                ),
+            ),
+        )
+
+        context = build_tool_context(
+            "/tmp/video.mp4",
+            options=InspectOptions(),
+            tooling_runtime=cast(ToolingRuntime, fake_runtime),
+        )
+
+        warnings = cast(list[str], context.get("warnings", []))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Crop embedding/label enrichment unavailable", warnings[0])
+
 
 if __name__ == "__main__":
     unittest.main()

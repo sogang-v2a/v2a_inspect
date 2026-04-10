@@ -8,15 +8,19 @@ from PIL import Image
 
 
 def inference_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is required for the active remote inference runtime."
+        )
+    return torch.device("cuda")
 
 
 def inference_dtype() -> torch.dtype:
-    if torch.cuda.is_available():
-        return torch.float16
-    return torch.float32
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is required for the active remote inference runtime."
+        )
+    return torch.float16
 
 
 def load_rgb_images(image_paths: Sequence[str]) -> list[Image.Image]:

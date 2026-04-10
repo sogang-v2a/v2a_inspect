@@ -13,6 +13,7 @@ from v2a_inspect_server.runtime import _build_handler
 
 
 class RuntimeHttpFakeSmokeTests(unittest.TestCase):
+    @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
     @patch("v2a_inspect_server.runtime.run_agent_review_pass")
     @patch("v2a_inspect_server.runtime.get_grouped_analysis")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
@@ -27,7 +28,14 @@ class RuntimeHttpFakeSmokeTests(unittest.TestCase):
         mock_resolve_request_video_path,
         mock_get_grouped_analysis,
         mock_run_agent_review_pass,
+        mock_inspect_nvidia_runtime,
     ) -> None:
+        mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
+            available=True,
+            devices=[],
+            minimum_vram_gb=16,
+            message="ok",
+        )
         mock_build_tooling_runtime.return_value = build_fake_tooling_runtime()
         mock_run_agent_review_pass.return_value = (
             SimpleNamespace(issues=[], tool_calls=[]),
