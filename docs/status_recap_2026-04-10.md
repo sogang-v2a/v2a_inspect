@@ -129,6 +129,15 @@ The newest recovery slice (`aa65248`) added:
 - scene-prompt foreground recovery
 - more honest extraction and pipeline metadata
 
+The newest observability slice (`94ad5fa`) added:
+- per-stage timing history in `pipeline_metadata`
+- structured recovery-attempt history
+- a per-run runtime trace file written before bundle completion
+
+Verified on `sogang_gpu`:
+- a nontrivial interrupted `v2a_cat.mp4` run now creates `v2a_cat-runtime-trace.jsonl`
+- the trace already records `structural_overview` timing before the run finishes, which makes slow remote runs diagnosable instead of opaque
+
 That means the next remote benchmark should focus on whether these changes raise **foreground recall**, not just whether the server stays up.
 
 ## Commits from the latest implementation stretch
