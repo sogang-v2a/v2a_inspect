@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import unittest
 
 
@@ -8,11 +9,7 @@ class ServerPackageRootImportTests(unittest.TestCase):
     def test_server_package_root_import_stays_lightweight(self) -> None:
         completed = subprocess.run(
             [
-                "uv",
-                "run",
-                "--project",
-                "server",
-                "python",
+                sys.executable,
                 "-c",
                 (
                     "import sys, v2a_inspect_server; "
@@ -20,6 +17,7 @@ class ServerPackageRootImportTests(unittest.TestCase):
                     "assert 'torch' not in sys.modules"
                 ),
             ],
+            env={"PYTHONPATH": "src:server/src:."},
             check=True,
             capture_output=True,
             text=True,
@@ -29,15 +27,14 @@ class ServerPackageRootImportTests(unittest.TestCase):
     def test_ui_package_root_import_stays_lightweight(self) -> None:
         completed = subprocess.run(
             [
-                "uv",
-                "run",
-                "python",
+                sys.executable,
                 "-c",
                 (
                     "import sys, v2a_inspect.ui; "
                     "assert 'streamlit' not in sys.modules"
                 ),
             ],
+            env={"PYTHONPATH": "src:server/src:."},
             check=True,
             capture_output=True,
             text=True,

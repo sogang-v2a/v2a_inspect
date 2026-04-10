@@ -14,18 +14,24 @@ name = "v2a-inspect"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
     "google-genai>=1.68.0",
     "langchain>=1.2.12",
-    "langfuse>=3.9.0",
     "langchain-google-genai>=4.0.0",
     "langgraph>=1.1.2",
     "moviepy>=2.2.1",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "pyyaml>=6.0.2",
+]
+
+[project.optional-dependencies]
+observability = [
+    "langfuse>=3.9.0",
+]
+ui = [
     "streamlit>=1.55.0",
     "streamlit-authenticator>=0.4.2",
 ]

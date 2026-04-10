@@ -11,13 +11,13 @@ name = "v2a-inspect-server"
 version = "0.1.0"
 description = "Remote/server-side tooling for the v2a_inspect visual pipeline"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
   "huggingface-hub>=0.35.0",
   "pydantic>=2.12.5",
-  "torch>=2.10.0",
-  "torchvision>=0.25.0",
-  "transformers>=5.0.0",
+  "torch>=2.5.1,<2.6",
+  "torchvision>=0.20.1,<0.21",
+  "transformers>=4.48.0,<5",
   "v2a-inspect>=0.1.0",
 ]
 
