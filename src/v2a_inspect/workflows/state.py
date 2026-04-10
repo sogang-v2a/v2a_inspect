@@ -89,7 +89,9 @@ class InspectState(TypedDict, total=False):
     scene_boundaries: list[SceneBoundary]
     frame_batches: list[FrameBatch]
     frames_per_window: int
+    stage_history: list[dict[str, object]]
     storyboard_path: str
+    runtime_trace_path: str
     sam3_track_set: Sam3TrackSet
     scene_prompt_candidates: dict[int, list[str]]
     track_crops: list[TrackCrop]
@@ -107,3 +109,4 @@ class InspectState(TypedDict, total=False):
     tool_verify_hints: str
     tool_routing_hints: str
     recovery_actions: list[str]
+    recovery_attempts: list[dict[str, object]]

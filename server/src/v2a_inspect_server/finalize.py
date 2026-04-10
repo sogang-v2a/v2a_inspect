@@ -70,6 +70,9 @@ def build_final_bundle(
             "tool_context_enabled": True,
             "sampling_frames_per_window": state.get("frames_per_window"),
             "recovery_actions": list(state.get("recovery_actions", [])),
+            "recovery_attempts": list(state.get("recovery_attempts", [])),
+            "stage_history": list(state.get("stage_history", [])),
+            "runtime_trace_path": _state_path(state.get("runtime_trace_path")),
         },
     )
     issues = validate_bundle(bundle)

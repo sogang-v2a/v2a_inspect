@@ -23,6 +23,7 @@ from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
 from .model_runtime import clear_cuda_cache
+from .telemetry import ensure_runtime_trace_path, record_stage, stage_start
 from .tool_registry import build_tool_registry
 from .tool_context import build_tool_context
 
@@ -263,6 +264,14 @@ def _run_tool_first_pipeline(
     tooling_runtime: ToolingRuntime,
 ) -> InspectState:
     registry = build_tool_registry(tooling_runtime)
+    state: InspectState = {
+        "video_path": video_path,
+        "options": options,
+        "recovery_actions": [],
+        "recovery_attempts": [],
+        "stage_history": [],
+    }
+    started = stage_start()
     structural = registry["structural_overview"].handler(
         video_path=video_path,
         target_scene_seconds=5.0,
@@ -273,17 +282,53 @@ def _run_tool_first_pipeline(
     frame_batches = list(structural["frame_batches"])
     storyboard_path = str(structural["storyboard_path"])
     artifact_run_dir = str(structural["artifact_root"])
+    state["artifact_run_dir"] = artifact_run_dir
+    state["storyboard_path"] = storyboard_path
+    state["frames_per_window"] = int(structural.get("frames_per_scene", 3))
+    ensure_runtime_trace_path(state)
+    record_stage(
+        state,
+        stage="structural_overview",
+        started_at=started,
+        metrics={
+            "candidate_cut_count": len(candidate_cuts),
+            "evidence_window_count": len(evidence_windows),
+            "sampled_frame_count": sum(len(batch.frames) for batch in frame_batches),
+            "frames_per_window": state["frames_per_window"],
+        },
+    )
 
+    started = stage_start()
     extraction = registry["extract_entities"].handler(frame_batches=frame_batches)
     tracks = _coerce_tracks(extraction)
+    record_stage(
+        state,
+        stage="extract_entities",
+        started_at=started,
+        metrics={
+            "track_count": len(tracks),
+            "extraction_strategy": getattr(extraction, "strategy", None),
+        },
+    )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("sam3")
+    started = stage_start()
     track_crops = registry["crop_tracks"].handler(
         frame_batches=frame_batches,
         tracks=tracks,
         output_dir=str(Path(storyboard_path).parent / "crops"),
     )
     track_image_paths = group_crop_paths_by_track(track_crops)
+    record_stage(
+        state,
+        stage="crop_tracks",
+        started_at=started,
+        metrics={
+            "crop_count": len(track_crops),
+            "tracks_with_crops": len(track_image_paths),
+        },
+    )
+    started = stage_start()
     embeddings = (
         registry["embed_track_crops"].handler(track_image_paths=track_image_paths)
         if track_image_paths
@@ -299,8 +344,18 @@ def _run_tool_first_pipeline(
             [],
         )
     )
+    record_stage(
+        state,
+        stage="embed_track_crops",
+        started_at=started,
+        metrics={
+            "embedding_count": len(embeddings),
+            "candidate_group_count": len(candidate_groups),
+        },
+    )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("embedding")
+    started = stage_start()
     track_label_candidates = (
         registry["score_track_labels"].handler(track_image_paths=track_image_paths)
         if track_image_paths
@@ -309,8 +364,18 @@ def _run_tool_first_pipeline(
     routing_decisions = (
         dict(registry["routing_priors"].handler(tracks=tracks)) if tracks else {}
     )
+    record_stage(
+        state,
+        stage="score_track_labels",
+        started_at=started,
+        metrics={
+            "labeled_track_count": len(track_label_candidates),
+            "routing_track_count": len(routing_decisions),
+        },
+    )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("label")
+    started = stage_start()
     refined_structure = registry["refine_candidate_cuts"].handler(
         probe=probe,
         candidate_cuts=candidate_cuts,
@@ -321,6 +386,16 @@ def _run_tool_first_pipeline(
     )
     candidate_cuts = list(refined_structure["candidate_cuts"])
     evidence_windows = list(refined_structure["evidence_windows"])
+    record_stage(
+        state,
+        stage="refine_candidate_cuts",
+        started_at=started,
+        metrics={
+            "candidate_cut_count": len(candidate_cuts),
+            "evidence_window_count": len(evidence_windows),
+        },
+    )
+    started = stage_start()
     semantics = registry["build_source_semantics"].handler(
         tracks=tracks,
         embeddings=embeddings,
@@ -330,13 +405,21 @@ def _run_tool_first_pipeline(
         candidate_groups=candidate_groups,
         routing_decisions_by_track=routing_decisions,
     )
+    record_stage(
+        state,
+        stage="build_source_semantics",
+        started_at=started,
+        metrics={
+            "identity_edge_count": len(semantics["identity_edges"]),
+            "physical_source_count": len(semantics["physical_sources"]),
+            "sound_event_count": len(semantics["sound_events"]),
+            "ambience_bed_count": len(semantics["ambience_beds"]),
+            "generation_group_count": len(semantics["generation_groups"]),
+        },
+    )
 
-    state: InspectState = {
-        "video_path": video_path,
-        "options": options,
+    state.update({
         "artifact_run_dir": artifact_run_dir,
-        "frames_per_window": int(structural.get("frames_per_scene", 3)),
-        "recovery_actions": [],
         "video_probe": probe,
         "candidate_cuts": candidate_cuts,
         "evidence_windows": evidence_windows,
@@ -365,7 +448,7 @@ def _run_tool_first_pipeline(
             f"Tool-first pipeline: refined structure with {len(candidate_cuts)} merged candidate cuts.",
             "Tool-first pipeline: built source, event, ambience, and generation-group semantics.",
         ],
-    }
+    })
     bundle = build_final_bundle(
         state,
         description_writer=getattr(tooling_runtime, "description_writer", None),

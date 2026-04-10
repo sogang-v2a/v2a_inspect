@@ -17,6 +17,7 @@ from v2a_inspect.workflows import InspectState
 
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle
+from .telemetry import record_recovery_attempt, record_stage, stage_start
 from .tool_registry import build_tool_registry
 
 if TYPE_CHECKING:
@@ -179,21 +180,52 @@ def _apply_action_result(
         return _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
     if tool_name in {"extract_entities", "recover_with_text_prompt"}:
+        started = stage_start()
         updated["sam3_track_set"] = _merge_track_sets(
             updated.get("sam3_track_set"),
             result,
         )
         updated.setdefault("recovery_actions", []).append(tool_name)
-        return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        if tool_name == "recover_with_text_prompt":
+            record_recovery_attempt(
+                updated,
+                tool_name=tool_name,
+                details={"track_count": len(_tracks_from_result(updated.get("sam3_track_set")))},
+            )
+        rebuilt = _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        record_stage(
+            rebuilt,
+            stage=f"agent:{tool_name}",
+            started_at=started,
+            metrics={"track_count": len(_tracks_from_result(rebuilt.get("sam3_track_set")))},
+        )
+        return rebuilt
 
     if tool_name == "recover_foreground_sources" and isinstance(result, dict):
+        started = stage_start()
         updated["sam3_track_set"] = _merge_track_sets(
             updated.get("sam3_track_set"),
             result.get("track_set"),
         )
         updated["scene_prompt_candidates"] = dict(result.get("prompts_by_scene", {}))
         updated.setdefault("recovery_actions", []).append(tool_name)
-        return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        record_recovery_attempt(
+            updated,
+            tool_name=tool_name,
+            details={
+                "window_count": len(updated.get("evidence_windows", [])),
+                "prompts_by_scene": dict(result.get("prompts_by_scene", {})),
+                "track_count": len(_tracks_from_result(updated.get("sam3_track_set"))),
+            },
+        )
+        rebuilt = _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        record_stage(
+            rebuilt,
+            stage="agent:recover_foreground_sources",
+            started_at=started,
+            metrics={"track_count": len(_tracks_from_result(rebuilt.get("sam3_track_set")))},
+        )
+        return rebuilt
 
     if tool_name == "crop_tracks":
         updated["track_crops"] = list(result)
@@ -231,12 +263,31 @@ def _apply_action_result(
         return updated
 
     if tool_name == "densify_window_sampling" and isinstance(result, dict):
+        started = stage_start()
         updated["frame_batches"] = list(result["frame_batches"])
         updated["evidence_windows"] = list(result["evidence_windows"])
         updated["storyboard_path"] = str(result["storyboard_path"])
         updated["frames_per_window"] = int(result["frames_per_scene"])
         updated.setdefault("recovery_actions", []).append(tool_name)
-        return _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        record_recovery_attempt(
+            updated,
+            tool_name=tool_name,
+            details={
+                "window_ids": list(result.get("window_ids", [])),
+                "frames_per_scene": int(result["frames_per_scene"]),
+            },
+        )
+        rebuilt = _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        record_stage(
+            rebuilt,
+            stage="agent:densify_window_sampling",
+            started_at=started,
+            metrics={
+                "window_count": len(rebuilt.get("evidence_windows", [])),
+                "frames_per_window": rebuilt.get("frames_per_window"),
+            },
+        )
+        return rebuilt
 
     if tool_name == "rerun_description_writer":
         updated["generation_groups"] = list(result)

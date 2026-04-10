@@ -104,6 +104,9 @@ class FinalizeTests(unittest.TestCase):
             "track_crops": [],
             "frames_per_window": 6,
             "recovery_actions": ["densify_window_sampling", "recover_foreground_sources"],
+            "recovery_attempts": [{"tool_name": "densify_window_sampling", "frames_per_scene": 6}],
+            "stage_history": [{"kind": "stage", "stage": "extract_entities", "elapsed_seconds": 1.23}],
+            "runtime_trace_path": "/tmp/run/video-runtime-trace.jsonl",
         }
         bundle = build_final_bundle(state)
         self.assertEqual(bundle.pipeline_metadata["pipeline_version"], "agentic_tool_first")
@@ -111,4 +114,16 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual(
             bundle.pipeline_metadata["recovery_actions"],
             ["densify_window_sampling", "recover_foreground_sources"],
+        )
+        self.assertEqual(
+            bundle.pipeline_metadata["recovery_attempts"],
+            [{"tool_name": "densify_window_sampling", "frames_per_scene": 6}],
+        )
+        self.assertEqual(
+            bundle.pipeline_metadata["stage_history"],
+            [{"kind": "stage", "stage": "extract_entities", "elapsed_seconds": 1.23}],
+        )
+        self.assertEqual(
+            bundle.pipeline_metadata["runtime_trace_path"],
+            "/tmp/run/video-runtime-trace.jsonl",
         )
