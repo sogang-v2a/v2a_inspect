@@ -10,6 +10,12 @@ from pydantic_settings import (
 )
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_SERVER_MANIFEST_PATH = (
+    _PROJECT_ROOT / "server" / "src" / "v2a_inspect_server" / "model-manifest.json"
+)
+
+
 class Settings(BaseSettings):
     # Did not include model name here because it is dynamic
     gemini_api_key: SecretStr | None = Field(
@@ -50,8 +56,8 @@ class Settings(BaseSettings):
     runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "mig10_safe"
     remote_gpu_target: str = "sogang_gpu"
     minimum_gpu_vram_gb: int = Field(default=10, ge=1, le=80)
-    model_cache_dir: Path = Path(".cache/v2a_inspect_server/models")
-    weights_manifest_path: Path = Path("server/model-manifest.json")
+    model_cache_dir: Path = Path.home() / ".cache" / "v2a_inspect_server" / "models"
+    weights_manifest_path: Path = _DEFAULT_SERVER_MANIFEST_PATH
     remote_timeout_seconds: int = Field(default=120, ge=1)
     remote_gpu_preference: str | None = None
     remote_gpu_fallback: str | None = None

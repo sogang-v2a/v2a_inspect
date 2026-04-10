@@ -123,6 +123,10 @@ def build_tooling_runtime() -> ToolingRuntime:
     weights_manifest = bootstrapper.load_manifest(
         Path(server_settings.weights_manifest_path)
     )
+    if not weights_manifest.artifacts:
+        raise FileNotFoundError(
+            f"No model artifacts are defined in {server_settings.weights_manifest_path}."
+        )
     resolved_artifacts = bootstrapper.resolve_manifest(weights_manifest)
     missing = [
         name for name, path in resolved_artifacts.items() if not path.exists()
@@ -543,6 +547,10 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     manifest = bootstrapper.load_manifest(
                         Path(server_settings.weights_manifest_path)
                     )
+                    if not manifest.artifacts:
+                        raise FileNotFoundError(
+                            f"No model artifacts are defined in {server_settings.weights_manifest_path}."
+                        )
                     resolved = bootstrapper.ensure_manifest(manifest)
                     build_tooling_runtime.cache_clear()
                     self._write_json(
