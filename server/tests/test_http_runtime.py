@@ -53,18 +53,14 @@ class RuntimeHttpTests(unittest.TestCase):
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
     @patch("v2a_inspect_server.runtime.run_agent_review_pass")
-    @patch("v2a_inspect_server.runtime.get_grouped_analysis")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
-    @patch("v2a_inspect_server.runtime.run_inspect")
-    @patch("v2a_inspect_server.runtime.build_tool_context")
+    @patch("v2a_inspect_server.runtime._analyze_with_pipeline")
     @patch("v2a_inspect_server.runtime.build_tooling_runtime")
     def test_analyze_endpoint_returns_grouped_payload(
         self,
         mock_build_tooling_runtime,
-        mock_build_tool_context,
-        mock_run_inspect,
+        mock_analyze_with_pipeline,
         mock_resolve_request_video_path,
-        mock_get_grouped_analysis,
         mock_run_agent_review_pass,
         mock_inspect_nvidia_runtime,
         mock_server_settings,
@@ -87,26 +83,22 @@ class RuntimeHttpTests(unittest.TestCase):
             message="ok",
         )
         mock_run_agent_review_pass.return_value = (SimpleNamespace(issues=[], tool_calls=[]), "/tmp/agent-trace.jsonl")
-        mock_build_tool_context.return_value = {
-            "progress_messages": ["tool-step"],
-        }
-
-        mock_run_inspect.return_value = {
+        mock_analyze_with_pipeline.return_value = {
             "scene_analysis": SimpleNamespace(
                 model_dump=lambda mode="json": {"total_duration": 1.0, "scenes": []}
+            ),
+            "grouped_analysis": SimpleNamespace(
+                model_dump=lambda mode="json": {
+                    "scene_analysis": {"total_duration": 1.0, "scenes": []},
+                    "raw_tracks": [],
+                    "groups": [],
+                    "track_to_group": {},
+                }
             ),
             "warnings": ["warn"],
             "progress_messages": ["done"],
         }
         mock_resolve_request_video_path.return_value = "/tmp/fake.mp4"
-        mock_get_grouped_analysis.return_value = SimpleNamespace(
-            model_dump=lambda mode="json": {
-                "scene_analysis": {"total_duration": 1.0, "scenes": []},
-                "raw_tracks": [],
-                "groups": [],
-                "track_to_group": {},
-            }
-        )
         with patch(
             "v2a_inspect_server.runtime.build_final_bundle",
             return_value=SimpleNamespace(

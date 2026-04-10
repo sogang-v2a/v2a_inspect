@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING, Callable
 
 from v2a_inspect.contracts import (
     EvidenceWindow,
@@ -42,16 +42,8 @@ class ToolDefinition:
     description: str
 
 
-class _Dumpable(Protocol):
-    def model_dump(self, *, mode: str = "json") -> dict[str, object]: ...
-
-
 def _artifact_root(video_path: str) -> Path:
     return Path(Path(video_path).stem + "_agent_tools")
-
-
-def _dump_items(items: Sequence[_Dumpable]) -> list[dict[str, object]]:
-    return [item.model_dump(mode="json") for item in items]
 
 
 if TYPE_CHECKING:
@@ -94,9 +86,10 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             storyboard_path=storyboard_path,
         )
         return {
-            "probe": probe.model_dump(mode="json"),
-            "candidate_cuts": _dump_items(candidate_cuts),
-            "evidence_windows": _dump_items(evidence_windows),
+            "probe": probe,
+            "candidate_cuts": candidate_cuts,
+            "evidence_windows": evidence_windows,
+            "frame_batches": frame_batches,
             "storyboard_path": storyboard_path,
         }
 
@@ -185,11 +178,11 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             physical_sources=physical_sources,
         )
         return {
-            "identity_edges": _dump_items(identity_edges),
-            "physical_sources": _dump_items(physical_sources),
-            "sound_events": _dump_items(sound_events),
-            "ambience_beds": _dump_items(ambience_beds),
-            "generation_groups": _dump_items(generation_groups),
+            "identity_edges": identity_edges,
+            "physical_sources": physical_sources,
+            "sound_events": sound_events,
+            "ambience_beds": ambience_beds,
+            "generation_groups": generation_groups,
         }
 
     def validator(*, bundle: MultitrackDescriptionBundle) -> object:

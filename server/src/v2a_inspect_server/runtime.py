@@ -12,14 +12,17 @@ import tempfile
 from typing import TYPE_CHECKING
 from urllib import request as urllib_request
 
+from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
 from v2a_inspect.runner import get_grouped_analysis, run_inspect
 from .settings import get_server_runtime_settings
-from v2a_inspect.workflows import InspectOptions
+from v2a_inspect.workflows import InspectOptions, InspectState
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
 from .agentic import run_agent_review_pass
+from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
+from .tool_registry import build_tool_registry
 from .tool_context import build_tool_context
 
 if TYPE_CHECKING:
@@ -66,6 +69,117 @@ def build_tooling_runtime() -> ToolingRuntime:
         weights_manifest=weights_manifest,
         resolved_artifacts=resolved_artifacts,
     )
+
+
+def _analyze_with_pipeline(
+    *,
+    video_path: str,
+    options: InspectOptions,
+    tooling_runtime: ToolingRuntime,
+) -> InspectState:
+    if options.pipeline_mode == "tool_first_foundation":
+        return _run_tool_first_pipeline(
+            video_path=video_path,
+            options=options,
+            tooling_runtime=tooling_runtime,
+        )
+    tool_context = build_tool_context(
+        video_path,
+        options=options,
+        tooling_runtime=tooling_runtime,
+    )
+    return run_inspect(
+        video_path,
+        options=options,
+        initial_state_overrides=tool_context,
+    )
+
+
+def _run_tool_first_pipeline(
+    *,
+    video_path: str,
+    options: InspectOptions,
+    tooling_runtime: ToolingRuntime,
+) -> InspectState:
+    registry = build_tool_registry(tooling_runtime)
+    structural = registry["structural_overview"].handler(
+        video_path=video_path,
+        target_scene_seconds=5.0,
+    )
+    probe = structural["probe"]
+    candidate_cuts = list(structural["candidate_cuts"])
+    evidence_windows = list(structural["evidence_windows"])
+    frame_batches = list(structural["frame_batches"])
+    storyboard_path = str(structural["storyboard_path"])
+
+    extraction = registry["extract_entities"].handler(frame_batches=frame_batches)
+    tracks = _coerce_tracks(extraction)
+    track_crops = registry["crop_tracks"].handler(
+        frame_batches=frame_batches,
+        tracks=tracks,
+        output_dir=str(Path(storyboard_path).parent / "crops"),
+    )
+    track_image_paths = group_crop_paths_by_track(track_crops)
+    embeddings = (
+        registry["embed_track_crops"].handler(track_image_paths=track_image_paths)
+        if track_image_paths
+        else []
+    )
+    track_label_candidates = (
+        registry["score_track_labels"].handler(track_image_paths=track_image_paths)
+        if track_image_paths
+        else {}
+    )
+    semantics = registry["build_source_semantics"].handler(
+        tracks=tracks,
+        embeddings=embeddings,
+        track_crops=track_crops,
+        label_candidates_by_track=track_label_candidates,
+        evidence_windows=evidence_windows,
+    )
+
+    state: InspectState = {
+        "video_path": video_path,
+        "options": options,
+        "video_probe": probe,
+        "candidate_cuts": candidate_cuts,
+        "evidence_windows": evidence_windows,
+        "frame_batches": frame_batches,
+        "storyboard_path": storyboard_path,
+        "sam3_track_set": extraction,
+        "track_crops": track_crops,
+        "entity_embeddings": embeddings,
+        "physical_sources": list(semantics["physical_sources"]),
+        "sound_event_segments": list(semantics["sound_events"]),
+        "ambience_beds": list(semantics["ambience_beds"]),
+        "generation_groups": list(semantics["generation_groups"]),
+        "identity_edges": list(semantics["identity_edges"]),
+        "warnings": [],
+        "errors": [],
+        "progress_messages": [
+            f"Tool-first pipeline: proposed {len(candidate_cuts)} candidate cuts.",
+            f"Tool-first pipeline: built {len(evidence_windows)} evidence windows.",
+            f"Tool-first pipeline: sampled {sum(len(batch.frames) for batch in frame_batches)} frames.",
+            f"Tool-first pipeline: extracted {len(tracks)} source tracks.",
+            f"Tool-first pipeline: generated {len(track_crops)} track crops.",
+            f"Tool-first pipeline: embedded {len(embeddings)} crop-backed track identities.",
+            "Tool-first pipeline: built source, event, ambience, and generation-group semantics.",
+        ],
+    }
+    bundle = build_final_bundle(state)
+    grouped = bundle_to_grouped_analysis(bundle)
+    state["scene_analysis"] = grouped.scene_analysis
+    state["grouped_analysis"] = grouped
+    state["multitrack_bundle"] = bundle
+    return state
+
+
+def _coerce_tracks(extraction_result: object) -> list[object]:
+    if isinstance(extraction_result, dict):
+        tracks = extraction_result.get("tracks", [])
+    else:
+        tracks = getattr(extraction_result, "tracks", [])
+    return list(tracks) if isinstance(tracks, list) else list(tracks or [])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -279,20 +393,18 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         )
                         return
                     server_options = options.model_copy(
-                        update={"runtime_mode": "in_process"}
+                        update={
+                            "runtime_mode": "in_process",
+                            "pipeline_mode": "tool_first_foundation",
+                        }
                     )
                     tooling_runtime = build_tooling_runtime()
-                    tool_context = build_tool_context(
-                        resolved_video_path,
+                    state = _analyze_with_pipeline(
+                        video_path=resolved_video_path,
                         options=server_options,
                         tooling_runtime=tooling_runtime,
                     )
-                    state = run_inspect(
-                        resolved_video_path,
-                        options=server_options,
-                        initial_state_overrides=tool_context,
-                    )
-                    grouped = get_grouped_analysis(state)
+                    grouped = state.get("grouped_analysis") or get_grouped_analysis(state)
                     bundle = build_final_bundle(state)
                     planner_state, trace_path = run_agent_review_pass(
                         inspect_state=state,
