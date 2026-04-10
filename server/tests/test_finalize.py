@@ -142,13 +142,14 @@ class FinalizeTests(unittest.TestCase):
             "storyboard_path": "/tmp/storyboard/storyboard.jpg",
             "track_crops": [],
             "recovery_attempts": [{"tool_name": "recover_foreground_sources"}],
+            "terminal_resolution": "recovery_exhausted",
         }
         bundle = build_final_bundle(state)
         issue_types = {issue.issue_type for issue in bundle.validation.issues}
         self.assertIn("recovery_exhausted", issue_types)
         self.assertNotIn("missing_dominant_source", issue_types)
 
-    def test_build_final_bundle_accepts_consistent_ambience_only_after_recovery(self) -> None:
+    def test_build_final_bundle_keeps_missing_dominant_source_without_explicit_ambience_acceptance(self) -> None:
         state = {
             "video_path": "/tmp/video.mp4",
             "options": InspectOptions(pipeline_mode="agentic_tool_first"),
@@ -183,5 +184,65 @@ class FinalizeTests(unittest.TestCase):
         }
         bundle = build_final_bundle(state)
         issue_types = {issue.issue_type for issue in bundle.validation.issues}
+        self.assertNotIn("accepted_ambience_only", issue_types)
+        self.assertIn("missing_dominant_source", issue_types)
+
+    def test_build_final_bundle_accepts_consistent_ambience_only_after_explicit_acceptance(self) -> None:
+        state = {
+            "video_path": "/tmp/video.mp4",
+            "options": InspectOptions(pipeline_mode="agentic_tool_first"),
+            "video_probe": VideoProbe(video_path="/tmp/video.mp4", duration_seconds=4.0, fps=2.0, width=320, height=240),
+            "candidate_cuts": [],
+            "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)],
+            "physical_sources": [],
+            "sound_event_segments": [],
+            "ambience_beds": [
+                AmbienceBed(
+                    ambience_id="ambience-0000",
+                    start_time=0.0,
+                    end_time=4.0,
+                    environment_type="scene_bed",
+                    acoustic_profile="continuous visual environment texture",
+                    confidence=0.8,
+                )
+            ],
+            "generation_groups": [
+                GenerationGroup(
+                    group_id="gen-amb",
+                    member_ambience_ids=["ambience-0000"],
+                    canonical_label="ambience:scene_bed",
+                    canonical_description="placeholder",
+                    group_confidence=0.7,
+                    route_decision=RoutingDecision(model_type="TTA", confidence=0.9, factors=[], reasoning="", rule_based=True),
+                )
+            ],
+            "storyboard_path": "/tmp/storyboard/storyboard.jpg",
+            "track_crops": [],
+            "recovery_attempts": [{"tool_name": "recover_foreground_sources"}],
+            "terminal_resolution": "accepted_ambience_only",
+        }
+        bundle = build_final_bundle(state)
+        issue_types = {issue.issue_type for issue in bundle.validation.issues}
         self.assertIn("accepted_ambience_only", issue_types)
         self.assertNotIn("missing_dominant_source", issue_types)
+
+    def test_build_final_bundle_does_not_accept_ambience_only_without_ambience_structure(self) -> None:
+        state = {
+            "video_path": "/tmp/video.mp4",
+            "options": InspectOptions(pipeline_mode="agentic_tool_first"),
+            "video_probe": VideoProbe(video_path="/tmp/video.mp4", duration_seconds=4.0, fps=2.0, width=320, height=240),
+            "candidate_cuts": [],
+            "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)],
+            "physical_sources": [],
+            "sound_event_segments": [],
+            "ambience_beds": [],
+            "generation_groups": [],
+            "storyboard_path": "/tmp/storyboard/storyboard.jpg",
+            "track_crops": [],
+            "recovery_attempts": [{"tool_name": "recover_foreground_sources"}],
+            "terminal_resolution": "accepted_ambience_only",
+        }
+        bundle = build_final_bundle(state)
+        issue_types = {issue.issue_type for issue in bundle.validation.issues}
+        self.assertNotIn("accepted_ambience_only", issue_types)
+        self.assertIn("missing_dominant_source", issue_types)

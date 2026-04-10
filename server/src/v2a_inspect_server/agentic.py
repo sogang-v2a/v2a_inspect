@@ -12,6 +12,7 @@ from v2a_inspect.agent import (
     plan_next_action,
     resolve_issue,
 )
+from v2a_inspect.agent.policies import can_retry_issue
 from v2a_inspect.contracts import MultitrackDescriptionBundle, PhysicalSourceTrack
 from v2a_inspect.workflows import InspectState
 
@@ -65,6 +66,16 @@ def run_agentic_tool_loop(
             tooling_runtime=tooling_runtime,
         )
         if adjudication is not None and adjudication.get("resolution") == "accept":
+            inspect_state = _record_agent_review_decision(
+                inspect_state,
+                issue=issue,
+                decision="accept",
+                tool_name=action.tool_name,
+                rationale=str(adjudication["rationale"]),
+                confidence=float(adjudication["confidence"]),
+            )
+            if issue is not None and issue.issue_type in {"foreground_collapse", "missing_sources"}:
+                inspect_state["terminal_resolution"] = "accepted_ambience_only"
             planner_state = mark_issue_attempted(planner_state, action.issue_id)
             planner_state = executor.record_decision(
                 planner_state,
@@ -103,6 +114,14 @@ def run_agentic_tool_loop(
             for issue in _build_issues(bundle=bundle, inspect_state=inspect_state)
         }
         decision = "accept" if action.issue_id not in current_issue_ids else "retry"
+        inspect_state = _record_agent_review_decision(
+            inspect_state,
+            issue=issue,
+            decision=decision,
+            tool_name=action.tool_name,
+            rationale=f"{action.tool_name} completed during agentic tool loop",
+            confidence=0.8 if decision == "accept" else 0.45,
+        )
         planner_state = executor.record_decision(
             planner_state,
             issue_id=action.issue_id,
@@ -118,6 +137,15 @@ def run_agentic_tool_loop(
         )
         actions_run += 1
 
+    inspect_state = _finalize_terminal_resolution(
+        inspect_state=inspect_state,
+        planner_state=planner_state,
+    )
+    bundle = build_final_bundle(
+        inspect_state,
+        description_writer=getattr(tooling_runtime, "description_writer", None),
+    )
+    inspect_state["multitrack_bundle"] = bundle
     return inspect_state, planner_state, str(trace_path)
 
 
@@ -468,6 +496,16 @@ def _build_issues(
                     "current_source_count": len(current_sources),
                     "current_event_count": len(current_events),
                     "frames_per_scene": int(inspect_state.get("frames_per_window", 3)),
+                    "recovery_actions": list(inspect_state.get("recovery_actions", [])),
+                    "recovery_attempts": list(inspect_state.get("recovery_attempts", [])),
+                    "scene_prompt_candidates": dict(inspect_state.get("scene_prompt_candidates", {})),
+                    "scene_prompt_recovery_attempted": _has_recovery_attempt(
+                        inspect_state, "recover_foreground_sources"
+                    ),
+                    "text_recovery_attempted": _has_recovery_attempt(
+                        inspect_state, "recover_with_text_prompt"
+                    ),
+                    "text_prompt": _foreground_recovery_prompt(inspect_state),
                 },
             )
         )
@@ -484,10 +522,19 @@ def _build_issues(
                     "current_source_count": 0,
                     "current_event_count": len(current_events),
                     "scene_prompt_candidates": dict(inspect_state.get("scene_prompt_candidates", {})),
+                    "recovery_actions": list(inspect_state.get("recovery_actions", [])),
+                    "recovery_attempts": list(inspect_state.get("recovery_attempts", [])),
+                    "scene_prompt_recovery_attempted": _has_recovery_attempt(
+                        inspect_state, "recover_foreground_sources"
+                    ),
+                    "text_recovery_attempted": _has_recovery_attempt(
+                        inspect_state, "recover_with_text_prompt"
+                    ),
+                    "text_prompt": _foreground_recovery_prompt(inspect_state),
                 },
             )
         )
-    if inspect_state.get("sam3_track_set") and not inspect_state.get("track_crops"):
+    if current_tracks and not inspect_state.get("track_crops"):
         issues.append(
             AgentIssue(
                 issue_id="missing-crops",
@@ -667,6 +714,14 @@ def _adjudicate_issue(
             "issue_attempts": issue.attempts,
             "issue_description": issue.description,
             "planned_tool_name": planned_tool_name,
+            "current_frames_per_window": inspect_state.get("frames_per_window"),
+            "current_track_count": len(_tracks_from_result(inspect_state.get("sam3_track_set"))),
+            "current_source_count": len(bundle.physical_sources),
+            "current_event_count": len(bundle.sound_events),
+            "scene_prompt_candidates_present": bool(inspect_state.get("scene_prompt_candidates")),
+            "recovery_actions": list(inspect_state.get("recovery_actions", []))[-3:],
+            "recovery_attempts": list(inspect_state.get("recovery_attempts", []))[-3:],
+            "stage_history": list(inspect_state.get("stage_history", []))[-5:],
             "validation_issues": [item.model_dump(mode="json") for item in bundle.validation.issues],
             "candidate_cut_count": len(bundle.candidate_cuts),
             "evidence_window_count": len(bundle.evidence_windows),
@@ -677,3 +732,72 @@ def _adjudicate_issue(
     if decision is None:
         return None
     return decision.model_dump(mode="json")
+
+
+def _has_recovery_attempt(
+    inspect_state: Mapping[str, object],
+    tool_name: str,
+) -> bool:
+    return any(
+        isinstance(attempt, Mapping) and attempt.get("tool_name") == tool_name
+        for attempt in list(inspect_state.get("recovery_attempts", []))
+    )
+
+
+def _foreground_recovery_prompt(inspect_state: Mapping[str, object]) -> str:
+    prompts_by_scene = inspect_state.get("scene_prompt_candidates", {})
+    if isinstance(prompts_by_scene, Mapping):
+        for prompts in prompts_by_scene.values():
+            if isinstance(prompts, list):
+                for prompt in prompts:
+                    if isinstance(prompt, str) and prompt.strip():
+                        return prompt.strip()
+    return "object"
+
+
+def _record_agent_review_decision(
+    inspect_state: InspectState,
+    *,
+    issue: AgentIssue | None,
+    decision: str,
+    tool_name: str,
+    rationale: str,
+    confidence: float,
+) -> InspectState:
+    updated = dict(inspect_state)
+    decisions = list(updated.get("agent_review_decisions", []))
+    decisions.append(
+        {
+            "issue_id": issue.issue_id if issue is not None else None,
+            "issue_type": issue.issue_type if issue is not None else None,
+            "decision": decision,
+            "tool_name": tool_name,
+            "confidence": confidence,
+            "rationale": rationale,
+        }
+    )
+    updated["agent_review_decisions"] = decisions
+    if decision != "accept" and updated.get("terminal_resolution") == "accepted_ambience_only":
+        updated.pop("terminal_resolution", None)
+    return updated
+
+
+def _finalize_terminal_resolution(
+    *,
+    inspect_state: InspectState,
+    planner_state: PlannerState,
+) -> InspectState:
+    updated = dict(inspect_state)
+    if updated.get("terminal_resolution") == "accepted_ambience_only":
+        return updated
+    open_foreground_issues = [
+        issue
+        for issue in planner_state.issues
+        if issue.status == "open" and issue.issue_type in {"foreground_collapse", "missing_sources"}
+    ]
+    if any(not can_retry_issue(planner_state, issue) for issue in open_foreground_issues):
+        updated["terminal_resolution"] = "recovery_exhausted"
+        return updated
+    if "terminal_resolution" in updated and updated["terminal_resolution"] == "recovery_exhausted":
+        updated.pop("terminal_resolution", None)
+    return updated

@@ -74,6 +74,8 @@ def build_final_bundle(
             "recovery_attempts": list(state.get("recovery_attempts", [])),
             "stage_history": list(state.get("stage_history", [])),
             "runtime_trace_path": _state_path(state.get("runtime_trace_path")),
+            "terminal_resolution": state.get("terminal_resolution"),
+            "agent_review_decisions": list(state.get("agent_review_decisions", [])),
         },
     )
     issues = validate_bundle(bundle)
@@ -184,11 +186,16 @@ def _normalize_recovery_validation_issues(
     if bundle.physical_sources:
         return issues
     attempts = list(state.get("recovery_attempts", []))
-    if not attempts:
+    resolution = state.get("terminal_resolution")
+    if not attempts and resolution is None:
+        return issues
+    if resolution is None:
         return issues
 
-    filtered = [issue for issue in issues if issue.issue_type != "missing_dominant_source"]
-    if _looks_like_accepted_ambience_only(bundle):
+    if resolution == "accepted_ambience_only":
+        if not _looks_like_accepted_ambience_only(bundle):
+            return issues
+        filtered = [issue for issue in issues if issue.issue_type != "missing_dominant_source"]
         filtered.append(
             ValidationIssue(
                 issue_type="accepted_ambience_only",
@@ -199,14 +206,16 @@ def _normalize_recovery_validation_issues(
         )
         return filtered
 
-    filtered.append(
-        ValidationIssue(
-            issue_type="recovery_exhausted",
-            severity="warning",
-            message="Foreground recovery attempts were exhausted without producing physical sources.",
-            recommended_action="human_review",
+    if resolution == "recovery_exhausted":
+        filtered = [issue for issue in issues if issue.issue_type != "missing_dominant_source"]
+        filtered.append(
+            ValidationIssue(
+                issue_type="recovery_exhausted",
+                severity="warning",
+                message="Foreground recovery attempts were exhausted without producing physical sources.",
+                recommended_action="human_review",
+            )
         )
-    )
     return filtered
 
 

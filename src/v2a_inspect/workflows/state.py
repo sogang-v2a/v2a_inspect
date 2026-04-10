@@ -110,3 +110,5 @@ class InspectState(TypedDict, total=False):
     tool_routing_hints: str
     recovery_actions: list[str]
     recovery_attempts: list[dict[str, object]]
+    terminal_resolution: str
+    agent_review_decisions: list[dict[str, object]]

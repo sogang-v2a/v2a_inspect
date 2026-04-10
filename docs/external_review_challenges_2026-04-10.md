@@ -44,6 +44,9 @@ But the remaining question is not whether the code path exists; it is whether it
 Key open question:
 - does the recovery ladder increase physical-source and sound-event counts on real clips enough to justify the extra MiG cost?
 
+Current implementation note:
+- the zero-track path now uses a deterministic bounded ladder (`densify_window_sampling -> recover_foreground_sources -> recover_with_text_prompt`) with explicit terminal outcomes, but this still needs real-clip evidence showing that later rungs actually improve recall instead of only increasing latency.
+
 ### 3. Nontrivial university-GPU runs are still slow and incomplete
 Operationally, the server is working and GPU usage is real.
 
@@ -85,6 +88,9 @@ The validator now distinguishes between:
 - `recovery_exhausted`
 
 This is a good improvement because it separates benign ambience-only outputs from failed foreground recovery.
+
+Important constraint:
+- `accepted_ambience_only` is now intended to require an explicit terminal acceptance from the agent/human path rather than merely “some recovery happened”; this still needs validation against real ambiguous clips.
 
 What still needs review:
 - are these terminal states being assigned correctly on real clips?

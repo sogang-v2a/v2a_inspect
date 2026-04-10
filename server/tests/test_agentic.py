@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from PIL import Image
 
+from v2a_inspect.agent import AgentIssue
 from v2a_inspect.contracts import (
     ArtifactRefs,
     EvidenceWindow,
@@ -17,7 +18,7 @@ from v2a_inspect.contracts import (
 )
 from v2a_inspect.tools.types import FrameBatch, SampledFrame, Sam3EntityTrack, Sam3TrackPoint, Sam3TrackSet
 from server.tests.fakes import build_fake_tooling_runtime
-from v2a_inspect_server.agentic import _build_issues, run_agent_review_pass, run_agentic_tool_loop
+from v2a_inspect_server.agentic import _adjudicate_issue, _build_issues, run_agent_review_pass, run_agentic_tool_loop
 
 
 class AgenticIntegrationTests(unittest.TestCase):
@@ -212,3 +213,71 @@ class AgenticIntegrationTests(unittest.TestCase):
         issue_types = {issue.issue_type for issue in issues}
         self.assertIn("foreground_collapse", issue_types)
         self.assertNotIn("validation_issue", issue_types)
+
+    def test_build_issues_skips_missing_crops_when_no_tracks_exist(self) -> None:
+        bundle = MultitrackDescriptionBundle(
+            video_id="video",
+            video_meta=VideoMeta(duration_seconds=8.0, fps=2.0, width=320, height=240),
+            evidence_windows=[
+                EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)
+            ],
+            validation=ValidationReport(status="pass_with_warnings", issues=[]),
+            artifacts=ArtifactRefs(run_dir="/tmp/run", storyboard_path="/tmp/run/storyboard.jpg"),
+        )
+        inspect_state = {
+            "video_path": "/tmp/video.mp4",
+            "frame_batches": [],
+            "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
+            "track_crops": [],
+        }
+
+        issue_types = {issue.issue_type for issue in _build_issues(bundle=bundle, inspect_state=inspect_state)}
+        self.assertIn("foreground_collapse", issue_types)
+        self.assertNotIn("missing_crops", issue_types)
+
+    def test_adjudicator_receives_recovery_history_for_foreground_collapse(self) -> None:
+        bundle = MultitrackDescriptionBundle(
+            video_id="video",
+            video_meta=VideoMeta(duration_seconds=8.0, fps=2.0, width=320, height=240),
+            evidence_windows=[
+                EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)
+            ],
+            validation=ValidationReport(status="pass_with_warnings", issues=[]),
+            artifacts=ArtifactRefs(run_dir="/tmp/run", storyboard_path="/tmp/run/storyboard.jpg"),
+        )
+        issue = AgentIssue(
+            issue_id="foreground-collapse",
+            issue_type="foreground_collapse",
+            description="No foreground tracks were extracted from a non-trivial clip.",
+            payload={"frames_per_scene": 6},
+        )
+        captured: dict[str, object] = {}
+
+        class _Judge:
+            def judge_issue(self, context: dict[str, object]) -> object:
+                captured.update(context)
+                return SimpleNamespace(model_dump=lambda mode="json": {"resolution": "run_tool", "tool_name": "recover_foreground_sources", "rationale": "try prompts", "confidence": 0.8})
+
+        tooling_runtime = SimpleNamespace(adjudication_judge=_Judge())
+        inspect_state = {
+            "frames_per_window": 6,
+            "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
+            "scene_prompt_candidates": {0: ["cat", "animal"]},
+            "recovery_actions": ["densify_window_sampling"],
+            "recovery_attempts": [{"tool_name": "densify_window_sampling", "frames_per_scene": 6}],
+            "stage_history": [{"kind": "stage", "stage": "extract_entities", "track_count": 0}],
+        }
+
+        decision = _adjudicate_issue(
+            inspect_state=inspect_state,
+            bundle=bundle,
+            issue=issue,
+            planned_tool_name="recover_foreground_sources",
+            tooling_runtime=tooling_runtime,
+        )
+
+        self.assertIsNotNone(decision)
+        self.assertEqual(captured["current_frames_per_window"], 6)
+        self.assertEqual(captured["recovery_actions"], ["densify_window_sampling"])
+        self.assertEqual(captured["recovery_attempts"], [{"tool_name": "densify_window_sampling", "frames_per_scene": 6}])
+        self.assertEqual(captured["stage_history"], [{"kind": "stage", "stage": "extract_entities", "track_count": 0}])

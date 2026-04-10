@@ -211,7 +211,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         )
 
     def recover_with_text_prompt(
-        *, frame_batches: list[FrameBatch], text_prompt: str
+        *, frame_batches: list[FrameBatch], text_prompt: str, **_: object
     ) -> object:
         return tooling_runtime.sam3_client.recover_with_text_prompt(
             frame_batches, text_prompt=text_prompt

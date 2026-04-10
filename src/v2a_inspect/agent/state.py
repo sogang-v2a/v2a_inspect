@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class RetryBudget(BaseModel):
     extraction_retry_limit: int = Field(default=1, ge=0)
     manual_recovery_limit: int = Field(default=1, ge=0)
-    foreground_recovery_limit: int = Field(default=2, ge=0)
+    foreground_recovery_limit: int = Field(default=3, ge=0)
     regroup_retry_limit: int = Field(default=2, ge=0)
     validation_round_limit: int = Field(default=3, ge=0)
 

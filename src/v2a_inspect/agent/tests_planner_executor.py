@@ -146,6 +146,33 @@ class PlannerExecutorTests(unittest.TestCase):
         action = cast(PlannedAction, action)
         self.assertEqual(action.tool_name, "densify_window_sampling")
 
+    def test_planner_escalates_foreground_collapse_recovery_ladder(self) -> None:
+        state = PlannerState(
+            video_id="vid-001",
+            issues=[
+                AgentIssue(
+                    issue_id="issue-fg",
+                    issue_type="foreground_collapse",
+                    description="no tracks",
+                    priority=0,
+                    payload={"frames_per_scene": 3},
+                )
+            ],
+        )
+        action = cast(PlannedAction, plan_next_action(state))
+        self.assertEqual(action.tool_name, "densify_window_sampling")
+
+        state.issues[0].attempts = 1
+        state.issues[0].payload["scene_prompt_recovery_attempted"] = False
+        action = cast(PlannedAction, plan_next_action(state))
+        self.assertEqual(action.tool_name, "recover_foreground_sources")
+
+        state.issues[0].attempts = 2
+        state.issues[0].payload["scene_prompt_recovery_attempted"] = True
+        state.issues[0].payload["text_prompt"] = "cat"
+        action = cast(PlannedAction, plan_next_action(state))
+        self.assertEqual(action.tool_name, "recover_with_text_prompt")
+
 
 if __name__ == "__main__":
     unittest.main()
