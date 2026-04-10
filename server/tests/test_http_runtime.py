@@ -16,10 +16,12 @@ class RuntimeHttpTests(unittest.TestCase):
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.build_tooling_runtime")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
-    def test_health_endpoint_returns_json(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
+    def test_healthz_endpoint_returns_lightweight_json(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
-            minimum_gpu_vram_gb=16,
+            runtime_profile="mig10_safe",
+            remote_gpu_target="sogang_gpu",
+            minimum_gpu_vram_gb=10,
             model_cache_dir=Path('.cache/models'),
             weights_manifest_path=Path('server/model-manifest.json'),
             server_bind_host='127.0.0.1',
@@ -40,7 +42,7 @@ class RuntimeHttpTests(unittest.TestCase):
         thread.start()
         try:
             response = request.urlopen(
-                f"http://127.0.0.1:{server.server_port}/health"
+                f"http://127.0.0.1:{server.server_port}/healthz"
             ).read()
         finally:
             server.server_close()
@@ -49,6 +51,49 @@ class RuntimeHttpTests(unittest.TestCase):
         payload = json.loads(response.decode("utf-8"))
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["runtime_mode"], "nvidia_docker")
+        self.assertEqual(payload["runtime_profile"], "mig10_safe")
+        mock_build_tooling_runtime.assert_not_called()
+        mock_check.assert_not_called()
+
+    @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    @patch("v2a_inspect_server.runtime.build_tooling_runtime")
+    @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
+    def test_readyz_endpoint_returns_runtime_readiness(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
+        mock_server_settings.return_value = SimpleNamespace(
+            runtime_mode="nvidia_docker",
+            runtime_profile="mig10_safe",
+            remote_gpu_target="sogang_gpu",
+            minimum_gpu_vram_gb=10,
+            model_cache_dir=Path('.cache/models'),
+            weights_manifest_path=Path('server/model-manifest.json'),
+            server_bind_host='127.0.0.1',
+            server_bind_port=8080,
+            shared_video_dir=Path('/tmp'),
+            hf_token=None,
+        )
+        mock_build_tooling_runtime.return_value = SimpleNamespace(artifacts_missing=lambda: [])
+        mock_check.return_value = SimpleNamespace(
+            available=True,
+            devices=[],
+            minimum_vram_gb=10,
+            message="ok",
+        )
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            response = request.urlopen(
+                f"http://127.0.0.1:{server.server_port}/readyz"
+            ).read()
+        finally:
+            server.server_close()
+            thread.join(timeout=1)
+
+        payload = json.loads(response.decode("utf-8"))
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["bootstrap_ready"])
+        self.assertEqual(payload["runtime_profile"], "mig10_safe")
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
@@ -67,7 +112,9 @@ class RuntimeHttpTests(unittest.TestCase):
     ) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
-            minimum_gpu_vram_gb=16,
+            runtime_profile="mig10_safe",
+            remote_gpu_target="sogang_gpu",
+            minimum_gpu_vram_gb=10,
             model_cache_dir=Path('.cache/models'),
             weights_manifest_path=Path('server/model-manifest.json'),
             server_bind_host='127.0.0.1',
@@ -79,7 +126,7 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
             available=True,
             devices=[],
-            minimum_vram_gb=16,
+            minimum_vram_gb=10,
             message="ok",
         )
         mock_run_agent_review_pass.return_value = (SimpleNamespace(issues=[], tool_calls=[]), "/tmp/agent-trace.jsonl")
@@ -163,7 +210,7 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
             available=False,
             devices=[],
-            minimum_vram_gb=16,
+            minimum_vram_gb=10,
             message="missing gpu",
         )
         server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())

@@ -10,6 +10,8 @@ from v2a_inspect.settings import Settings, settings
 @dataclass(frozen=True)
 class ServerRuntimeSettings:
     runtime_mode: Literal["nvidia_docker", "in_process"]
+    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"]
+    remote_gpu_target: str
     server_bind_host: str
     server_bind_port: int
     shared_video_dir: Path | None
@@ -25,6 +27,8 @@ def get_server_runtime_settings(
     base = resolved_settings or settings
     return ServerRuntimeSettings(
         runtime_mode=base.runtime_mode,
+        runtime_profile=base.runtime_profile,
+        remote_gpu_target=base.remote_gpu_target,
         server_bind_host=base.server_bind_host,
         server_bind_port=base.server_bind_port,
         shared_video_dir=base.shared_video_dir,

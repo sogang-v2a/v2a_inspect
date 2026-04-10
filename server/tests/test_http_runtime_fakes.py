@@ -29,7 +29,7 @@ class RuntimeHttpFakeSmokeTests(unittest.TestCase):
         mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
             available=True,
             devices=[],
-            minimum_vram_gb=16,
+            minimum_vram_gb=10,
             message="ok",
         )
         mock_build_tooling_runtime.return_value = build_fake_tooling_runtime()

@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import torch
 from PIL import Image
 
+if TYPE_CHECKING:
+    import torch
 
-def inference_device() -> torch.device:
+
+def _torch() -> Any:
+    import torch
+
+    return torch
+
+
+def inference_device() -> "torch.device":
+    torch = _torch()
     if not torch.cuda.is_available():
         raise RuntimeError(
             "CUDA is required for the active remote inference runtime."
@@ -15,12 +25,19 @@ def inference_device() -> torch.device:
     return torch.device("cuda")
 
 
-def inference_dtype() -> torch.dtype:
+def inference_dtype() -> "torch.dtype":
+    torch = _torch()
     if not torch.cuda.is_available():
         raise RuntimeError(
             "CUDA is required for the active remote inference runtime."
         )
     return torch.float16
+
+
+def clear_cuda_cache() -> None:
+    torch = _torch()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def load_rgb_images(image_paths: Sequence[str]) -> list[Image.Image]:
@@ -31,7 +48,10 @@ def load_rgb_images(image_paths: Sequence[str]) -> list[Image.Image]:
     return images
 
 
-def move_inputs_to_device(inputs: dict[str, object], device: torch.device) -> dict[str, object]:
+def move_inputs_to_device(
+    inputs: dict[str, object], device: "torch.device"
+) -> dict[str, object]:
+    torch = _torch()
     moved: dict[str, object] = {}
     for key, value in inputs.items():
         if isinstance(value, torch.Tensor):

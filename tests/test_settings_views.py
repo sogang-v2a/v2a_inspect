@@ -24,9 +24,11 @@ class SettingsViewTests(unittest.TestCase):
             ui_temp_cleanup_max_age_seconds=3600,
             ui_cleanup_interval_seconds=1800,
             runtime_mode="nvidia_docker",
+            runtime_profile="mig10_safe",
+            remote_gpu_target="sogang_gpu",
             server_bind_host="0.0.0.0",
             server_bind_port=8080,
-            minimum_gpu_vram_gb=16,
+            minimum_gpu_vram_gb=10,
             model_cache_dir=Path("/data/models"),
             weights_manifest_path=Path("server/model-manifest.json"),
             hf_token=SecretStr("hf-secret"),
@@ -38,6 +40,8 @@ class SettingsViewTests(unittest.TestCase):
         self.assertEqual(client_view.server_base_url, "https://server.example")
         self.assertEqual(server_view.model_cache_dir, Path("/data/models"))
         self.assertEqual(server_view.hf_token, "hf-secret")
+        self.assertEqual(server_view.runtime_profile, "mig10_safe")
+        self.assertEqual(server_view.remote_gpu_target, "sogang_gpu")
         self.assertFalse(hasattr(client_view, "model_cache_dir"))
 
     def test_required_env_var_reference_is_stable(self) -> None:
@@ -45,6 +49,7 @@ class SettingsViewTests(unittest.TestCase):
         self.assertIn("client_ui", envs)
         self.assertIn("server_runtime", envs)
         self.assertIn("HF_TOKEN", envs["server_runtime"])
+        self.assertIn("RUNTIME_PROFILE", envs["server_runtime"])
 
 
 if __name__ == "__main__":

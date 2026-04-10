@@ -16,12 +16,12 @@ class SettingsTests(unittest.TestCase):
         self.assertIsNotNone(settings.openrouter_api_key)
         self.assertEqual(Settings.model_config.get("extra"), "ignore")
 
-    def test_gpu_policy_is_validated(self) -> None:
+    def test_mig10_profile_caps_minimum_vram(self) -> None:
         with self.assertRaises(ValueError):
             Settings.model_validate(
                 {
-                    "remote_gpu_preference": "A4000",
-                    "remote_gpu_fallback": "A4000",
+                    "runtime_profile": "mig10_safe",
+                    "minimum_gpu_vram_gb": 16,
                 }
             )
 

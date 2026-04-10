@@ -4,8 +4,9 @@ Server-side tooling package for remote visual inference and Gemini orchestration
 This package exists so client-side installs do not need to absorb heavy runtime dependencies.
 
 Current target runtime:
-- a single Docker image deployed on Runpod
-- NVIDIA GPU host (A4000 preferred, A4500 fallback)
+- a single remote GPU server runtime
+- university-hosted `sogang_gpu` is the default target
+- `runtime_profile=mig10_safe` is the default profile for the 10GB A100 MiG slice
 - HF only for weights bootstrap
 - Gemini stays in the pipeline; server-side tools provide visual evidence
 
@@ -24,7 +25,8 @@ Current CLI:
 - `v2a-inspect-server serve`
 
 Current HTTP endpoints:
-- `GET /health`
+- `GET /healthz`
+- `GET /readyz`
 - `GET /runtime-info`
 - `POST /upload`
 - `POST /bootstrap`

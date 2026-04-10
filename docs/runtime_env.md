@@ -21,6 +21,8 @@ These are safe for UI, orchestration, fixture, and validator code.
 - `HF_TOKEN`
 - `MODEL_CACHE_DIR`
 - `WEIGHTS_MANIFEST_PATH`
+- `RUNTIME_PROFILE`
+- `REMOTE_GPU_TARGET`
 - `MINIMUM_GPU_VRAM_GB`
 - `SERVER_BIND_HOST`
 - `SERVER_BIND_PORT`
@@ -32,7 +34,7 @@ package.
 ## Heavy integration coverage that still requires the real server
 
 - remote `/bootstrap` against the real model manifest
-- remote `/health` readiness after model download
+- remote `/healthz` and `/readyz` after model download
 - remote `/upload` + `/analyze` against the deployed GPU-backed server
 - model-quality validation for SAM3/DINOv2/SigLIP2 on real clips
 

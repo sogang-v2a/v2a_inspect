@@ -11,8 +11,8 @@ a tool-first visual pipeline.
 
 ## Remote inference policy
 
-- Primary runtime target: **one Runpod-hosted Docker container on a host with an NVIDIA GPU**
-- Runpod is deployment infrastructure, not an application-level provider abstraction.
+- Primary runtime target: **one remote GPU-hosted server runtime**
+- `sogang_gpu` is the default heavy-inference target.
 - Preferred vision backbone: **SAM3**
 - Preferred visual embeddings: **DINOv2**
 - Preferred post-extraction label scorer: **SigLIP2**
@@ -21,12 +21,11 @@ a tool-first visual pipeline.
 - **Hugging Face is used only as a model/weights source**, not as an inference backend.
 - Inference runs inside the server package/runtime on an NVIDIA-enabled Docker host.
 
-## GPU budget policy
+## GPU/runtime profile policy
 
-- Minimize cost by preferring small GPUs.
-- Default target: **RTX A4000 16GB**
-- Escalate only when needed: **RTX A4500**
-- Never plan or request a GPU above **24GB VRAM**
+- Default runtime profile: **`mig10_safe`** for the university 10GB A100 MiG slice.
+- Use **`full_gpu`** only when the target host has enough VRAM to keep multiple models resident.
+- `cpu_dev` is for fake/unit-test execution only and must not power a real `/analyze` request.
 
 ## Agent-tool policy
 

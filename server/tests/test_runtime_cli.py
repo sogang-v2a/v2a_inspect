@@ -17,7 +17,7 @@ class RuntimeCliTests(unittest.TestCase):
             {
                 "available": True,
                 "devices": [],
-                "minimum_vram_gb": 16,
+                "minimum_vram_gb": 10,
                 "message": "ok",
             },
         )()
@@ -28,9 +28,11 @@ class RuntimeCliTests(unittest.TestCase):
     def test_runtime_info_returns_json(self, mock_server_settings) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
+            runtime_profile="mig10_safe",
+            remote_gpu_target="sogang_gpu",
             model_cache_dir=Path(".cache/models"),
             weights_manifest_path=Path("server/model-manifest.json"),
-            minimum_gpu_vram_gb=16,
+            minimum_gpu_vram_gb=10,
             server_bind_host="0.0.0.0",
             server_bind_port=8080,
             hf_token=None,

@@ -5,19 +5,21 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-GpuSku = Literal["A4000", "A4500"]
+RuntimeProfile = Literal["mig10_safe", "full_gpu"]
 
 
 class RemoteGpuPolicy(BaseModel):
-    preferred_sku: GpuSku = "A4000"
-    fallback_sku: GpuSku = "A4500"
-    preferred_vram_gb: int = Field(default=16, ge=1, le=24)
-    max_vram_gb: int = Field(default=24, ge=1, le=24)
+    target: str = "sogang_gpu"
+    preferred_profile: RuntimeProfile = "mig10_safe"
+    fallback_profile: RuntimeProfile = "full_gpu"
+    preferred_vram_gb: int = Field(default=10, ge=1, le=80)
+    max_vram_gb: int = Field(default=80, ge=1, le=80)
 
 
 class RemoteGpuSelection(BaseModel):
-    sku: GpuSku
-    vram_gb: int = Field(ge=1, le=24)
+    target: str
+    runtime_profile: RuntimeProfile
+    vram_gb: int = Field(ge=1, le=80)
     source: Literal["preferred", "fallback"]
 
 
@@ -25,29 +27,33 @@ def choose_remote_gpu(policy: RemoteGpuPolicy) -> RemoteGpuSelection:
     if policy.preferred_vram_gb > policy.max_vram_gb:
         raise ValueError("Preferred VRAM cannot exceed the maximum VRAM cap.")
 
-    if policy.preferred_sku == "A4000" and policy.preferred_vram_gb <= 16:
+    if policy.preferred_profile == "mig10_safe" and policy.preferred_vram_gb <= 10:
         return RemoteGpuSelection(
-            sku="A4000",
-            vram_gb=16,
+            target=policy.target,
+            runtime_profile="mig10_safe",
+            vram_gb=10,
             source="preferred",
         )
 
-    if policy.preferred_sku == "A4500" and policy.max_vram_gb >= 20:
+    if policy.preferred_profile == "full_gpu":
         return RemoteGpuSelection(
-            sku="A4500",
-            vram_gb=min(24, policy.max_vram_gb),
+            target=policy.target,
+            runtime_profile="full_gpu",
+            vram_gb=min(policy.max_vram_gb, policy.preferred_vram_gb),
             source="preferred",
         )
 
-    if policy.fallback_sku == "A4000":
+    if policy.fallback_profile == "mig10_safe":
         return RemoteGpuSelection(
-            sku="A4000",
-            vram_gb=16,
+            target=policy.target,
+            runtime_profile="mig10_safe",
+            vram_gb=10,
             source="fallback",
         )
 
     return RemoteGpuSelection(
-        sku="A4500",
-        vram_gb=min(24, max(20, policy.max_vram_gb)),
+        target=policy.target,
+        runtime_profile="full_gpu",
+        vram_gb=min(policy.max_vram_gb, policy.preferred_vram_gb),
         source="fallback",
     )

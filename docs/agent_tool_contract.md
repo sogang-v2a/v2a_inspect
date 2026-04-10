@@ -99,7 +99,7 @@ Final intended implementation:
 
 - Client-safe tooling and shared types stay in `v2a_inspect`.
 - Remote runtime helpers and future heavy dependencies stay in `v2a_inspect_server`.
-- The active deployment target is a single Runpod-hosted NVIDIA Docker runtime.
+- The active deployment target is a single remote GPU-hosted server runtime, with `sogang_gpu` as the default target.
 - Hugging Face is a weights/artifact source only.
 
 ## Non-goals for this layer

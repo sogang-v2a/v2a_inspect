@@ -21,6 +21,8 @@ class ClientRuntimeSettings:
 @dataclass(frozen=True)
 class ServerRuntimeSettings:
     runtime_mode: Literal["nvidia_docker", "in_process"]
+    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"]
+    remote_gpu_target: str
     server_bind_host: str
     server_bind_port: int
     shared_video_dir: Path | None
@@ -51,6 +53,8 @@ def get_server_runtime_settings(
     base = resolved_settings or settings
     return ServerRuntimeSettings(
         runtime_mode=base.runtime_mode,
+        runtime_profile=base.runtime_profile,
+        remote_gpu_target=base.remote_gpu_target,
         server_bind_host=base.server_bind_host,
         server_bind_port=base.server_bind_port,
         shared_video_dir=base.shared_video_dir,
@@ -76,6 +80,8 @@ def required_env_vars_by_runtime_mode() -> dict[str, list[str]]:
             "HF_TOKEN",
             "MODEL_CACHE_DIR",
             "WEIGHTS_MANIFEST_PATH",
+            "RUNTIME_PROFILE",
+            "REMOTE_GPU_TARGET",
             "MINIMUM_GPU_VRAM_GB",
             "SERVER_BIND_HOST",
             "SERVER_BIND_PORT",

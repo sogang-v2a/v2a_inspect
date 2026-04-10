@@ -39,13 +39,15 @@ class InspectOptions(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     poll_interval_seconds: float = Field(default=2.0, gt=0.0)
     runtime_mode: Literal["nvidia_docker", "in_process"] = "nvidia_docker"
-    minimum_gpu_vram_gb: int = Field(default=16, ge=1, le=24)
+    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "mig10_safe"
+    remote_gpu_target: str = "sogang_gpu"
+    minimum_gpu_vram_gb: int = Field(default=10, ge=1, le=80)
     server_base_url: str | None = None
     remote_timeout_seconds: int = Field(default=120, ge=1)
-    remote_gpu_preference: Literal["A4000", "A4500"] = "A4000"
-    remote_gpu_fallback: Literal["A4000", "A4500"] = "A4500"
-    remote_gpu_vram_preference_gb: int = Field(default=16, ge=1, le=24)
-    remote_gpu_vram_cap_gb: int = Field(default=24, ge=1, le=24)
+    remote_gpu_preference: str | None = None
+    remote_gpu_fallback: str | None = None
+    remote_gpu_vram_preference_gb: int = Field(default=10, ge=1, le=80)
+    remote_gpu_vram_cap_gb: int = Field(default=80, ge=1, le=80)
 
 
 class InspectState(TypedDict, total=False):

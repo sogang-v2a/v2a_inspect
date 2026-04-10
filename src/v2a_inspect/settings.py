@@ -47,14 +47,16 @@ class Settings(BaseSettings):
     server_bind_port: int = Field(default=8080, ge=1, le=65535)
     server_base_url: str = "http://127.0.0.1:8080"
     shared_video_dir: Path | None = Path("/data/uploads")
-    minimum_gpu_vram_gb: int = Field(default=16, ge=1, le=24)
+    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "mig10_safe"
+    remote_gpu_target: str = "sogang_gpu"
+    minimum_gpu_vram_gb: int = Field(default=10, ge=1, le=80)
     model_cache_dir: Path = Path(".cache/v2a_inspect_server/models")
     weights_manifest_path: Path = Path("server/model-manifest.json")
     remote_timeout_seconds: int = Field(default=120, ge=1)
-    remote_gpu_preference: Literal["A4000", "A4500"] = "A4000"
-    remote_gpu_fallback: Literal["A4000", "A4500"] = "A4500"
-    remote_gpu_vram_preference_gb: int = Field(default=16, ge=1, le=24)
-    remote_gpu_vram_cap_gb: int = Field(default=24, ge=1, le=24)
+    remote_gpu_preference: str | None = None
+    remote_gpu_fallback: str | None = None
+    remote_gpu_vram_preference_gb: int = Field(default=10, ge=1, le=80)
+    remote_gpu_vram_cap_gb: int = Field(default=80, ge=1, le=80)
     visual_pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = (
         "tool_first_foundation"
     )
@@ -93,11 +95,6 @@ class Settings(BaseSettings):
                 "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must either both be set or both be omitted."
             )
 
-        if self.remote_gpu_preference == self.remote_gpu_fallback:
-            raise ValueError(
-                "REMOTE_GPU_PREFERENCE and REMOTE_GPU_FALLBACK must be different SKUs."
-            )
-
         if self.remote_gpu_vram_preference_gb > self.remote_gpu_vram_cap_gb:
             raise ValueError(
                 "REMOTE_GPU_VRAM_PREFERENCE_GB cannot exceed REMOTE_GPU_VRAM_CAP_GB."
@@ -106,6 +103,11 @@ class Settings(BaseSettings):
         if self.minimum_gpu_vram_gb > self.remote_gpu_vram_cap_gb:
             raise ValueError(
                 "MINIMUM_GPU_VRAM_GB cannot exceed REMOTE_GPU_VRAM_CAP_GB."
+            )
+
+        if self.runtime_profile == "mig10_safe" and self.minimum_gpu_vram_gb > 10:
+            raise ValueError(
+                "MINIMUM_GPU_VRAM_GB cannot exceed 10 for the mig10_safe runtime profile."
             )
 
         return self

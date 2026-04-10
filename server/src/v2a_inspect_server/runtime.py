@@ -3,14 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib import request as urllib_request
+from urllib.parse import parse_qs, urlparse
 
 from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
 from v2a_inspect.runner import get_grouped_analysis, run_inspect
@@ -22,6 +22,7 @@ from .agentic import run_agent_review_pass
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
+from .model_runtime import clear_cuda_cache
 from .tool_registry import build_tool_registry
 from .tool_context import build_tool_context
 
@@ -30,21 +31,76 @@ if TYPE_CHECKING:
     from .sam3 import Sam3Client
 
 
-@dataclass(frozen=True)
 class ToolingRuntime:
-    sam3_client: "Sam3Client"
-    embedding_client: "EmbeddingClient"
-    label_client: "LabelClient"
-    bootstrapper: WeightsBootstrapper
-    weights_manifest: WeightsManifest
-    resolved_artifacts: dict[str, Path]
+    def __init__(
+        self,
+        *,
+        bootstrapper: WeightsBootstrapper,
+        weights_manifest: WeightsManifest,
+        resolved_artifacts: dict[str, Path],
+        runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"],
+    ) -> None:
+        self.bootstrapper = bootstrapper
+        self.weights_manifest = weights_manifest
+        self.resolved_artifacts = resolved_artifacts
+        self.runtime_profile = runtime_profile
+        self._sam3_client: "Sam3Client | None" = None
+        self._embedding_client: "EmbeddingClient | None" = None
+        self._label_client: "LabelClient | None" = None
+
+    @property
+    def sam3_client(self) -> "Sam3Client":
+        if self._sam3_client is None:
+            from .sam3 import Sam3Client
+
+            self._sam3_client = Sam3Client(model_dir=self.resolved_artifacts["sam3"])
+        return self._sam3_client
+
+    @property
+    def embedding_client(self) -> "EmbeddingClient":
+        if self._embedding_client is None:
+            from .embeddings import EmbeddingClient
+
+            self._embedding_client = EmbeddingClient(
+                model_dir=self.resolved_artifacts["embedding"]
+            )
+        return self._embedding_client
+
+    @property
+    def label_client(self) -> "LabelClient":
+        if self._label_client is None:
+            from .embeddings import LabelClient
+
+            self._label_client = LabelClient(model_dir=self.resolved_artifacts["label"])
+        return self._label_client
+
+    def artifacts_missing(self) -> list[str]:
+        return [
+            name
+            for name, path in self.resolved_artifacts.items()
+            if not path.exists()
+        ]
+
+    def release_client(
+        self, client_name: Literal["sam3", "embedding", "label"]
+    ) -> None:
+        if client_name == "sam3":
+            self._sam3_client = None
+        elif client_name == "embedding":
+            self._embedding_client = None
+        else:
+            self._label_client = None
+        clear_cuda_cache()
+
+    def release_all(self) -> None:
+        self._sam3_client = None
+        self._embedding_client = None
+        self._label_client = None
+        clear_cuda_cache()
 
 
 @lru_cache(maxsize=1)
 def build_tooling_runtime() -> ToolingRuntime:
-    from .embeddings import EmbeddingClient, LabelClient
-    from .sam3 import Sam3Client
-
     server_settings = get_server_runtime_settings()
     bootstrapper = WeightsBootstrapper(
         cache_dir=Path(server_settings.model_cache_dir),
@@ -62,13 +118,73 @@ def build_tooling_runtime() -> ToolingRuntime:
             "Missing bootstrapped model artifacts: " + ", ".join(sorted(missing))
         )
     return ToolingRuntime(
-        sam3_client=Sam3Client(model_dir=resolved_artifacts["sam3"]),
-        embedding_client=EmbeddingClient(model_dir=resolved_artifacts["embedding"]),
-        label_client=LabelClient(model_dir=resolved_artifacts["label"]),
         bootstrapper=bootstrapper,
         weights_manifest=weights_manifest,
         resolved_artifacts=resolved_artifacts,
+        runtime_profile=server_settings.runtime_profile,
     )
+
+
+def _readyz_payload(
+    *, include_model_load_check: bool = False
+) -> tuple[dict[str, object], HTTPStatus]:
+    server_settings = get_server_runtime_settings()
+    gpu_check = inspect_nvidia_runtime(
+        minimum_vram_gb=server_settings.minimum_gpu_vram_gb
+    )
+    payload: dict[str, object] = {
+        "runtime_mode": server_settings.runtime_mode,
+        "runtime_profile": server_settings.runtime_profile,
+        "remote_gpu_target": server_settings.remote_gpu_target,
+        "gpu_check": json.loads(runtime_check_to_json(gpu_check)),
+    }
+    if not gpu_check.available and server_settings.runtime_profile != "cpu_dev":
+        payload.update(
+            {
+                "ok": False,
+                "bootstrap_ready": False,
+                "tooling_runtime_ready": False,
+                "tooling_error": "Remote GPU runtime is unavailable.",
+            }
+        )
+        return payload, HTTPStatus.SERVICE_UNAVAILABLE
+
+    try:
+        tooling_runtime = build_tooling_runtime()
+        missing = tooling_runtime.artifacts_missing()
+        tooling_error = None
+        model_load_status: dict[str, str] = {}
+        if include_model_load_check and not missing:
+            for client_name in ("sam3", "embedding", "label"):
+                try:
+                    getattr(tooling_runtime, f"{client_name}_client")
+                    model_load_status[client_name] = "ready"
+                except Exception as exc:  # noqa: BLE001
+                    model_load_status[client_name] = f"error: {exc}"
+                    tooling_error = str(exc)
+                finally:
+                    tooling_runtime.release_client(client_name)
+        payload.update(
+            {
+                "ok": not missing and tooling_error is None,
+                "bootstrap_ready": not missing,
+                "missing_artifacts": missing,
+                "tooling_runtime_ready": not missing and tooling_error is None,
+                "tooling_error": tooling_error,
+                "model_load_status": model_load_status,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        payload.update(
+            {
+                "ok": False,
+                "bootstrap_ready": False,
+                "tooling_runtime_ready": False,
+                "tooling_error": str(exc),
+            }
+        )
+    status = HTTPStatus.OK if payload["ok"] else HTTPStatus.SERVICE_UNAVAILABLE
+    return payload, status
 
 
 def _analyze_with_pipeline(
@@ -77,6 +193,14 @@ def _analyze_with_pipeline(
     options: InspectOptions,
     tooling_runtime: ToolingRuntime,
 ) -> InspectState:
+    if options.pipeline_mode == "agentic_tool_first":
+        return _run_tool_first_pipeline(
+            video_path=video_path,
+            options=options.model_copy(
+                update={"pipeline_mode": "tool_first_foundation"}
+            ),
+            tooling_runtime=tooling_runtime,
+        )
     if options.pipeline_mode == "tool_first_foundation":
         return _run_tool_first_pipeline(
             video_path=video_path,
@@ -88,6 +212,8 @@ def _analyze_with_pipeline(
         options=options,
         tooling_runtime=tooling_runtime,
     )
+    if tooling_runtime.runtime_profile == "mig10_safe":
+        tooling_runtime.release_all()
     return run_inspect(
         video_path,
         options=options,
@@ -114,6 +240,8 @@ def _run_tool_first_pipeline(
 
     extraction = registry["extract_entities"].handler(frame_batches=frame_batches)
     tracks = _coerce_tracks(extraction)
+    if tooling_runtime.runtime_profile == "mig10_safe":
+        tooling_runtime.release_client("sam3")
     track_crops = registry["crop_tracks"].handler(
         frame_batches=frame_batches,
         tracks=tracks,
@@ -125,11 +253,15 @@ def _run_tool_first_pipeline(
         if track_image_paths
         else []
     )
+    if tooling_runtime.runtime_profile == "mig10_safe":
+        tooling_runtime.release_client("embedding")
     track_label_candidates = (
         registry["score_track_labels"].handler(track_image_paths=track_image_paths)
         if track_image_paths
         else {}
     )
+    if tooling_runtime.runtime_profile == "mig10_safe":
+        tooling_runtime.release_client("label")
     semantics = registry["build_source_semantics"].handler(
         tracks=tracks,
         embeddings=embeddings,
@@ -209,6 +341,8 @@ def _run_runtime_info() -> int:
     server_settings = get_server_runtime_settings()
     payload = {
         "runtime_mode": server_settings.runtime_mode,
+        "runtime_profile": server_settings.runtime_profile,
+        "remote_gpu_target": server_settings.remote_gpu_target,
         "model_cache_dir": str(server_settings.model_cache_dir),
         "weights_manifest_path": str(server_settings.weights_manifest_path),
         "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
@@ -266,32 +400,36 @@ def _run_serve() -> int:
 def _build_handler() -> type[BaseHTTPRequestHandler]:
     class RuntimeHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
-            if self.path == "/health":
+            parsed = urlparse(self.path)
+            if parsed.path == "/healthz":
                 server_settings = get_server_runtime_settings()
-                result = inspect_nvidia_runtime(
-                    minimum_vram_gb=server_settings.minimum_gpu_vram_gb
-                )
-                tooling_ready = True
-                tooling_error = None
-                try:
-                    build_tooling_runtime()
-                except Exception as exc:  # noqa: BLE001
-                    tooling_ready = False
-                    tooling_error = str(exc)
                 self._write_json(
                     {
-                        "ok": result.available and tooling_ready,
+                        "ok": True,
                         "runtime_mode": server_settings.runtime_mode,
-                        "gpu_check": json.loads(runtime_check_to_json(result)),
-                        "tooling_runtime_ready": tooling_ready,
-                        "tooling_error": tooling_error,
+                        "runtime_profile": server_settings.runtime_profile,
+                        "remote_gpu_target": server_settings.remote_gpu_target,
                     }
                 )
                 return
-            if self.path == "/runtime-info":
+            if parsed.path in {"/readyz", "/health"}:
+                query = parse_qs(parsed.query)
+                include_model_load_check = query.get("load_models", ["0"])[0] in {
+                    "1",
+                    "true",
+                    "yes",
+                }
+                payload, status = _readyz_payload(
+                    include_model_load_check=include_model_load_check
+                )
+                self._write_json(payload, status_code=status)
+                return
+            if parsed.path == "/runtime-info":
                 server_settings = get_server_runtime_settings()
                 payload = {
                     "runtime_mode": server_settings.runtime_mode,
+                    "runtime_profile": server_settings.runtime_profile,
+                    "remote_gpu_target": server_settings.remote_gpu_target,
                     "model_cache_dir": str(server_settings.model_cache_dir),
                     "weights_manifest_path": str(server_settings.weights_manifest_path),
                     "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
