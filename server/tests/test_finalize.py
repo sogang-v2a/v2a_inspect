@@ -52,3 +52,38 @@ class FinalizeTests(unittest.TestCase):
         bundle = build_final_bundle(state)
         self.assertGreaterEqual(len(bundle.validation.issues), 1)
         self.assertEqual(bundle.generation_groups[0].canonical_description.startswith("person"), True)
+
+    def test_build_final_bundle_uses_description_writer_when_available(self) -> None:
+        class _FakeWriter:
+            def write_group_description(self, context: dict[str, object]) -> object:
+                return type(
+                    "Draft",
+                    (),
+                    {
+                        "canonical_description": "rich inferred footsteps",
+                        "description_confidence": 0.91,
+                        "description_rationale": f"writer saw {context['canonical_label']}",
+                    },
+                )()
+
+        state = {
+            "video_path": "/tmp/video.mp4",
+            "video_probe": VideoProbe(video_path="/tmp/video.mp4", duration_seconds=3.0, fps=2.0, width=320, height=240),
+            "candidate_cuts": [],
+            "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=3.0)],
+            "physical_sources": [
+                PhysicalSourceTrack(source_id="source-0000", kind="foreground", label_candidates=[LabelCandidate(label="person", score=0.9)], spans=[(0.0, 1.0)], evidence_refs=["trk0"], identity_confidence=0.8, reid_neighbors=[])
+            ],
+            "sound_event_segments": [
+                SoundEventSegment(event_id="event-0000", source_id="source-0000", start_time=0.0, end_time=1.0, event_type="continuous_motion", confidence=0.8)
+            ],
+            "ambience_beds": [],
+            "generation_groups": [
+                GenerationGroup(group_id="gen-0000", member_event_ids=["event-0000"], canonical_label="person:continuous_motion:ground_contact", canonical_description="placeholder", group_confidence=0.8, route_decision=RoutingDecision(model_type="VTA", confidence=0.6, factors=[], reasoning="", rule_based=True))
+            ],
+            "storyboard_path": "/tmp/storyboard/storyboard.jpg",
+            "track_crops": [],
+        }
+        bundle = build_final_bundle(state, description_writer=_FakeWriter())
+        self.assertEqual(bundle.generation_groups[0].canonical_description, "rich inferred footsteps")
+        self.assertEqual(bundle.generation_groups[0].description_rationale, "writer saw person:continuous_motion:ground_contact")

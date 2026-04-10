@@ -33,7 +33,10 @@ def run_agentic_tool_loop(
         name: definition.handler
         for name, definition in build_tool_registry(tooling_runtime).items()
     }
-    bundle = inspect_state.get("multitrack_bundle") or build_final_bundle(inspect_state)
+    bundle = inspect_state.get("multitrack_bundle") or build_final_bundle(
+        inspect_state,
+        description_writer=getattr(tooling_runtime, "description_writer", None),
+    )
     trace_path = _trace_path(bundle)
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     trace_path.touch(exist_ok=True)
@@ -58,7 +61,10 @@ def run_agentic_tool_loop(
             result=result,
             registry=registry,
         )
-        bundle = build_final_bundle(inspect_state)
+        bundle = build_final_bundle(
+            inspect_state,
+            description_writer=getattr(tooling_runtime, "description_writer", None),
+        )
         inspect_state["multitrack_bundle"] = bundle
 
         current_issue_ids = {

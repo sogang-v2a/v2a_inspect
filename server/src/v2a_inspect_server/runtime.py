@@ -28,6 +28,7 @@ from .tool_context import build_tool_context
 
 if TYPE_CHECKING:
     from .embeddings import EmbeddingClient, LabelClient
+    from .description_writer import GeminiDescriptionWriter
     from .sam3 import Sam3Client
 
 
@@ -47,6 +48,7 @@ class ToolingRuntime:
         self._sam3_client: "Sam3Client | None" = None
         self._embedding_client: "EmbeddingClient | None" = None
         self._label_client: "LabelClient | None" = None
+        self._description_writer: "GeminiDescriptionWriter | None" = None
 
     @property
     def sam3_client(self) -> "Sam3Client":
@@ -73,6 +75,19 @@ class ToolingRuntime:
 
             self._label_client = LabelClient(model_dir=self.resolved_artifacts["label"])
         return self._label_client
+
+    @property
+    def description_writer(self) -> "GeminiDescriptionWriter | None":
+        if self._description_writer is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .description_writer import GeminiDescriptionWriter
+
+            self._description_writer = GeminiDescriptionWriter(
+                api_key=server_settings.gemini_api_key
+            )
+        return self._description_writer
 
     def artifacts_missing(self) -> list[str]:
         return [
@@ -327,7 +342,10 @@ def _run_tool_first_pipeline(
             "Tool-first pipeline: built source, event, ambience, and generation-group semantics.",
         ],
     }
-    bundle = build_final_bundle(state)
+    bundle = build_final_bundle(
+        state,
+        description_writer=getattr(tooling_runtime, "description_writer", None),
+    )
     grouped = bundle_to_grouped_analysis(bundle)
     state["scene_analysis"] = grouped.scene_analysis
     state["grouped_analysis"] = grouped
@@ -596,7 +614,12 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         options=server_options,
                         tooling_runtime=tooling_runtime,
                     )
-                    bundle = state.get("multitrack_bundle") or build_final_bundle(state)
+                    bundle = state.get("multitrack_bundle") or build_final_bundle(
+                        state,
+                        description_writer=getattr(
+                            tooling_runtime, "description_writer", None
+                        ),
+                    )
                     if server_options.pipeline_mode != "agentic_tool_first":
                         planner_state, trace_path = run_agent_review_pass(
                             inspect_state=state,

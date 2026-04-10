@@ -19,6 +19,7 @@ class ServerRuntimeSettings:
     model_cache_dir: Path
     weights_manifest_path: Path
     hf_token: str | None
+    gemini_api_key: str | None
 
 
 def get_server_runtime_settings(
@@ -37,5 +38,10 @@ def get_server_runtime_settings(
         weights_manifest_path=base.weights_manifest_path,
         hf_token=(
             base.hf_token.get_secret_value() if base.hf_token is not None else None
+        ),
+        gemini_api_key=(
+            base.gemini_api_key.get_secret_value()
+            if base.gemini_api_key is not None
+            else None
         ),
     )

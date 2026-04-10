@@ -17,13 +17,18 @@ from .descriptions import synthesize_canonical_descriptions
 from .validators import validate_bundle
 
 
-def build_final_bundle(state: InspectState) -> MultitrackDescriptionBundle:
+def build_final_bundle(
+    state: InspectState,
+    *,
+    description_writer: object | None = None,
+) -> MultitrackDescriptionBundle:
     probe = state["video_probe"]
     generation_groups = synthesize_canonical_descriptions(
         list(state.get("generation_groups", [])),
         sound_events=list(state.get("sound_event_segments", [])),
         ambience_beds=list(state.get("ambience_beds", [])),
         physical_sources=list(state.get("physical_sources", [])),
+        description_writer=description_writer,
     )
     finalized_groups = [
         group.model_copy(update={"route_decision": finalize_route_decision(group)})
