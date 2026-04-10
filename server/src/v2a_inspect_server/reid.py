@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from v2a_inspect.contracts import (
+    EvidenceWindow,
     IdentityEdge,
     LabelCandidate,
     PhysicalSourceTrack,
@@ -78,6 +79,7 @@ def build_provisional_source_tracks(
     identity_edges: list[IdentityEdge],
     *,
     track_crops: list[TrackCrop],
+    evidence_windows: list[EvidenceWindow] | None = None,
     candidate_groups: list[CandidateGroup] | None = None,
     label_candidates_by_track: dict[str, list[LabelCandidate]] | None = None,
 ) -> list[PhysicalSourceTrack]:
@@ -142,14 +144,19 @@ def build_provisional_source_tracks(
                 for track in member_tracks
             }
         )
-        evidence_refs = [track.track_id for track in member_tracks] + [
+        track_refs = [track.track_id for track in member_tracks]
+        crop_refs = [
             crop.crop_id
             for track in member_tracks
             for crop in crops_by_track.get(track.track_id, [])
         ]
+        window_refs = _window_refs_for_spans(
+            spans,
+            evidence_windows or [],
+        )
         label_candidates = _aggregate_label_candidates(
             label_candidates_by_track,
-            [track.track_id for track in member_tracks],
+            track_refs,
         )
         supporting_edges = [
             edge.confidence
@@ -172,7 +179,9 @@ def build_provisional_source_tracks(
                 kind="foreground",
                 label_candidates=label_candidates,
                 spans=spans,
-                evidence_refs=evidence_refs,
+                track_refs=track_refs,
+                crop_refs=crop_refs,
+                window_refs=window_refs,
                 identity_confidence=round(identity_confidence, 4),
                 reid_neighbors=sorted(
                     {
@@ -215,6 +224,23 @@ def _aggregate_label_candidates(
     ]
     aggregated.sort(key=lambda candidate: candidate.score, reverse=True)
     return aggregated
+
+
+def _window_refs_for_spans(
+    spans: list[tuple[float, float]],
+    evidence_windows: list[EvidenceWindow],
+) -> list[str]:
+    refs: list[str] = []
+    for window in evidence_windows:
+        for span_start, span_end in spans:
+            overlap = max(
+                min(span_end, window.end_time) - max(span_start, window.start_time),
+                0.0,
+            )
+            if overlap > 0.0:
+                refs.append(window.window_id)
+                break
+    return sorted(set(refs))
 
 
 def _continuity_bonus(

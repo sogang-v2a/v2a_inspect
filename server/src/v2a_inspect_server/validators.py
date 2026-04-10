@@ -6,6 +6,7 @@ from v2a_inspect.contracts import MultitrackDescriptionBundle, ValidationIssue
 def validate_bundle(bundle: MultitrackDescriptionBundle) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     events_by_id = {event.event_id: event for event in bundle.sound_events}
+    sources_by_id = {source.source_id: source for source in bundle.physical_sources}
     if not bundle.physical_sources:
         issues.append(
             ValidationIssue(
@@ -56,7 +57,10 @@ def validate_bundle(bundle: MultitrackDescriptionBundle) -> list[ValidationIssue
                 for event_id in group.member_event_ids
                 if event_id in events_by_id
             }
-            if len(source_ids) > 1:
+            if len(source_ids) > 1 and _is_suspicious_generation_merge(
+                source_ids=source_ids,
+                sources_by_id=sources_by_id,
+            ):
                 issues.append(
                     ValidationIssue(
                         issue_type="suspicious_cross_scene_generation_merge",
@@ -78,3 +82,31 @@ def validate_bundle(bundle: MultitrackDescriptionBundle) -> list[ValidationIssue
                 )
             )
     return issues
+
+
+def _is_suspicious_generation_merge(
+    *,
+    source_ids: set[str],
+    sources_by_id: dict[str, object],
+) -> bool:
+    sources = [sources_by_id[source_id] for source_id in sorted(source_ids) if source_id in sources_by_id]
+    if len(sources) < 2:
+        return False
+    labels = {
+        source.label_candidates[0].label
+        for source in sources
+        if getattr(source, "label_candidates", None)
+    }
+    if len(labels) > 1:
+        return True
+    spans = [
+        span
+        for source in sources
+        for span in getattr(source, "spans", [])
+    ]
+    for index, (left_start, left_end) in enumerate(spans):
+        for right_start, right_end in spans[index + 1 :]:
+            overlap = max(min(left_end, right_end) - max(left_start, right_start), 0.0)
+            if overlap > 0.0:
+                return True
+    return False

@@ -35,7 +35,7 @@ class FinalizeTests(unittest.TestCase):
             "candidate_cuts": [],
             "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=3.0)],
             "physical_sources": [
-                PhysicalSourceTrack(source_id="source-0000", kind="foreground", label_candidates=[LabelCandidate(label="person", score=0.9)], spans=[(0.0, 1.0)], evidence_refs=["trk0"], identity_confidence=0.4, reid_neighbors=[])
+                PhysicalSourceTrack(source_id="source-0000", kind="foreground", label_candidates=[LabelCandidate(label="person", score=0.9)], spans=[(0.0, 1.0)], track_refs=["trk0"], identity_confidence=0.4, reid_neighbors=[])
             ],
             "sound_event_segments": [
                 SoundEventSegment(event_id="event-0000", source_id="source-0000", start_time=0.0, end_time=1.0, event_type="continuous_motion", confidence=0.8)
@@ -72,7 +72,7 @@ class FinalizeTests(unittest.TestCase):
             "candidate_cuts": [],
             "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=3.0)],
             "physical_sources": [
-                PhysicalSourceTrack(source_id="source-0000", kind="foreground", label_candidates=[LabelCandidate(label="person", score=0.9)], spans=[(0.0, 1.0)], evidence_refs=["trk0"], identity_confidence=0.8, reid_neighbors=[])
+                PhysicalSourceTrack(source_id="source-0000", kind="foreground", label_candidates=[LabelCandidate(label="person", score=0.9)], spans=[(0.0, 1.0)], track_refs=["trk0"], identity_confidence=0.8, reid_neighbors=[])
             ],
             "sound_event_segments": [
                 SoundEventSegment(event_id="event-0000", source_id="source-0000", start_time=0.0, end_time=1.0, event_type="continuous_motion", confidence=0.8)

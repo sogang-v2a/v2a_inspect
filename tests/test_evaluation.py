@@ -24,7 +24,7 @@ def _bundle(video_id: str, *, group_count: int, route_type: str, crop_evidence_e
     return MultitrackDescriptionBundle(
         video_id=video_id,
         video_meta=VideoMeta(duration_seconds=3.0, fps=2.0, width=320, height=240),
-        physical_sources=[PhysicalSourceTrack(source_id="source-0000", kind="foreground", spans=[(0.0, 1.0)], evidence_refs=["trk0"], identity_confidence=0.9, reid_neighbors=[])],
+        physical_sources=[PhysicalSourceTrack(source_id="source-0000", kind="foreground", spans=[(0.0, 1.0)], track_refs=["trk0"], identity_confidence=0.9, reid_neighbors=[])],
         sound_events=[SoundEventSegment(event_id="event-0000", source_id="source-0000", start_time=0.0, end_time=1.0, event_type="continuous_motion", confidence=0.8)],
         generation_groups=[
             GenerationGroup(group_id=f"gen-{index:04d}", member_event_ids=["event-0000"] if index == 0 else [], canonical_label="label", canonical_description="desc", group_confidence=0.8, route_decision=RoutingDecision(model_type=route_type, confidence=0.8, factors=[], reasoning="", rule_based=True))

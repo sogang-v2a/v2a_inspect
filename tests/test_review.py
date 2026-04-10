@@ -35,7 +35,7 @@ def _bundle() -> MultitrackDescriptionBundle:
                 source_id="source-0000",
                 kind="foreground",
                 spans=[(0.0, 1.0)],
-                evidence_refs=["trk0"],
+                track_refs=["trk0"],
                 identity_confidence=0.9,
                 reid_neighbors=[],
             )

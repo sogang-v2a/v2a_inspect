@@ -70,7 +70,9 @@ class PhysicalSourceTrack(BaseModel):
     kind: Literal["foreground", "background_region", "ambience_region", "unknown"]
     label_candidates: list[LabelCandidate] = Field(default_factory=list)
     spans: list[tuple[float, float]] = Field(default_factory=list)
-    evidence_refs: list[str] = Field(default_factory=list)
+    track_refs: list[str] = Field(default_factory=list)
+    crop_refs: list[str] = Field(default_factory=list)
+    window_refs: list[str] = Field(default_factory=list)
     identity_confidence: float = Field(ge=0.0, le=1.0)
     reid_neighbors: list[str] = Field(default_factory=list)
     temporary_adapter_from: str | None = None

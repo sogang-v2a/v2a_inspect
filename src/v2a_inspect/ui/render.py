@@ -515,7 +515,7 @@ def _render_bundle_review(
                 else "unknown"
             )
             st.markdown(
-                f"- `{source.source_id}` label={top_label} spans={len(source.spans)} evidence={len(source.evidence_refs)}"
+                f"- `{source.source_id}` label={top_label} spans={len(source.spans)} tracks={len(source.track_refs)} crops={len(source.crop_refs)} windows={len(source.window_refs)}"
             )
 
     with st.expander("🔉 Event segments & generation groups", expanded=True):

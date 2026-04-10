@@ -22,7 +22,7 @@ def build_sound_event_segments(
 ) -> list[SoundEventSegment]:
     segments: list[SoundEventSegment] = []
     for source in physical_sources:
-        source_track_ids = [ref for ref in source.evidence_refs if ref in tracks_by_id]
+        source_track_ids = [track_id for track_id in source.track_refs if track_id in tracks_by_id]
         if not source_track_ids:
             for span_index, span in enumerate(source.spans):
                 segments.append(
@@ -129,11 +129,7 @@ def build_generation_groups(
         if source.label_candidates
     }
     track_ids_by_source = {
-        source.source_id: [
-            ref
-            for ref in source.evidence_refs
-            if isinstance(ref, str) and ref.startswith("scene-")
-        ]
+        source.source_id: list(source.track_refs)
         for source in physical_sources
     }
     candidate_groups_by_track: dict[str, CandidateGroup] = {}
@@ -249,10 +245,10 @@ def _event_group_key(event: SoundEventSegment, source_label: str | None) -> str:
 def _provisional_route(*, event_type: str, ambience: bool) -> RoutingDecision:
     if ambience:
         return RoutingDecision(
-            model_type="VTA",
+            model_type="TTA",
             confidence=0.9,
             factors=["ambience_bed", event_type],
-            reasoning="ambience beds prefer continuous video-to-audio generation",
+            reasoning="ambience beds default to text-to-audio for stable background generation",
             rule_based=True,
         )
     model_type = (

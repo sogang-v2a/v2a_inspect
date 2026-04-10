@@ -563,7 +563,7 @@ def _identity_hints(
     lines = ["Source identity hints:"]
     for source in physical_sources:
         lines.append(
-            f"- {source.source_id}: spans={len(source.spans)} evidence={len(source.evidence_refs)} identity_confidence={source.identity_confidence:.2f}"
+            f"- {source.source_id}: spans={len(source.spans)} tracks={len(source.track_refs)} crops={len(source.crop_refs)} windows={len(source.window_refs)} identity_confidence={source.identity_confidence:.2f}"
         )
     ambiguous_edges = [edge for edge in identity_edges if not edge.accepted]
     if ambiguous_edges:

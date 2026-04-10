@@ -214,6 +214,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             tracks,
             identity_edges,
             track_crops=track_crops,
+            evidence_windows=evidence_windows,
             candidate_groups=candidate_groups,
             label_candidates_by_track=label_candidates_by_track,
         )
