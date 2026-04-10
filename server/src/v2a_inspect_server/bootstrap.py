@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from huggingface_hub import snapshot_download
 from pydantic import BaseModel, Field
+
+
+def snapshot_download(*args: object, **kwargs: object) -> str:
+    try:
+        from huggingface_hub import snapshot_download as _snapshot_download
+    except ModuleNotFoundError as exc:  # pragma: no cover - exercised in import-light tests
+        raise ModuleNotFoundError(
+            "huggingface_hub is required only when bootstrapping missing artifacts."
+        ) from exc
+    return _snapshot_download(*args, **kwargs)
 
 
 class WeightsArtifact(BaseModel):

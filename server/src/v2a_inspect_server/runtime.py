@@ -9,6 +9,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
+from typing import TYPE_CHECKING
 from urllib import request as urllib_request
 
 from v2a_inspect.runner import get_grouped_analysis, run_inspect
@@ -17,18 +18,20 @@ from v2a_inspect.workflows import InspectOptions
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
 from .agentic import run_agent_review_pass
-from .embeddings import EmbeddingClient, LabelClient
 from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
-from .sam3 import Sam3Client
 from .tool_context import build_tool_context
+
+if TYPE_CHECKING:
+    from .embeddings import EmbeddingClient, LabelClient
+    from .sam3 import Sam3Client
 
 
 @dataclass(frozen=True)
 class ToolingRuntime:
-    sam3_client: Sam3Client
-    embedding_client: EmbeddingClient
-    label_client: LabelClient
+    sam3_client: "Sam3Client"
+    embedding_client: "EmbeddingClient"
+    label_client: "LabelClient"
     bootstrapper: WeightsBootstrapper
     weights_manifest: WeightsManifest
     resolved_artifacts: dict[str, Path]
@@ -36,6 +39,9 @@ class ToolingRuntime:
 
 @lru_cache(maxsize=1)
 def build_tooling_runtime() -> ToolingRuntime:
+    from .embeddings import EmbeddingClient, LabelClient
+    from .sam3 import Sam3Client
+
     server_settings = get_server_runtime_settings()
     bootstrapper = WeightsBootstrapper(
         cache_dir=Path(server_settings.model_cache_dir),
