@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -27,7 +30,7 @@ _DEFAULT_MINIMUM_WINDOW_SECONDS = 1.0
 
 def probe_video(video_path: str) -> VideoProbe:
     command = [
-        "ffprobe",
+        _media_binary("ffprobe"),
         "-v",
         "error",
         "-print_format",
@@ -422,7 +425,7 @@ def export_window_clips(
             continue
         clip_path = output_root / f"{window.window_id}.mp4"
         command = [
-            "ffmpeg",
+            _media_binary("ffmpeg"),
             "-y",
             "-loglevel",
             "error",
@@ -448,7 +451,7 @@ def _extract_single_frame(
     video_path: str, timestamp_seconds: float, output_path: Path
 ) -> None:
     primary_command = [
-        "ffmpeg",
+        _media_binary("ffmpeg"),
         "-y",
         "-loglevel",
         "error",
@@ -469,7 +472,7 @@ def _extract_single_frame(
         )
     except subprocess.CalledProcessError:
         fallback_command = [
-            "ffmpeg",
+            _media_binary("ffmpeg"),
             "-y",
             "-loglevel",
             "error",
@@ -490,7 +493,7 @@ def _extract_single_frame(
             )
         except subprocess.CalledProcessError:
             final_fallback_command = [
-                "ffmpeg",
+                _media_binary("ffmpeg"),
                 "-y",
                 "-loglevel",
                 "error",
@@ -519,7 +522,7 @@ def _extract_analysis_frames(
     effective_fps = max(0.5, min(analysis_fps, probe.fps or analysis_fps, 4.0))
     pattern = output_dir / "analysis_%06d.jpg"
     command = [
-        "ffmpeg",
+        _media_binary("ffmpeg"),
         "-y",
         "-loglevel",
         "error",
@@ -543,6 +546,19 @@ def _extract_analysis_frames(
         )
         for index, path in enumerate(frame_paths)
     ]
+
+
+def _media_binary(name: str) -> str:
+    env_value = os.getenv(f"V2A_{name.upper()}_BIN")
+    if env_value:
+        return env_value
+    discovered = shutil.which(name)
+    if discovered:
+        return discovered
+    interpreter_bin = Path(sys.executable).resolve().parent / name
+    if interpreter_bin.exists():
+        return str(interpreter_bin)
+    return name
 
 
 def _frame_difference(previous_image_path: str, current_image_path: str) -> float:

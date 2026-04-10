@@ -4,9 +4,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from v2a_inspect.contracts import CandidateCut, CutReason, LabelCandidate
 from v2a_inspect.tools.media import (
+    _media_binary,
     build_candidate_cuts,
     build_context_candidate_cuts,
     build_evidence_windows,
@@ -51,6 +53,13 @@ def _build_three_scene_clip(output_path: Path) -> None:
 
 
 class MediaStructureTests(unittest.TestCase):
+    def test_media_binary_prefers_active_python_environment(self) -> None:
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "shutil.which", return_value=None
+        ), patch("sys.executable", "/opt/venv/bin/python"):
+            with patch.object(Path, "exists", return_value=True):
+                self.assertEqual(_media_binary("ffprobe"), "/opt/venv/bin/ffprobe")
+
     def test_build_candidate_cuts_emits_hard_cut_proposals(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "three_scene.mp4"
