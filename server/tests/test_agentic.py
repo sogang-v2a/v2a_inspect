@@ -23,7 +23,7 @@ from v2a_inspect_server.agentic import run_agent_review_pass, run_agentic_tool_l
 class AgenticIntegrationTests(unittest.TestCase):
     def test_agent_review_pass_logs_bounded_tool_calls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            storyboard_dir = Path(tmp_dir)
+            run_dir = Path(tmp_dir)
             bundle = MultitrackDescriptionBundle(
                 video_id="video",
                 video_meta=VideoMeta(duration_seconds=1.0, fps=2.0, width=320, height=240),
@@ -39,7 +39,7 @@ class AgenticIntegrationTests(unittest.TestCase):
                         )
                     ],
                 ),
-                artifacts=ArtifactRefs(storyboard_dir=str(storyboard_dir)),
+                artifacts=ArtifactRefs(run_dir=str(run_dir), storyboard_path=str(run_dir / "storyboard.jpg")),
             )
             bundle.evidence_windows = [SimpleNamespace(window_id="window-0000", start_time=0.0, end_time=1.0)]
             inspect_state = {

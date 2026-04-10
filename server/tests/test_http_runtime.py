@@ -149,6 +149,7 @@ class RuntimeHttpTests(unittest.TestCase):
         with patch(
             "v2a_inspect_server.runtime.build_final_bundle",
             return_value=SimpleNamespace(
+                artifacts=SimpleNamespace(trace_path=None),
                 pipeline_metadata={},
                 model_dump=lambda mode="json": {
                     "video_id": "video",
@@ -234,6 +235,7 @@ class RuntimeHttpTests(unittest.TestCase):
             message="ok",
         )
         bundle = SimpleNamespace(
+            artifacts=SimpleNamespace(trace_path=None),
             pipeline_metadata={},
             model_dump=lambda mode="json": {"video_id": "video"},
         )

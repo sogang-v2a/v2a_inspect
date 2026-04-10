@@ -30,6 +30,7 @@ from v2a_inspect.tools import (
     GroupRoutingDecision,
     Sam3TrackSet,
     SceneBoundary,
+    TrackRoutingDecision,
     VideoProbe,
 )
 
@@ -94,6 +95,7 @@ class InspectState(TypedDict, total=False):
     track_label_candidates: dict[str, list[LabelCandidate]]
     candidate_groups: list[CandidateGroup]
     routing_decisions: list[GroupRoutingDecision]
+    track_routing_decisions: dict[str, TrackRoutingDecision]
     identity_edges: list[IdentityEdge]
     physical_sources: list[PhysicalSourceTrack]
     sound_event_segments: list[SoundEventSegment]

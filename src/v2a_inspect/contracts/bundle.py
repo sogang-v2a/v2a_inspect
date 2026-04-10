@@ -121,6 +121,7 @@ class GenerationGroup(BaseModel):
     group_confidence: float = Field(ge=0.0, le=1.0)
     route_decision: RoutingDecision
     reasoning_summary: str = ""
+    routing_candidates: list[dict[str, object]] = Field(default_factory=list)
     temporary_adapter_from: str | None = None
 
 
@@ -183,9 +184,11 @@ class ValidationReport(BaseModel):
 
 
 class ArtifactRefs(BaseModel):
-    storyboard_dir: str | None = None
+    run_dir: str | None = None
+    storyboard_path: str | None = None
     crop_dir: str | None = None
     clip_dir: str | None = None
+    trace_path: str | None = None
 
 
 class VideoMeta(BaseModel):

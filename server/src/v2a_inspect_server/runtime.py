@@ -235,6 +235,7 @@ def _run_tool_first_pipeline(
     evidence_windows = list(structural["evidence_windows"])
     frame_batches = list(structural["frame_batches"])
     storyboard_path = str(structural["storyboard_path"])
+    artifact_run_dir = str(structural["artifact_root"])
 
     extraction = registry["extract_entities"].handler(frame_batches=frame_batches)
     tracks = _coerce_tracks(extraction)
@@ -251,12 +252,25 @@ def _run_tool_first_pipeline(
         if track_image_paths
         else []
     )
+    candidate_groups = list(
+        getattr(
+            registry["group_embeddings"].handler(
+                embeddings=embeddings,
+                tracks_by_id={track.track_id: track for track in tracks},
+            ),
+            "groups",
+            [],
+        )
+    )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("embedding")
     track_label_candidates = (
         registry["score_track_labels"].handler(track_image_paths=track_image_paths)
         if track_image_paths
         else {}
+    )
+    routing_decisions = (
+        dict(registry["routing_priors"].handler(tracks=tracks)) if tracks else {}
     )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("label")
@@ -276,11 +290,14 @@ def _run_tool_first_pipeline(
         track_crops=track_crops,
         label_candidates_by_track=track_label_candidates,
         evidence_windows=evidence_windows,
+        candidate_groups=candidate_groups,
+        routing_decisions_by_track=routing_decisions,
     )
 
     state: InspectState = {
         "video_path": video_path,
         "options": options,
+        "artifact_run_dir": artifact_run_dir,
         "video_probe": probe,
         "candidate_cuts": candidate_cuts,
         "evidence_windows": evidence_windows,
@@ -289,6 +306,8 @@ def _run_tool_first_pipeline(
         "sam3_track_set": extraction,
         "track_crops": track_crops,
         "entity_embeddings": embeddings,
+        "candidate_groups": candidate_groups,
+        "track_routing_decisions": routing_decisions,
         "track_label_candidates": track_label_candidates,
         "physical_sources": list(semantics["physical_sources"]),
         "sound_event_segments": list(semantics["sound_events"]),
@@ -331,10 +350,15 @@ def _run_agentic_tool_first_pipeline(
         inspect_state=state,
         tooling_runtime=tooling_runtime,
     )
+    state["agent_trace_path"] = trace_path
     bundle = state["multitrack_bundle"]
+    bundle.artifacts.trace_path = trace_path
     bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
     bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
     bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
+    grouped = bundle_to_grouped_analysis(bundle)
+    state["scene_analysis"] = grouped.scene_analysis
+    state["grouped_analysis"] = grouped
     state["multitrack_bundle"] = bundle
     return state
 
@@ -580,6 +604,8 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                             tooling_runtime=tooling_runtime,
                             bundle=bundle,
                         )
+                        state["agent_trace_path"] = trace_path
+                        bundle.artifacts.trace_path = trace_path
                         bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
                         bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
                         bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)

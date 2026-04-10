@@ -5,6 +5,7 @@ from v2a_inspect.contracts import MultitrackDescriptionBundle, ValidationIssue
 
 def validate_bundle(bundle: MultitrackDescriptionBundle) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
+    events_by_id = {event.event_id: event for event in bundle.sound_events}
     if not bundle.physical_sources:
         issues.append(
             ValidationIssue(
@@ -49,6 +50,23 @@ def validate_bundle(bundle: MultitrackDescriptionBundle) -> list[ValidationIssue
                     recommended_action="human_review",
                 )
             )
+        if group.member_event_ids:
+            source_ids = {
+                events_by_id[event_id].source_id
+                for event_id in group.member_event_ids
+                if event_id in events_by_id
+            }
+            if len(source_ids) > 1:
+                issues.append(
+                    ValidationIssue(
+                        issue_type="suspicious_cross_scene_generation_merge",
+                        severity="warning",
+                        message=f"{group.group_id} combines multiple physical sources",
+                        related_ids=[group.group_id, *sorted(source_ids)],
+                        recommended_action="split_group",
+                        repair_tool="group_embeddings",
+                    )
+                )
         if group.member_event_ids and len(group.member_event_ids) > 3 and group.route_decision.model_type == "VTA":
             issues.append(
                 ValidationIssue(

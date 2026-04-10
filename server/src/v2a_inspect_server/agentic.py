@@ -13,7 +13,6 @@ from v2a_inspect.agent import (
     resolve_issue,
 )
 from v2a_inspect.contracts import MultitrackDescriptionBundle, PhysicalSourceTrack
-from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
 from v2a_inspect.workflows import InspectState
 
 from .crops import group_crop_paths_by_track
@@ -61,8 +60,6 @@ def run_agentic_tool_loop(
         )
         bundle = build_final_bundle(inspect_state)
         inspect_state["multitrack_bundle"] = bundle
-        inspect_state["grouped_analysis"] = bundle_to_grouped_analysis(bundle)
-        inspect_state["scene_analysis"] = inspect_state["grouped_analysis"].scene_analysis
 
         current_issue_ids = {
             issue.issue_id
@@ -142,6 +139,7 @@ def _apply_action_result(
         updated["evidence_windows"] = list(result["evidence_windows"])
         updated["frame_batches"] = list(result["frame_batches"])
         updated["storyboard_path"] = str(result["storyboard_path"])
+        updated["artifact_run_dir"] = str(result["artifact_root"])
         return _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
     if tool_name in {"extract_entities", "recover_with_text_prompt"}:
@@ -157,6 +155,14 @@ def _apply_action_result(
 
     if tool_name == "score_track_labels":
         updated["track_label_candidates"] = dict(result)
+        return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+
+    if tool_name == "group_embeddings":
+        updated["candidate_groups"] = list(getattr(result, "groups", []))
+        return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+
+    if tool_name == "routing_priors":
+        updated["track_routing_decisions"] = dict(result)
         return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
     if tool_name == "validate_bundle":
@@ -203,6 +209,17 @@ def _rebuild_semantic_state(
         else []
     )
     inspect_state["entity_embeddings"] = embeddings
+    candidate_group_result = (
+        registry["group_embeddings"](
+            embeddings=embeddings,
+            tracks_by_id={track.track_id: track for track in tracks},
+        )
+        if embeddings
+        else None
+    )
+    inspect_state["candidate_groups"] = list(
+        getattr(candidate_group_result, "groups", [])
+    )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("embedding")
 
@@ -212,6 +229,9 @@ def _rebuild_semantic_state(
         else {}
     )
     inspect_state["track_label_candidates"] = track_label_candidates
+    inspect_state["track_routing_decisions"] = (
+        dict(registry["routing_priors"](tracks=tracks)) if tracks else {}
+    )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("label")
 
@@ -232,6 +252,8 @@ def _rebuild_semantic_state(
         track_crops=track_crops,
         label_candidates_by_track=track_label_candidates,
         evidence_windows=list(inspect_state.get("evidence_windows", [])),
+        candidate_groups=list(inspect_state.get("candidate_groups", [])),
+        routing_decisions_by_track=dict(inspect_state.get("track_routing_decisions", {})),
     )
     inspect_state["identity_edges"] = list(semantics["identity_edges"])
     inspect_state["physical_sources"] = list(semantics["physical_sources"])
@@ -332,6 +354,17 @@ def _build_issues(
                 "tracks": list(getattr(inspect_state.get("sam3_track_set"), "tracks", []))
             }
             issue_type = "routing_ambiguity"
+        elif issue.issue_type == "suspicious_cross_scene_generation_merge":
+            payload = {
+                "embeddings": list(inspect_state.get("entity_embeddings", [])),
+                "tracks_by_id": {
+                    track.track_id: track
+                    for track in list(
+                        getattr(inspect_state.get("sam3_track_set"), "tracks", [])
+                    )
+                },
+            }
+            issue_type = "grouping_ambiguity"
         elif issue.issue_type == "low_confidence_identity_merge":
             payload = {
                 "frame_batches": list(inspect_state.get("frame_batches", [])),
@@ -376,5 +409,7 @@ def _recovery_prompt(
 
 
 def _trace_path(bundle: MultitrackDescriptionBundle) -> Path:
-    root = Path(bundle.artifacts.storyboard_dir or ".")
+    if bundle.artifacts.trace_path:
+        return Path(bundle.artifacts.trace_path)
+    root = Path(bundle.artifacts.run_dir or ".")
     return root / f"{bundle.video_id}-agent-trace.jsonl"

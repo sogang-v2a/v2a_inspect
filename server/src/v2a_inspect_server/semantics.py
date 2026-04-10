@@ -11,7 +11,8 @@ from v2a_inspect.contracts import (
     RoutingDecision,
     SoundEventSegment,
 )
-from v2a_inspect.tools.types import Sam3EntityTrack
+from v2a_inspect.tools import aggregate_group_routes
+from v2a_inspect.tools.types import CandidateGroup, Sam3EntityTrack, TrackRoutingDecision
 
 
 def build_sound_event_segments(
@@ -119,12 +120,26 @@ def build_generation_groups(
     ambience_beds: list[AmbienceBed],
     *,
     physical_sources: list[PhysicalSourceTrack],
+    candidate_groups: list[CandidateGroup] | None = None,
+    routing_decisions_by_track: dict[str, TrackRoutingDecision] | None = None,
 ) -> list[GenerationGroup]:
     labels_by_source = {
         source.source_id: source.label_candidates[0].label
         for source in physical_sources
         if source.label_candidates
     }
+    track_ids_by_source = {
+        source.source_id: [
+            ref
+            for ref in source.evidence_refs
+            if isinstance(ref, str) and ref.startswith("scene-")
+        ]
+        for source in physical_sources
+    }
+    candidate_groups_by_track: dict[str, CandidateGroup] = {}
+    for candidate_group in candidate_groups or []:
+        for track_id in candidate_group.member_track_ids:
+            candidate_groups_by_track[track_id] = candidate_group
     grouped_events: dict[str, list[SoundEventSegment]] = defaultdict(list)
     for event in sound_events:
         grouped_events[
@@ -133,6 +148,38 @@ def build_generation_groups(
 
     groups: list[GenerationGroup] = []
     for index, (group_key, events) in enumerate(grouped_events.items()):
+        member_track_ids = sorted(
+            {
+                track_id
+                for event in events
+                for track_id in track_ids_by_source.get(event.source_id, [])
+            }
+        )
+        route_decision = _provisional_route(
+            event_type=events[0].event_type, ambience=False
+        )
+        routing_candidates = []
+        if member_track_ids and routing_decisions_by_track:
+            aggregated_route = aggregate_group_routes(
+                f"gen-{index:04d}",
+                member_track_ids,
+                routing_decisions_by_track,
+            )
+            routing_candidates = [aggregated_route]
+            route_decision = RoutingDecision(
+                model_type=aggregated_route.model_type,
+                confidence=aggregated_route.confidence,
+                factors=["group_routing_priors", aggregated_route.aggregate_method],
+                reasoning=aggregated_route.reasoning,
+                rule_based=True,
+            )
+        candidate_group_ids = sorted(
+            {
+                candidate_groups_by_track[track_id].group_id
+                for track_id in member_track_ids
+                if track_id in candidate_groups_by_track
+            }
+        )
         groups.append(
             GenerationGroup(
                 group_id=f"gen-{index:04d}",
@@ -142,10 +189,16 @@ def build_generation_groups(
                 group_confidence=round(
                     sum(event.confidence for event in events) / len(events), 4
                 ),
-                route_decision=_provisional_route(
-                    event_type=events[0].event_type, ambience=False
+                route_decision=route_decision,
+                reasoning_summary=(
+                    "heuristic acoustic-equivalence grouping informed by candidate embedding groups"
+                    if candidate_group_ids
+                    else "heuristic acoustic-equivalence grouping from event type and source label"
                 ),
-                reasoning_summary="heuristic acoustic-equivalence grouping from event type and source label",
+                routing_candidates=routing_candidates,
+                temporary_adapter_from=(
+                    "candidate_groups" if candidate_group_ids else None
+                ),
             )
         )
     offset = len(groups)

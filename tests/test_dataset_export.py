@@ -14,7 +14,7 @@ class DatasetExportTests(unittest.TestCase):
             video_id="vid-001",
             video_meta=VideoMeta(duration_seconds=3.0, fps=2.0, width=320, height=240),
             validation=ValidationReport(status="pass_with_warnings"),
-            artifacts=ArtifactRefs(storyboard_dir="/tmp/storyboard", crop_dir="/tmp/crops"),
+            artifacts=ArtifactRefs(storyboard_path="/tmp/storyboard.jpg", crop_dir="/tmp/crops"),
             pipeline_metadata={"pipeline_version": "stage7-test", "tool_versions": {"sam3": "1.0"}},
         )
         record = build_dataset_record(video_ref="video.mp4", bundle=bundle)

@@ -9,7 +9,7 @@ from v2a_inspect.contracts import (
     TrackCrop,
 )
 from v2a_inspect.tools.grouping import cosine_similarity
-from v2a_inspect.tools.types import EntityEmbedding, Sam3EntityTrack
+from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, Sam3EntityTrack
 
 
 def build_identity_edges(
@@ -78,6 +78,7 @@ def build_provisional_source_tracks(
     identity_edges: list[IdentityEdge],
     *,
     track_crops: list[TrackCrop],
+    candidate_groups: list[CandidateGroup] | None = None,
     label_candidates_by_track: dict[str, list[LabelCandidate]] | None = None,
 ) -> list[PhysicalSourceTrack]:
     label_candidates_by_track = label_candidates_by_track or {}
@@ -102,6 +103,18 @@ def build_provisional_source_tracks(
     for edge in identity_edges:
         if edge.accepted:
             union(edge.source_track_id, edge.target_track_id)
+    for candidate_group in candidate_groups or []:
+        if candidate_group.confidence < 0.75:
+            continue
+        member_ids = [
+            track_id
+            for track_id in candidate_group.member_track_ids
+            if track_id in parent
+        ]
+        for left_track_id, right_track_id in zip(
+            member_ids, member_ids[1:], strict=False
+        ):
+            union(left_track_id, right_track_id)
 
     groups: dict[str, list[Sam3EntityTrack]] = defaultdict(list)
     for track in tracks:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 from v2a_inspect.contracts import (
     ArtifactRefs,
@@ -45,9 +46,13 @@ def build_final_bundle(state: InspectState) -> MultitrackDescriptionBundle:
         generation_groups=finalized_groups,
         validation=ValidationReport(status="pass_with_warnings"),
         artifacts=ArtifactRefs(
-            storyboard_dir=state.get("storyboard_path"),
+            run_dir=_state_path(state.get("artifact_run_dir")),
+            storyboard_path=_state_path(state.get("storyboard_path")),
             crop_dir=_artifact_dir_from_refs(state.get("track_crops", [])),
-            clip_dir=_artifact_dir_from_refs(state.get("evidence_windows", []), attr="artifact_refs"),
+            clip_dir=_artifact_dir_from_refs(
+                state.get("evidence_windows", []), attr="artifact_refs"
+            ),
+            trace_path=_state_path(state.get("agent_trace_path")),
         ),
         review_metadata=ReviewMetadata(),
         pipeline_metadata={
@@ -66,6 +71,17 @@ def build_final_bundle(state: InspectState) -> MultitrackDescriptionBundle:
 
 def finalize_route_decision(group: object) -> RoutingDecision:
     existing = getattr(group, "route_decision", None)
+    routing_candidate = _best_routing_candidate(
+        getattr(group, "routing_candidates", None)
+    )
+    if routing_candidate is not None:
+        return RoutingDecision(
+            model_type=routing_candidate.model_type,
+            confidence=round(routing_candidate.confidence, 4),
+            factors=["group_routing_priors", routing_candidate.aggregate_method],
+            reasoning=routing_candidate.reasoning,
+            rule_based=True,
+        )
     member_event_ids = list(getattr(group, "member_event_ids", []))
     member_ambience_ids = list(getattr(group, "member_ambience_ids", []))
     if member_ambience_ids:
@@ -101,21 +117,43 @@ def finalize_route_decision(group: object) -> RoutingDecision:
     )
 
 
+def _best_routing_candidate(candidates: object) -> object | None:
+    from v2a_inspect.tools.types import GroupRoutingDecision
+
+    if not isinstance(candidates, list):
+        return None
+    typed_candidates = []
+    for candidate in candidates:
+        if isinstance(candidate, GroupRoutingDecision):
+            typed_candidates.append(candidate)
+        elif isinstance(candidate, dict):
+            typed_candidates.append(GroupRoutingDecision.model_validate(candidate))
+    if not typed_candidates:
+        return None
+    return max(typed_candidates, key=lambda candidate: candidate.confidence)
+
+
 def _artifact_dir_from_refs(items: list[object], *, attr: str = "crop_path") -> str | None:
     for item in items:
         if attr == "artifact_refs":
             refs = list(getattr(item, attr, []))
             for ref in refs:
                 if isinstance(ref, str) and ref:
-                    return str(__import__("pathlib").Path(ref).parent)
+                    return str(Path(ref).parent)
             continue
         value = getattr(item, attr, None)
         if isinstance(value, str) and value:
-            return str(__import__("pathlib").Path(value).parent)
+            return str(Path(value).parent)
+    return None
+
+
+def _state_path(value: object) -> str | None:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, str) and value:
+        return value
     return None
 
 
 def _video_id_from_path(video_path: str) -> str:
-    from pathlib import Path
-
     return Path(video_path or "video").stem or "video"

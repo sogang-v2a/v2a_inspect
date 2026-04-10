@@ -390,6 +390,7 @@ def _normalize_track(track: object) -> Sam3EntityTrack | None:
         end_seconds=max(end_seconds, start_seconds),
         confidence=_clamp01(getattr(track, "confidence", 0.0)),
         label_hint=getattr(track, "label_hint", None),
+        points=list(getattr(track, "points", [])),
         features=Sam3VisualFeatures(
             motion_score=_feature_value(features, "motion_score"),
             interaction_score=_feature_value(features, "interaction_score"),

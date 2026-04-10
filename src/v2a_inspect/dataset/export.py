@@ -22,9 +22,11 @@ def build_dataset_record(
         video_ref=video_ref,
         bundle=bundle,
         evidence_refs={
-            "storyboard_dir": bundle.artifacts.storyboard_dir,
+            "run_dir": bundle.artifacts.run_dir,
+            "storyboard_path": bundle.artifacts.storyboard_path,
             "crop_dir": bundle.artifacts.crop_dir,
             "clip_dir": bundle.artifacts.clip_dir,
+            "trace_path": bundle.artifacts.trace_path,
         },
         review_metadata=bundle.review_metadata.model_dump(mode="json"),
         pipeline_version=resolved_pipeline_version,

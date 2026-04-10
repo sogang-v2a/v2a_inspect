@@ -61,7 +61,7 @@ class BundleAdapterTests(unittest.TestCase):
                 ),
             ],
             validation=ValidationReport(status="pass_with_warnings"),
-            artifacts=ArtifactRefs(storyboard_dir="/tmp/storyboard"),
+            artifacts=ArtifactRefs(storyboard_path="/tmp/storyboard.jpg"),
         )
         grouped = bundle_to_grouped_analysis(bundle)
         self.assertEqual(len(grouped.raw_tracks), 2)

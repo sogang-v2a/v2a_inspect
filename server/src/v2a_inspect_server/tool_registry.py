@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 from typing import TYPE_CHECKING, Callable
+from uuid import uuid4
 
 from v2a_inspect.contracts import (
     CandidateCut,
@@ -16,6 +18,7 @@ from v2a_inspect.tools import (
     build_context_candidate_cuts,
     build_evidence_windows,
     evidence_windows_to_scene_boundaries,
+    export_window_clips,
     generate_storyboard,
     group_entity_embeddings,
     hydrate_evidence_windows,
@@ -23,10 +26,11 @@ from v2a_inspect.tools import (
     route_track,
     sample_frames,
 )
-from v2a_inspect.tools.types import EntityEmbedding, FrameBatch, Sam3EntityTrack
+from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack
 
 from .constants import DEFAULT_TRACK_LABELS
 from .crops import crop_tracks
+from .settings import get_server_runtime_settings
 from .reid import build_identity_edges, build_provisional_source_tracks
 from .semantics import (
     build_ambience_beds,
@@ -44,7 +48,19 @@ class ToolDefinition:
 
 
 def _artifact_root(video_path: str) -> Path:
-    return Path(Path(video_path).stem + "_agent_tools")
+    settings = get_server_runtime_settings()
+    preferred_root = (
+        settings.shared_video_dir.parent / "artifacts"
+        if settings.shared_video_dir is not None
+        else Path(tempfile.gettempdir()) / "v2a_inspect_artifacts"
+    )
+    preferred_root.mkdir(parents=True, exist_ok=True)
+    return Path(
+        tempfile.mkdtemp(
+            prefix=f"{Path(video_path).stem}-{uuid4().hex[:8]}-",
+            dir=str(preferred_root),
+        )
+    )
 
 
 if TYPE_CHECKING:
@@ -53,7 +69,10 @@ if TYPE_CHECKING:
 
 def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefinition]:
     def structural_overview(
-        *, video_path: str, target_scene_seconds: float = 5.0
+        *,
+        video_path: str,
+        target_scene_seconds: float = 5.0,
+        output_root: str | None = None,
     ) -> dict[str, object]:
         probe = probe_video(video_path)
         candidate_cuts = build_candidate_cuts(
@@ -69,7 +88,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             evidence_windows,
             candidate_cuts=candidate_cuts,
         )
-        frame_root = _artifact_root(video_path)
+        frame_root = Path(output_root) if output_root is not None else _artifact_root(video_path)
         frame_root.mkdir(parents=True, exist_ok=True)
         frame_batches = sample_frames(
             video_path,
@@ -81,10 +100,17 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             frame_batches,
             output_path=str(frame_root / "storyboard.jpg"),
         )
+        clip_paths_by_window = export_window_clips(
+            video_path,
+            evidence_windows,
+            output_dir=str(frame_root / "clips"),
+            max_windows=3,
+        )
         evidence_windows = hydrate_evidence_windows(
             evidence_windows,
             frame_batches,
             storyboard_path=storyboard_path,
+            clip_paths_by_window=clip_paths_by_window,
         )
         return {
             "probe": probe,
@@ -92,6 +118,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "evidence_windows": evidence_windows,
             "frame_batches": frame_batches,
             "storyboard_path": storyboard_path,
+            "artifact_root": str(frame_root),
         }
 
     def refine_candidate_cuts(
@@ -165,10 +192,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         return group_entity_embeddings(embeddings, tracks_by_id=tracks_by_id)
 
     def routing_priors(*, tracks: list[Sam3EntityTrack]) -> dict[str, object]:
-        return {
-            track.track_id: route_track(track).model_dump(mode="json")
-            for track in tracks
-        }
+        return {track.track_id: route_track(track) for track in tracks}
 
     def build_source_semantics(
         *,
@@ -177,6 +201,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         track_crops: list[TrackCrop],
         label_candidates_by_track: dict[str, list[LabelCandidate]],
         evidence_windows: list[EvidenceWindow],
+        candidate_groups: list[CandidateGroup] | None = None,
+        routing_decisions_by_track: dict[str, object] | None = None,
     ) -> dict[str, object]:
         tracks_by_id = {track.track_id: track for track in tracks}
         identity_edges = build_identity_edges(
@@ -188,6 +214,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             tracks,
             identity_edges,
             track_crops=track_crops,
+            candidate_groups=candidate_groups,
             label_candidates_by_track=label_candidates_by_track,
         )
         sound_events = build_sound_event_segments(
@@ -199,6 +226,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             sound_events,
             ambience_beds,
             physical_sources=physical_sources,
+            candidate_groups=candidate_groups,
+            routing_decisions_by_track=routing_decisions_by_track,
         )
         return {
             "identity_edges": identity_edges,
