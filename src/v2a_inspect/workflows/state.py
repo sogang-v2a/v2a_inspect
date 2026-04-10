@@ -28,7 +28,7 @@ class InspectOptions(BaseModel):
     """User-configurable options for the inspection workflow."""
 
     fps: float = Field(default=2.0, gt=0.0)
-    pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = "legacy_gemini"
+    pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = "tool_first_foundation"
     scene_analysis_mode: Literal["default", "extended"] = "default"
     enable_vlm_verify: bool = True
     enable_model_select: bool = False

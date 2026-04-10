@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     remote_gpu_vram_preference_gb: int = Field(default=16, ge=1, le=24)
     remote_gpu_vram_cap_gb: int = Field(default=24, ge=1, le=24)
     visual_pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = (
-        "legacy_gemini"
+        "tool_first_foundation"
     )
 
     model_config = SettingsConfigDict(
