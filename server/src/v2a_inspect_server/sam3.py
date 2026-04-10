@@ -50,13 +50,17 @@ class Sam3Client:
         frame_batches: list[FrameBatch],
         *,
         prompts_by_scene: Mapping[int, Sequence[str]] | None = None,
+        score_threshold: float = 0.35,
     ) -> Sam3TrackSet:
         tracks: list[Sam3EntityTrack] = []
-        strategy = "prompt_seeded" if prompts_by_scene else "prompt_free"
+        strategy = (
+            "scene_prompt_seeded" if prompts_by_scene else "default_prompt_seeded"
+        )
         for batch in frame_batches:
             batch_tracks = self._extract_scene_tracks(
                 batch,
                 prompts=prompts_by_scene.get(batch.scene_index) if prompts_by_scene else None,
+                score_threshold=score_threshold,
             )
             tracks.extend(batch_tracks)
         return Sam3TrackSet(provider="sam3", strategy=strategy, tracks=tracks)
@@ -66,6 +70,7 @@ class Sam3Client:
         frame_batches: list[FrameBatch],
         *,
         text_prompt: str,
+        score_threshold: float = 0.25,
     ) -> Sam3TrackSet:
         prompt = text_prompt.strip() or "object"
         prompts_by_scene = {
@@ -75,6 +80,7 @@ class Sam3Client:
         track_set = self.extract_entities(
             frame_batches,
             prompts_by_scene=prompts_by_scene,
+            score_threshold=score_threshold,
         )
         track_set.strategy = "text_recovery"
         return track_set
@@ -84,6 +90,7 @@ class Sam3Client:
         batch: FrameBatch,
         *,
         prompts: Sequence[str] | None,
+        score_threshold: float,
     ) -> list[Sam3EntityTrack]:
         if not batch.frames:
             return []
@@ -115,15 +122,15 @@ class Sam3Client:
                     outputs = self.model(**model_inputs)
                 processed = self.processor.post_process_instance_segmentation(
                     outputs,
-                    threshold=0.5,
-                    mask_threshold=0.5,
+                    threshold=score_threshold,
+                    mask_threshold=score_threshold,
                     target_sizes=inputs.get("original_sizes").tolist(),
                 )[0]
                 boxes = processed.get("boxes", [])
                 scores = processed.get("scores", [])
                 for index, box in enumerate(boxes):
                     score = float(scores[index]) if index < len(scores) else 0.0
-                    if score < 0.35:
+                    if score < score_threshold:
                         continue
                     frame_detections.append(
                         FrameDetection(

@@ -26,9 +26,9 @@ from v2a_inspect.tools import (
     route_track,
     sample_frames,
 )
-from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack
+from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack, SceneBoundary
 
-from .constants import DEFAULT_TRACK_LABELS
+from .constants import DEFAULT_TRACK_LABELS, RECOVERY_SCENE_LABELS
 from .crops import crop_tracks
 from .settings import get_server_runtime_settings
 from .reid import build_identity_edges, build_provisional_source_tracks
@@ -73,6 +73,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         *,
         video_path: str,
         target_scene_seconds: float = 5.0,
+        frames_per_scene: int = 3,
         output_root: str | None = None,
     ) -> dict[str, object]:
         probe = probe_video(video_path)
@@ -95,7 +96,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             video_path,
             scenes,
             output_dir=str(frame_root),
-            frames_per_scene=2,
+            frames_per_scene=frames_per_scene,
         )
         storyboard_path = generate_storyboard(
             frame_batches,
@@ -120,6 +121,62 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "frame_batches": frame_batches,
             "storyboard_path": storyboard_path,
             "artifact_root": str(frame_root),
+            "frames_per_scene": frames_per_scene,
+        }
+
+    def densify_window_sampling(
+        *,
+        video_path: str,
+        evidence_windows: list[EvidenceWindow],
+        frame_batches: list[FrameBatch],
+        window_ids: list[str] | None = None,
+        output_root: str | None = None,
+        frames_per_scene: int = 6,
+        storyboard_path: str | None = None,
+        **_: object,
+    ) -> dict[str, object]:
+        selected_windows = (
+            [window for window in evidence_windows if window.window_id in set(window_ids or [])]
+            if window_ids
+            else list(evidence_windows)
+        )
+        window_id_filter = {window.window_id for window in selected_windows}
+        scenes = [
+            SceneBoundary(
+                scene_index=index,
+                start_seconds=window.start_time,
+                end_seconds=window.end_time,
+            )
+            for index, window in enumerate(evidence_windows)
+            if window.window_id in window_id_filter
+        ]
+        frame_root = Path(output_root) if output_root is not None else _artifact_root(video_path)
+        frame_root.mkdir(parents=True, exist_ok=True)
+        densified = sample_frames(
+            video_path,
+            scenes,
+            output_dir=str(frame_root),
+            frames_per_scene=frames_per_scene,
+        )
+        batch_by_scene = {batch.scene_index: batch for batch in frame_batches}
+        for batch in densified:
+            batch_by_scene[batch.scene_index] = batch
+        merged_batches = [batch_by_scene[index] for index in sorted(batch_by_scene)]
+        resolved_storyboard = generate_storyboard(
+            merged_batches,
+            output_path=storyboard_path or str(frame_root / "storyboard.jpg"),
+        )
+        hydrated_windows = hydrate_evidence_windows(
+            evidence_windows,
+            merged_batches,
+            storyboard_path=resolved_storyboard,
+        )
+        return {
+            "frame_batches": merged_batches,
+            "evidence_windows": hydrated_windows,
+            "storyboard_path": resolved_storyboard,
+            "frames_per_scene": frames_per_scene,
+            "window_ids": [window.window_id for window in selected_windows],
         }
 
     def refine_candidate_cuts(
@@ -159,6 +216,34 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         return tooling_runtime.sam3_client.recover_with_text_prompt(
             frame_batches, text_prompt=text_prompt
         )
+
+    def recover_foreground_sources(
+        *,
+        frame_batches: list[FrameBatch],
+        prompt_vocabulary: list[str] | None = None,
+        per_scene_top_k: int = 3,
+        score_threshold: float = 0.18,
+        **_: object,
+    ) -> dict[str, object]:
+        prompts_by_scene = _scene_prompt_candidates(
+            frame_batches,
+            tooling_runtime.label_client,
+            prompt_vocabulary=prompt_vocabulary or list(RECOVERY_SCENE_LABELS),
+            per_scene_top_k=per_scene_top_k,
+            score_threshold=score_threshold,
+        )
+        if tooling_runtime.runtime_profile == "mig10_safe":
+            tooling_runtime.release_client("label")
+        track_set = tooling_runtime.sam3_client.extract_entities(
+            frame_batches,
+            prompts_by_scene=prompts_by_scene,
+            score_threshold=0.25,
+        )
+        track_set.strategy = "scene_prompt_recovery"
+        return {
+            "track_set": track_set,
+            "prompts_by_scene": prompts_by_scene,
+        }
 
     def crop_track_artifacts(
         *,
@@ -264,7 +349,14 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "Probe video and build candidate cuts/evidence windows.",
         ),
         "extract_entities": ToolDefinition(
-            "extract_entities", extract_entities, "Run prompt-free SAM extraction."
+            "extract_entities",
+            extract_entities,
+            "Run baseline prompt-seeded SAM extraction.",
+        ),
+        "densify_window_sampling": ToolDefinition(
+            "densify_window_sampling",
+            densify_window_sampling,
+            "Resample problematic windows with denser frame coverage.",
         ),
         "refine_candidate_cuts": ToolDefinition(
             "refine_candidate_cuts",
@@ -275,6 +367,11 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "recover_with_text_prompt",
             recover_with_text_prompt,
             "Run manual recovery-only extraction.",
+        ),
+        "recover_foreground_sources": ToolDefinition(
+            "recover_foreground_sources",
+            recover_foreground_sources,
+            "Recover missing foreground sources with scene-specific prompt expansion.",
         ),
         "crop_tracks": ToolDefinition(
             "crop_tracks",
@@ -313,3 +410,29 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "Rewrite canonical descriptions from the current structured bundle state.",
         ),
     }
+
+
+def _scene_prompt_candidates(
+    frame_batches: list[FrameBatch],
+    label_client: object,
+    *,
+    prompt_vocabulary: list[str],
+    per_scene_top_k: int,
+    score_threshold: float,
+) -> dict[int, list[str]]:
+    prompts_by_scene: dict[int, list[str]] = {}
+    for batch in frame_batches:
+        image_paths = [frame.image_path for frame in batch.frames]
+        if not image_paths:
+            continue
+        scored = label_client.score_image_labels(
+            image_paths=image_paths,
+            labels=prompt_vocabulary,
+        )
+        prompts = [
+            score.label
+            for score in scored[: max(per_scene_top_k, 1)]
+            if score.score >= score_threshold
+        ]
+        prompts_by_scene[batch.scene_index] = prompts or list(prompt_vocabulary[:3])
+    return prompts_by_scene

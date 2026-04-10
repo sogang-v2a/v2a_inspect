@@ -11,6 +11,8 @@ def can_retry_issue(state: PlannerState, issue: AgentIssue) -> bool:
 def _limit_for_issue(state: PlannerState, issue: AgentIssue) -> int:
     if issue.issue_type == "ambiguous_source":
         return state.retry_budget.manual_recovery_limit
+    if issue.issue_type in {"foreground_collapse", "missing_sources"}:
+        return state.retry_budget.foreground_recovery_limit
     if issue.issue_type == "grouping_ambiguity":
         return state.retry_budget.regroup_retry_limit
     if issue.issue_type == "validation_issue":

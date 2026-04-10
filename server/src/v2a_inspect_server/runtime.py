@@ -335,6 +335,8 @@ def _run_tool_first_pipeline(
         "video_path": video_path,
         "options": options,
         "artifact_run_dir": artifact_run_dir,
+        "frames_per_window": int(structural.get("frames_per_scene", 3)),
+        "recovery_actions": [],
         "video_probe": probe,
         "candidate_cuts": candidate_cuts,
         "evidence_windows": evidence_windows,
@@ -387,6 +389,7 @@ def _run_agentic_tool_first_pipeline(
         options=options.model_copy(update={"pipeline_mode": "tool_first_foundation"}),
         tooling_runtime=tooling_runtime,
     )
+    state["options"] = options
     state, planner_state, trace_path = run_agentic_tool_loop(
         inspect_state=state,
         tooling_runtime=tooling_runtime,

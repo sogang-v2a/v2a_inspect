@@ -32,7 +32,9 @@ class ToolRegistryTests(unittest.TestCase):
         )
         registry = build_tool_registry(fake_runtime)
         self.assertIn("structural_overview", registry)
+        self.assertIn("densify_window_sampling", registry)
         self.assertIn("refine_candidate_cuts", registry)
+        self.assertIn("recover_foreground_sources", registry)
         self.assertIn("recover_with_text_prompt", registry)
         self.assertIn("validate_bundle", registry)
 
@@ -93,6 +95,62 @@ class ToolRegistryTests(unittest.TestCase):
                 track_image_paths={"trk0": [track_crops[0].crop_path]}
             )
             self.assertEqual(embedded, {"trk0": [track_crops[0].crop_path]})
+
+    def test_recover_foreground_sources_uses_scene_prompt_recovery_strategy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            frame_path = Path(tmp_dir) / "frame.jpg"
+            from PIL import Image
+
+            Image.new("RGB", (64, 64), color="white").save(frame_path)
+            fake_runtime = SimpleNamespace(
+                runtime_profile="cpu_dev",
+                release_client=lambda name: None,
+                sam3_client=SimpleNamespace(
+                    extract_entities=lambda frame_batches, prompts_by_scene=None, score_threshold=0.35: SimpleNamespace(
+                        strategy="scene_prompt_seeded",
+                        tracks=[
+                            SimpleNamespace(
+                                track_id="trk0",
+                                scene_index=0,
+                                start_seconds=0.0,
+                                end_seconds=0.0,
+                                confidence=0.9,
+                                label_hint=(prompts_by_scene or {0: ["object"]})[0][0],
+                                points=[],
+                            )
+                        ],
+                        model_copy=lambda update=None, **kwargs: None,
+                    )
+                ),
+                embedding_client=SimpleNamespace(
+                    embed_images=lambda track_image_paths: track_image_paths
+                ),
+                label_client=SimpleNamespace(
+                    score_image_labels=lambda image_paths, labels: [
+                        SimpleNamespace(label=labels[0], score=0.9),
+                        SimpleNamespace(label=labels[1], score=0.8),
+                    ]
+                ),
+            )
+            registry = build_tool_registry(fake_runtime)
+            frame_batches = [
+                FrameBatch(
+                    scene_index=0,
+                    frames=[
+                        SampledFrame(
+                            scene_index=0,
+                            timestamp_seconds=0.0,
+                            image_path=str(frame_path),
+                        )
+                    ],
+                )
+            ]
+            recovered = registry["recover_foreground_sources"].handler(
+                frame_batches=frame_batches,
+                prompt_vocabulary=["vehicle", "person", "object"],
+            )
+            self.assertEqual(recovered["prompts_by_scene"][0][0], "vehicle")
+            self.assertEqual(recovered["track_set"].strategy, "scene_prompt_recovery")
 
 
 if __name__ == "__main__":

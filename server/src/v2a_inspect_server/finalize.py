@@ -63,9 +63,13 @@ def build_final_bundle(
         ),
         review_metadata=ReviewMetadata(),
         pipeline_metadata={
-            "pipeline_version": "stage6-foundation",
+            "pipeline_version": getattr(
+                state.get("options"), "pipeline_mode", "tool_first_foundation"
+            ),
             "generated_at": datetime.now(UTC).isoformat(),
             "tool_context_enabled": True,
+            "sampling_frames_per_window": state.get("frames_per_window"),
+            "recovery_actions": list(state.get("recovery_actions", [])),
         },
     )
     issues = validate_bundle(bundle)

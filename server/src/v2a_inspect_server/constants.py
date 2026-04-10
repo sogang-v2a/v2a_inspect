@@ -17,3 +17,21 @@ DEFAULT_TRACK_LABELS: tuple[str, ...] = (
     "object",
     "background",
 )
+
+RECOVERY_SCENE_LABELS: tuple[str, ...] = (
+    "person",
+    "vehicle",
+    "car",
+    "truck",
+    "bus",
+    "motorcycle",
+    "bicycle",
+    "animal",
+    "dog",
+    "cat",
+    "bird",
+    "boat",
+    "machine",
+    "crowd",
+    "object",
+)

@@ -8,6 +8,8 @@ _TOOL_BY_ISSUE = {
     "structural_gap": "structural_overview",
     "cut_ambiguity": "refine_candidate_cuts",
     "ambiguous_source": "recover_with_text_prompt",
+    "foreground_collapse": "densify_window_sampling",
+    "missing_sources": "recover_foreground_sources",
     "missing_crops": "crop_tracks",
     "missing_labels": "score_track_labels",
     "grouping_ambiguity": "group_embeddings",

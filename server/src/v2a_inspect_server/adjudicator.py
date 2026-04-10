@@ -16,6 +16,8 @@ class IssueAdjudication(BaseModel):
     resolution: Literal["accept", "run_tool"] = "run_tool"
     tool_name: Literal[
         "refine_candidate_cuts",
+        "densify_window_sampling",
+        "recover_foreground_sources",
         "recover_with_text_prompt",
         "group_embeddings",
         "routing_priors",

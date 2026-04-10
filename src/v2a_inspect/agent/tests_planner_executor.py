@@ -122,6 +122,12 @@ class PlannerExecutorTests(unittest.TestCase):
             video_id="vid-001",
             issues=[
                 AgentIssue(
+                    issue_id="issue-fg",
+                    issue_type="foreground_collapse",
+                    description="no tracks",
+                    priority=0,
+                ),
+                AgentIssue(
                     issue_id="issue-cut",
                     issue_type="cut_ambiguity",
                     description="cut ambiguity",
@@ -138,7 +144,7 @@ class PlannerExecutorTests(unittest.TestCase):
         action = plan_next_action(state)
         self.assertIsNotNone(action)
         action = cast(PlannedAction, action)
-        self.assertEqual(action.tool_name, "refine_candidate_cuts")
+        self.assertEqual(action.tool_name, "densify_window_sampling")
 
 
 if __name__ == "__main__":

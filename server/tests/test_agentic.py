@@ -175,3 +175,40 @@ class AgenticIntegrationTests(unittest.TestCase):
         issue_types = {issue.issue_type for issue in issues}
         self.assertIn("cut_ambiguity", issue_types)
         self.assertIn("description_stale", issue_types)
+
+    def test_build_issues_promotes_missing_sources_into_foreground_repair(self) -> None:
+        bundle = MultitrackDescriptionBundle(
+            video_id="video",
+            video_meta=VideoMeta(duration_seconds=10.0, fps=2.0, width=320, height=240),
+            candidate_cuts=[],
+            evidence_windows=[
+                EvidenceWindow(
+                    window_id="window-0000",
+                    start_time=0.0,
+                    end_time=4.0,
+                )
+            ],
+            generation_groups=[],
+            validation=ValidationReport(
+                status="pass_with_warnings",
+                issues=[
+                    ValidationIssue(
+                        issue_type="missing_dominant_source",
+                        severity="warning",
+                        message="Bundle has no physical sources.",
+                        repair_tool="extract_entities",
+                    )
+                ],
+            ),
+            artifacts=ArtifactRefs(run_dir="/tmp/run", storyboard_path="/tmp/run/storyboard.jpg"),
+        )
+        inspect_state = {
+            "video_path": "/tmp/video.mp4",
+            "frame_batches": [],
+            "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
+        }
+
+        issues = _build_issues(bundle=bundle, inspect_state=inspect_state)
+        issue_types = {issue.issue_type for issue in issues}
+        self.assertIn("foreground_collapse", issue_types)
+        self.assertNotIn("validation_issue", issue_types)

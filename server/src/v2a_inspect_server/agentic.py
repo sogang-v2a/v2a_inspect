@@ -183,6 +183,16 @@ def _apply_action_result(
             updated.get("sam3_track_set"),
             result,
         )
+        updated.setdefault("recovery_actions", []).append(tool_name)
+        return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+
+    if tool_name == "recover_foreground_sources" and isinstance(result, dict):
+        updated["sam3_track_set"] = _merge_track_sets(
+            updated.get("sam3_track_set"),
+            result.get("track_set"),
+        )
+        updated["scene_prompt_candidates"] = dict(result.get("prompts_by_scene", {}))
+        updated.setdefault("recovery_actions", []).append(tool_name)
         return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
     if tool_name == "crop_tracks":
@@ -220,6 +230,14 @@ def _apply_action_result(
         updated["generation_groups"] = list(semantics["generation_groups"])
         return updated
 
+    if tool_name == "densify_window_sampling" and isinstance(result, dict):
+        updated["frame_batches"] = list(result["frame_batches"])
+        updated["evidence_windows"] = list(result["evidence_windows"])
+        updated["storyboard_path"] = str(result["storyboard_path"])
+        updated["frames_per_window"] = int(result["frames_per_scene"])
+        updated.setdefault("recovery_actions", []).append(tool_name)
+        return _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+
     if tool_name == "rerun_description_writer":
         updated["generation_groups"] = list(result)
         return updated
@@ -237,7 +255,8 @@ def _rebuild_structural_state(
     registry: dict[str, Any],
 ) -> InspectState:
     extraction = registry["extract_entities"](
-        frame_batches=list(inspect_state.get("frame_batches", []))
+        frame_batches=list(inspect_state.get("frame_batches", [])),
+        prompts_by_scene=dict(inspect_state.get("scene_prompt_candidates", {})) or None,
     )
     inspect_state["sam3_track_set"] = extraction
     if tooling_runtime.runtime_profile == "mig10_safe":
@@ -376,6 +395,47 @@ def _build_issues(
                 payload={"video_path": inspect_state.get("video_path", "")},
             )
         )
+    current_tracks = list(_tracks_from_result(inspect_state.get("sam3_track_set")))
+    current_sources = list(bundle.physical_sources)
+    current_events = list(bundle.sound_events)
+    duration_seconds = float(getattr(bundle.video_meta, "duration_seconds", 0.0))
+    if duration_seconds > 1.0 and not current_tracks:
+        issues.append(
+            AgentIssue(
+                issue_id="foreground-collapse",
+                issue_type="foreground_collapse",
+                description="No foreground tracks were extracted from a non-trivial clip.",
+                priority=2,
+                payload={
+                    "video_path": inspect_state.get("video_path", ""),
+                    "evidence_windows": list(bundle.evidence_windows),
+                    "frame_batches": list(inspect_state.get("frame_batches", [])),
+                    "window_ids": [window.window_id for window in bundle.evidence_windows],
+                    "output_root": bundle.artifacts.run_dir,
+                    "storyboard_path": bundle.artifacts.storyboard_path,
+                    "current_track_count": 0,
+                    "current_source_count": len(current_sources),
+                    "current_event_count": len(current_events),
+                    "frames_per_scene": int(inspect_state.get("frames_per_window", 3)),
+                },
+            )
+        )
+    elif duration_seconds > 1.0 and current_tracks and not current_sources:
+        issues.append(
+            AgentIssue(
+                issue_id="missing-sources",
+                issue_type="missing_sources",
+                description="Tracks exist but no physical sources were built from them.",
+                priority=4,
+                payload={
+                    "frame_batches": list(inspect_state.get("frame_batches", [])),
+                    "current_track_count": len(current_tracks),
+                    "current_source_count": 0,
+                    "current_event_count": len(current_events),
+                    "scene_prompt_candidates": dict(inspect_state.get("scene_prompt_candidates", {})),
+                },
+            )
+        )
     if inspect_state.get("sam3_track_set") and not inspect_state.get("track_crops"):
         issues.append(
             AgentIssue(
@@ -437,6 +497,8 @@ def _build_issues(
         )
     for index, issue in enumerate(bundle.validation.issues):
         issue_id = issue.issue_id or f"validation-{index:04d}"
+        if issue.issue_type == "missing_dominant_source":
+            continue
         if issue.issue_type == "route_inconsistency":
             payload = {
                 "tracks": list(getattr(inspect_state.get("sam3_track_set"), "tracks", []))
@@ -534,6 +596,8 @@ def _adjudicate_issue(
 ) -> dict[str, object] | None:
     if issue is None or issue.issue_type not in {
         "cut_ambiguity",
+        "foreground_collapse",
+        "missing_sources",
         "grouping_ambiguity",
         "routing_ambiguity",
         "description_stale",
@@ -547,6 +611,7 @@ def _adjudicate_issue(
             "video_id": bundle.video_id,
             "issue_id": issue.issue_id,
             "issue_type": issue.issue_type,
+            "issue_attempts": issue.attempts,
             "issue_description": issue.description,
             "planned_tool_name": planned_tool_name,
             "validation_issues": [item.model_dump(mode="json") for item in bundle.validation.issues],

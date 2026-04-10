@@ -88,8 +88,10 @@ class InspectState(TypedDict, total=False):
     evidence_windows: list[EvidenceWindow]
     scene_boundaries: list[SceneBoundary]
     frame_batches: list[FrameBatch]
+    frames_per_window: int
     storyboard_path: str
     sam3_track_set: Sam3TrackSet
+    scene_prompt_candidates: dict[int, list[str]]
     track_crops: list[TrackCrop]
     entity_embeddings: list[EntityEmbedding]
     track_label_candidates: dict[str, list[LabelCandidate]]
@@ -104,3 +106,4 @@ class InspectState(TypedDict, total=False):
     tool_grouping_hints: str
     tool_verify_hints: str
     tool_routing_hints: str
+    recovery_actions: list[str]
