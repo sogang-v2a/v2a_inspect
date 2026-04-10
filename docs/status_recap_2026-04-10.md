@@ -44,7 +44,8 @@ The active system can:
 
 ### Remote runtime
 - Remote model loading is confirmed to use CUDA on `sogang_gpu`.
-- Media tooling (`ffmpeg` / `ffprobe`) now resolves from the active Python environment, which fixed remote `/analyze` failures caused by missing shell PATH activation.
+- The packaged server path now falls back to an on-repo model manifest instead of resolving only to a broken venv-local path.
+- Media tooling now falls back cleanly when the remote host lacks a system `ffprobe`, which removed another immediate `/analyze` failure on `sogang_gpu`.
 
 ## Verified remote GPU facts
 From `sogang_gpu`:
@@ -67,13 +68,13 @@ Passed locally:
 - full `unittest discover` for `server/tests/`
 
 Most recent full local result:
-- root tests: **31 passed**
-- server tests: **46 passed**
+- root tests: **35 passed**
+- server tests: **55 passed**
 
 ## Verified remote runtime status
 Validated on `sogang_gpu`:
 - `/healthz` works
-- model/runtime readiness works
+- plain `/readyz` works after the server-manifest fallback fix
 - `/analyze` works for both:
   - `tool_first_foundation`
   - `agentic_tool_first`
@@ -104,6 +105,7 @@ More specifically, it is:
 - extraction recall on nontrivial clips
 - materially different recovery actions when the first pass finds no sources
 - richer real-clip evaluation after those recovery actions land
+- understanding why the first real cat-loop run still spends its early budget in SAM3 load/extraction before any later stage records
 
 ## Roadmap honesty update
 The Stage 7 checklist was partially reopened because the repo has:
@@ -129,6 +131,16 @@ The newest recovery slice (`aa65248`) added:
 - scene-prompt foreground recovery
 - more honest extraction and pipeline metadata
 
+The newest recovery-correctness slice (`af731c7`) added:
+- deterministic zero-track recovery escalation
+- explicit ambience-only terminal acceptance
+- richer adjudicator context
+- no bogus crop repair on empty track sets
+
+The newest remote-runtime unblockers (uncommitted follow-up after `af731c7`) added:
+- packaged-server manifest fallback resolution
+- `ffprobe` fallback through the Python-side media stack when the remote host lacks a system binary
+
 The newest observability slice (`94ad5fa`) added:
 - per-stage timing history in `pipeline_metadata`
 - structured recovery-attempt history
@@ -137,6 +149,7 @@ The newest observability slice (`94ad5fa`) added:
 Verified on `sogang_gpu`:
 - a nontrivial interrupted `v2a_cat.mp4` run now creates `v2a_cat-runtime-trace.jsonl`
 - the trace already records `structural_overview` timing before the run finishes, which makes slow remote runs diagnosable instead of opaque
+- after the manifest-path and `ffprobe` fixes, the next fresh cat-loop run no longer failed immediately; it progressed into long SAM3 loading on the MiG slice before manual shutdown
 
 That means the next remote benchmark should focus on whether these changes raise **foreground recall**, not just whether the server stays up.
 

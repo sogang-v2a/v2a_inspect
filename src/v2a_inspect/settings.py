@@ -11,9 +11,25 @@ from pydantic_settings import (
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_SERVER_MANIFEST_PATH = (
-    _PROJECT_ROOT / "server" / "src" / "v2a_inspect_server" / "model-manifest.json"
-)
+
+
+def _default_server_manifest_path() -> Path:
+    module_path = Path(__file__).resolve()
+    candidates = [
+        _PROJECT_ROOT / "server" / "src" / "v2a_inspect_server" / "model-manifest.json",
+        _PROJECT_ROOT / "server" / "model-manifest.json",
+        Path.cwd() / "server" / "src" / "v2a_inspect_server" / "model-manifest.json",
+        Path.cwd() / "server" / "model-manifest.json",
+        module_path.parent.parent / "server" / "src" / "v2a_inspect_server" / "model-manifest.json",
+        module_path.parent.parent / "server" / "model-manifest.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+_DEFAULT_SERVER_MANIFEST_PATH = _default_server_manifest_path()
 
 
 class Settings(BaseSettings):
@@ -118,7 +134,44 @@ class Settings(BaseSettings):
                 "MINIMUM_GPU_VRAM_GB cannot exceed 10 for the mig10_safe runtime profile."
             )
 
+        self.weights_manifest_path = _resolve_manifest_path(self.weights_manifest_path)
+
         return self
+
+
+def _resolve_manifest_path(configured_path: Path) -> Path:
+    candidates: list[Path] = [configured_path]
+    module_path = Path(__file__).resolve()
+
+    if not configured_path.is_absolute():
+        candidates.extend(
+            [
+                Path.cwd() / configured_path,
+                _PROJECT_ROOT / configured_path,
+                module_path.parents[2] / configured_path,
+            ]
+        )
+
+    candidates.extend(
+        [
+            Path.cwd() / "server" / "model-manifest.json",
+            Path.cwd() / "server" / "src" / "v2a_inspect_server" / "model-manifest.json",
+            _PROJECT_ROOT / "server" / "model-manifest.json",
+            _PROJECT_ROOT / "server" / "src" / "v2a_inspect_server" / "model-manifest.json",
+            module_path.parents[2] / "server" / "model-manifest.json",
+            module_path.parents[2] / "server" / "src" / "v2a_inspect_server" / "model-manifest.json",
+        ]
+    )
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
+    return configured_path
 
 
 settings = Settings()

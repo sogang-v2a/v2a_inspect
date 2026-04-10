@@ -39,39 +39,17 @@ def probe_video(video_path: str) -> VideoProbe:
         "-show_streams",
         video_path,
     ]
-    completed = subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return _probe_video_with_ffmpeg(video_path)
     payload = json.loads(completed.stdout)
-    streams = payload.get("streams", [])
-    format_payload = payload.get("format", {})
-    video_stream = next(
-        (stream for stream in streams if stream.get("codec_type") == "video"),
-        {},
-    )
-    has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
-    avg_frame_rate = video_stream.get("avg_frame_rate")
-    fps = _parse_frame_rate(avg_frame_rate)
-    duration = float(format_payload.get("duration") or 0.0)
-    frame_count = (
-        int(video_stream["nb_frames"])
-        if str(video_stream.get("nb_frames", "")).isdigit()
-        else None
-    )
-    return VideoProbe(
-        video_path=video_path,
-        duration_seconds=duration,
-        fps=fps,
-        width=video_stream.get("width"),
-        height=video_stream.get("height"),
-        frame_count=frame_count,
-        codec_name=video_stream.get("codec_name"),
-        format_name=format_payload.get("format_name"),
-        has_audio_stream=has_audio,
-    )
+    return _probe_video_from_ffprobe_payload(video_path, payload)
 
 
 def build_candidate_cuts(
@@ -555,10 +533,117 @@ def _media_binary(name: str) -> str:
     discovered = shutil.which(name)
     if discovered:
         return discovered
+    if name == "ffmpeg":
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            pass
     interpreter_bin = Path(sys.executable).resolve().parent / name
     if interpreter_bin.exists():
         return str(interpreter_bin)
     return name
+
+
+def _probe_video_from_ffprobe_payload(video_path: str, payload: dict[str, object]) -> VideoProbe:
+    streams = payload.get("streams", [])
+    format_payload = payload.get("format", {})
+    video_stream = next(
+        (stream for stream in streams if stream.get("codec_type") == "video"),
+        {},
+    )
+    has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+    avg_frame_rate = video_stream.get("avg_frame_rate")
+    fps = _parse_frame_rate(avg_frame_rate)
+    duration = float(format_payload.get("duration") or 0.0)
+    frame_count = (
+        int(video_stream["nb_frames"])
+        if str(video_stream.get("nb_frames", "")).isdigit()
+        else None
+    )
+    return VideoProbe(
+        video_path=video_path,
+        duration_seconds=duration,
+        fps=fps,
+        width=video_stream.get("width"),
+        height=video_stream.get("height"),
+        frame_count=frame_count,
+        codec_name=video_stream.get("codec_name"),
+        format_name=format_payload.get("format_name"),
+        has_audio_stream=has_audio,
+    )
+
+
+def _probe_video_with_ffmpeg(video_path: str) -> VideoProbe:
+    command = [
+        _media_binary("ffmpeg"),
+        "-hide_banner",
+        "-i",
+        video_path,
+    ]
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    stderr = completed.stderr
+    duration = 0.0
+    fps = 0.0
+    width = None
+    height = None
+    codec_name = None
+    format_name = None
+    has_audio = "Audio:" in stderr
+
+    for line in stderr.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Input #0,"):
+            parts = stripped.split(",", 2)
+            if len(parts) >= 2:
+                format_name = parts[1].strip()
+        if "Duration:" in stripped:
+            marker = stripped.split("Duration:", 1)[1].split(",", 1)[0].strip()
+            duration = _parse_duration(marker)
+        if " Video:" in stripped:
+            after_video = stripped.split(" Video:", 1)[1]
+            codec_name = after_video.split(",", 1)[0].strip()
+            for token in [item.strip() for item in after_video.split(",")]:
+                if "x" in token:
+                    maybe_dims = token.lower().split("x")
+                    if len(maybe_dims) == 2 and maybe_dims[0].isdigit() and maybe_dims[1].isdigit():
+                        width = int(maybe_dims[0])
+                        height = int(maybe_dims[1])
+                if token.endswith(" fps"):
+                    try:
+                        fps = float(token[:-4].strip())
+                    except ValueError:
+                        continue
+
+    return VideoProbe(
+        video_path=video_path,
+        duration_seconds=duration,
+        fps=fps,
+        width=width,
+        height=height,
+        frame_count=None,
+        codec_name=codec_name,
+        format_name=format_name,
+        has_audio_stream=has_audio,
+    )
+
+
+def _parse_duration(raw_duration: str) -> float:
+    try:
+        hours, minutes, seconds = raw_duration.split(":")
+        return (
+            float(hours) * 3600.0
+            + float(minutes) * 60.0
+            + float(seconds)
+        )
+    except ValueError:
+        return 0.0
 
 
 def _frame_difference(previous_image_path: str, current_image_path: str) -> float:
