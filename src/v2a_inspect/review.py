@@ -84,7 +84,8 @@ def split_generation_group(
                 "group_id": f"{group_id}-split-{len(updated.review_metadata.applied_edits):02d}",
                 "member_event_ids": moved_events,
                 "canonical_label": f"{group.canonical_label}:split",
-                "canonical_description": f"{group.canonical_description} (split)",
+                "canonical_description": group.canonical_description,
+                "description_stale": True,
             }
         )
         updated.generation_groups.insert(index + 1, new_group)
@@ -95,6 +96,10 @@ def split_generation_group(
             payload={"event_ids": moved_events},
             author=author,
             rationale=rationale,
+        )
+        _mark_groups_description_stale(
+            updated,
+            target_group_ids=[group_id, new_group.group_id],
         )
         break
     return _normalize_bundle(updated)
@@ -136,6 +141,7 @@ def merge_generation_groups(
         author=author,
         rationale=rationale,
     )
+    _mark_groups_description_stale(updated, target_group_ids=[primary.group_id])
     return _normalize_bundle(updated)
 
 
@@ -162,6 +168,19 @@ def rename_source(
             payload={"new_label": new_label},
             author=author,
             rationale=rationale,
+        )
+        related_event_ids = {
+            event.event_id
+            for event in updated.sound_events
+            if event.source_id == source_id
+        }
+        _mark_groups_description_stale(
+            updated,
+            target_group_ids=[
+                group.group_id
+                for group in updated.generation_groups
+                if any(event_id in related_event_ids for event_id in group.member_event_ids)
+            ],
         )
         break
     return _normalize_bundle(updated)
@@ -221,6 +240,10 @@ def _normalize_bundle(
     ambience_by_id = {ambience.ambience_id: ambience for ambience in updated.ambience_beds}
 
     for group in updated.generation_groups:
+        preserve_writer_description = (
+            group.description_origin == "writer"
+            and bool(group.canonical_description)
+        )
         if group.member_event_ids:
             member_events = [
                 events_by_id[event_id]
@@ -238,16 +261,24 @@ def _normalize_bundle(
                 event.material_or_surface for event in member_events if event.material_or_surface
             ]
             patterns = [event.pattern for event in member_events if event.pattern]
-            group.canonical_description = (
-                f"{_majority_or_default(source_labels, default='source')} "
-                f"{_majority_or_default(event_types, default='sound_event').replace('_', ' ')} "
-                f"on {_majority_or_default(materials, default='generic')} "
-                f"with {_majority_or_default(patterns, default='mixed')} texture"
-            )
-            group.description_confidence = round(group.group_confidence, 4)
-            group.description_rationale = (
-                "post-review normalization from source labels, event types, materials, and patterns"
-            )
+            if preserve_writer_description:
+                group.description_rationale = (
+                    group.description_rationale
+                    or "writer-generated description preserved pending a targeted rewrite"
+                )
+            else:
+                group.canonical_description = (
+                    f"{_majority_or_default(source_labels, default='source')} "
+                    f"{_majority_or_default(event_types, default='sound_event').replace('_', ' ')} "
+                    f"on {_majority_or_default(materials, default='generic')} "
+                    f"with {_majority_or_default(patterns, default='mixed')} texture"
+                )
+                group.description_origin = "heuristic"
+                group.description_stale = False
+                group.description_confidence = round(group.group_confidence, 4)
+                group.description_rationale = (
+                    "post-review normalization from source labels, event types, materials, and patterns"
+                )
         elif group.member_ambience_ids:
             member_ambience = [
                 ambience_by_id[ambience_id]
@@ -262,11 +293,19 @@ def _normalize_bundle(
                 [ambience.acoustic_profile for ambience in member_ambience],
                 default="continuous ambience",
             )
-            group.canonical_description = f"{environment} ambience bed with {texture}"
-            group.description_confidence = round(group.group_confidence, 4)
-            group.description_rationale = (
-                "post-review normalization from ambience environment and profile"
-            )
+            if preserve_writer_description:
+                group.description_rationale = (
+                    group.description_rationale
+                    or "writer-generated ambience description preserved pending a targeted rewrite"
+                )
+            else:
+                group.canonical_description = f"{environment} ambience bed with {texture}"
+                group.description_origin = "heuristic"
+                group.description_stale = False
+                group.description_confidence = round(group.group_confidence, 4)
+                group.description_rationale = (
+                    "post-review normalization from ambience environment and profile"
+                )
 
         if "manual_override" not in group.route_decision.factors:
             group.route_decision = _normalized_route_decision(group)
@@ -285,6 +324,17 @@ def _normalize_bundle(
         reviewed_issue_ids=reviewed_issue_ids,
     )
     return updated
+
+
+def _mark_groups_description_stale(
+    bundle: MultitrackDescriptionBundle,
+    *,
+    target_group_ids: list[str],
+) -> None:
+    target_ids = set(target_group_ids)
+    for group in bundle.generation_groups:
+        if group.group_id in target_ids and group.description_origin == "writer":
+            group.description_stale = True
 
 
 def _normalized_route_decision(group: object) -> RoutingDecision:

@@ -63,7 +63,8 @@ def _bundle() -> MultitrackDescriptionBundle:
                 group_id="gen-0000",
                 member_event_ids=["event-0000", "event-0001"],
                 canonical_label="person:mix",
-                canonical_description="placeholder",
+                canonical_description="writer description",
+                description_origin="writer",
                 group_confidence=0.9,
                 route_decision=RoutingDecision(
                     model_type="VTA",
@@ -116,6 +117,11 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(bundle.generation_groups[0].route_decision.model_type, "TTA")
         self.assertIn("issue-0000", bundle.validation.reviewed_issue_ids)
         self.assertEqual(len(bundle.review_metadata.applied_edits), 2)
+        self.assertEqual(
+            bundle.generation_groups[0].canonical_description, "writer description"
+        )
+        self.assertEqual(bundle.generation_groups[0].description_origin, "writer")
+        self.assertFalse(bundle.generation_groups[0].description_stale)
 
     def test_split_merge_rename_and_persist_bundle(self) -> None:
         bundle = rename_source(
@@ -132,3 +138,5 @@ class ReviewTests(unittest.TestCase):
             loaded = load_bundle(path)
         self.assertEqual(loaded.physical_sources[0].label_candidates[0].label, "runner")
         self.assertTrue(loaded.review_metadata.applied_edits)
+        self.assertEqual(loaded.generation_groups[0].description_origin, "writer")
+        self.assertTrue(any(group.description_stale for group in loaded.generation_groups))

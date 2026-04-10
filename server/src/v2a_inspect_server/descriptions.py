@@ -47,6 +47,8 @@ def synthesize_canonical_descriptions(
             updated_group = group.model_copy(
                 update={
                     "canonical_description": canonical_description,
+                    "description_origin": "heuristic",
+                    "description_stale": False,
                     "description_confidence": round(group.group_confidence, 4),
                     "description_rationale": "structured synthesis from source labels, event types, materials, and patterns",
                 }
@@ -63,6 +65,8 @@ def synthesize_canonical_descriptions(
                     updated_group = updated_group.model_copy(
                         update={
                             "canonical_description": draft.canonical_description,
+                            "description_origin": "writer",
+                            "description_stale": False,
                             "description_confidence": round(
                                 draft.description_confidence, 4
                             ),
@@ -78,6 +82,8 @@ def synthesize_canonical_descriptions(
         updated_group = group.model_copy(
             update={
                 "canonical_description": f"{environment} ambience bed with {texture}",
+                "description_origin": "heuristic",
+                "description_stale": False,
                 "description_confidence": round(group.group_confidence, 4),
                 "description_rationale": "structured ambience synthesis from environment type and acoustic profile",
             }
@@ -93,6 +99,8 @@ def synthesize_canonical_descriptions(
                 updated_group = updated_group.model_copy(
                     update={
                         "canonical_description": draft.canonical_description,
+                        "description_origin": "writer",
+                        "description_stale": False,
                         "description_confidence": round(
                             draft.description_confidence, 4
                         ),
