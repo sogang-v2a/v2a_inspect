@@ -72,6 +72,46 @@ class TrackingTests(unittest.TestCase):
 
         self.assertEqual(tracks, [])
 
+    def test_link_frame_detections_computes_track_local_features(self) -> None:
+        batch = FrameBatch(
+            scene_index=0,
+            frames=[
+                SampledFrame(scene_index=0, timestamp_seconds=0.0, image_path="/tmp/f0.jpg"),
+                SampledFrame(scene_index=0, timestamp_seconds=0.5, image_path="/tmp/f1.jpg"),
+                SampledFrame(scene_index=0, timestamp_seconds=1.0, image_path="/tmp/f2.jpg"),
+            ],
+        )
+        detections_by_frame = [
+            [
+                FrameDetection(frame=batch.frames[0], bbox_xyxy=[4.0, 4.0, 12.0, 12.0], confidence=0.9, label_hint="cat"),
+                FrameDetection(frame=batch.frames[0], bbox_xyxy=[40.0, 40.0, 48.0, 48.0], confidence=0.9, label_hint="chair"),
+            ],
+            [
+                FrameDetection(frame=batch.frames[1], bbox_xyxy=[8.0, 4.0, 16.0, 12.0], confidence=0.9, label_hint="cat"),
+                FrameDetection(frame=batch.frames[1], bbox_xyxy=[40.0, 40.0, 48.0, 48.0], confidence=0.9, label_hint="chair"),
+            ],
+            [
+                FrameDetection(frame=batch.frames[2], bbox_xyxy=[12.0, 4.0, 20.0, 12.0], confidence=0.9, label_hint="cat"),
+                FrameDetection(frame=batch.frames[2], bbox_xyxy=[40.0, 40.0, 48.0, 48.0], confidence=0.9, label_hint="chair"),
+            ],
+        ]
+
+        tracks = link_frame_detections(
+            batch,
+            detections_by_frame=detections_by_frame,
+            features=Sam3VisualFeatures(camera_dynamics_score=0.3, crowd_score=0.6),
+        )
+
+        self.assertEqual(len(tracks), 2)
+        moving_track = next(track for track in tracks if track.label_hint == "cat")
+        static_track = next(track for track in tracks if track.label_hint == "chair")
+        self.assertGreater(
+            moving_track.features.trajectory_motion_score,
+            static_track.features.trajectory_motion_score,
+        )
+        self.assertGreater(moving_track.features.motion_score, static_track.features.motion_score)
+        self.assertGreater(moving_track.features.continuity_score, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

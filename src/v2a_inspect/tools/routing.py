@@ -10,7 +10,9 @@ def route_track(track: Sam3EntityTrack) -> TrackRoutingDecision:
         track.features.motion_score + track.features.interaction_score
     ) / 2.0
     complexity = max(track.features.crowd_score, track.features.camera_dynamics_score)
-    persistence = min(max(track.end_seconds - track.start_seconds, 0.0) / 5.0, 1.0)
+    persistence = min(
+        max(track.end_seconds - track.start_seconds, 0.0) / 5.0, 1.0
+    ) * max(track.features.continuity_score, 0.25)
 
     vta_bias = eventfulness * 0.55 + persistence * 0.35
     tta_bias = (
@@ -28,8 +30,9 @@ def route_track(track: Sam3EntityTrack) -> TrackRoutingDecision:
         confidence = min(0.55 + abs(margin), 0.95)
 
     reasoning = (
-        "Visual routing from motion/interactions/crowd/camera dynamics only; "
-        f"eventfulness={eventfulness:.2f}, complexity={complexity:.2f}, persistence={persistence:.2f}."
+        "Visual routing from track-local motion/interaction/continuity with scene-level crowd/camera context; "
+        f"eventfulness={eventfulness:.2f}, continuity={track.features.continuity_score:.2f}, "
+        f"complexity={complexity:.2f}, persistence={persistence:.2f}."
     )
     return TrackRoutingDecision(
         track_id=track.track_id,

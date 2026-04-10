@@ -216,9 +216,15 @@ def build_generation_groups(
 
 
 def _event_type_from_track(track: Sam3EntityTrack) -> str:
-    if track.features.motion_score >= 0.7 and track.features.interaction_score >= 0.6:
+    if (
+        track.features.motion_score >= 0.7
+        and track.features.interaction_score >= 0.6
+    ):
         return "active_interaction"
-    if track.features.motion_score >= 0.7:
+    if (
+        track.features.motion_score >= 0.6
+        and track.features.continuity_score >= 0.5
+    ):
         return "continuous_motion"
     if track.features.interaction_score >= 0.6:
         return "contact_event"

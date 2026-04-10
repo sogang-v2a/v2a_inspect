@@ -40,6 +40,12 @@ class Sam3VisualFeatures(BaseModel):
     interaction_score: float = Field(default=0.0, ge=0.0, le=1.0)
     crowd_score: float = Field(default=0.0, ge=0.0, le=1.0)
     camera_dynamics_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    trajectory_motion_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    scale_change_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    continuity_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    overlap_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    scene_crowd_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    scene_camera_dynamics_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class Sam3TrackPoint(BaseModel):
