@@ -37,6 +37,7 @@ from .semantics import (
     build_generation_groups,
     build_sound_event_segments,
 )
+from .descriptions import synthesize_canonical_descriptions
 from .validators import validate_bundle
 
 
@@ -241,6 +242,21 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
     def validator(*, bundle: MultitrackDescriptionBundle) -> object:
         return validate_bundle(bundle)
 
+    def rerun_description_writer(
+        *,
+        generation_groups: list[object],
+        sound_events: list[object],
+        ambience_beds: list[object],
+        physical_sources: list[object],
+    ) -> object:
+        return synthesize_canonical_descriptions(
+            list(generation_groups),
+            sound_events=list(sound_events),
+            ambience_beds=list(ambience_beds),
+            physical_sources=list(physical_sources),
+            description_writer=getattr(tooling_runtime, "description_writer", None),
+        )
+
     return {
         "structural_overview": ToolDefinition(
             "structural_overview",
@@ -290,5 +306,10 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         ),
         "validate_bundle": ToolDefinition(
             "validate_bundle", validator, "Run typed bundle validators."
+        ),
+        "rerun_description_writer": ToolDefinition(
+            "rerun_description_writer",
+            rerun_description_writer,
+            "Rewrite canonical descriptions from the current structured bundle state.",
         ),
     }

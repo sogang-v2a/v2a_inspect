@@ -52,6 +52,36 @@ def run_agentic_tool_loop(
         action = plan_next_action(planner_state)
         if action is None:
             break
+        issue = next(
+            (candidate for candidate in planner_state.issues if candidate.issue_id == action.issue_id),
+            None,
+        )
+        adjudication = _adjudicate_issue(
+            inspect_state=inspect_state,
+            bundle=bundle,
+            issue=issue,
+            planned_tool_name=action.tool_name,
+            tooling_runtime=tooling_runtime,
+        )
+        if adjudication is not None and adjudication.get("resolution") == "accept":
+            planner_state = mark_issue_attempted(planner_state, action.issue_id)
+            planner_state = executor.record_decision(
+                planner_state,
+                issue_id=action.issue_id,
+                decision="accept",
+                rationale=str(adjudication["rationale"]),
+                confidence=float(adjudication["confidence"]),
+            )
+            planner_state = resolve_issue(planner_state, action.issue_id)
+            planner_state = _refresh_issues(
+                planner_state,
+                latest=_build_issues(bundle=bundle, inspect_state=inspect_state),
+            )
+            actions_run += 1
+            continue
+        tool_name = str(adjudication["tool_name"]) if adjudication is not None and adjudication.get("tool_name") else action.tool_name
+        if tool_name != action.tool_name:
+            action = action.model_copy(update={"tool_name": tool_name})
         planner_state = mark_issue_attempted(planner_state, action.issue_id)
         planner_state, result = executor.execute(planner_state, action)
         inspect_state = _apply_action_result(
@@ -170,6 +200,29 @@ def _apply_action_result(
     if tool_name == "routing_priors":
         updated["track_routing_decisions"] = dict(result)
         return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+
+    if tool_name == "refine_candidate_cuts" and isinstance(result, dict):
+        updated["candidate_cuts"] = list(result["candidate_cuts"])
+        updated["evidence_windows"] = list(result["evidence_windows"])
+        semantics = registry["build_source_semantics"](
+            tracks=_tracks_from_result(updated.get("sam3_track_set")),
+            embeddings=list(updated.get("entity_embeddings", [])),
+            track_crops=list(updated.get("track_crops", [])),
+            label_candidates_by_track=dict(updated.get("track_label_candidates", {})),
+            evidence_windows=list(updated.get("evidence_windows", [])),
+            candidate_groups=list(updated.get("candidate_groups", [])),
+            routing_decisions_by_track=dict(updated.get("track_routing_decisions", {})),
+        )
+        updated["identity_edges"] = list(semantics["identity_edges"])
+        updated["physical_sources"] = list(semantics["physical_sources"])
+        updated["sound_event_segments"] = list(semantics["sound_events"])
+        updated["ambience_beds"] = list(semantics["ambience_beds"])
+        updated["generation_groups"] = list(semantics["generation_groups"])
+        return updated
+
+    if tool_name == "rerun_description_writer":
+        updated["generation_groups"] = list(result)
+        return updated
 
     if tool_name == "validate_bundle":
         return updated
@@ -353,6 +406,35 @@ def _build_issues(
                 },
             )
         )
+    low_confidence_cuts = [
+        cut
+        for cut in bundle.candidate_cuts
+        if cut.confidence < 0.6
+    ]
+    overly_broad_windows = [
+        window
+        for window in bundle.evidence_windows
+        if (window.end_time - window.start_time) > 8.0
+    ]
+    if low_confidence_cuts or overly_broad_windows:
+        issues.append(
+            AgentIssue(
+                issue_id="cut-ambiguity",
+                issue_type="cut_ambiguity",
+                description="Structural windows have low-confidence or over-broad cut boundaries",
+                priority=12,
+                payload={
+                    "probe": inspect_state.get("video_probe"),
+                    "candidate_cuts": list(inspect_state.get("candidate_cuts", [])),
+                    "frame_batches": list(inspect_state.get("frame_batches", [])),
+                    "tracks": list(getattr(inspect_state.get("sam3_track_set"), "tracks", [])),
+                    "label_candidates_by_track": dict(inspect_state.get("track_label_candidates", {})),
+                    "storyboard_path": inspect_state.get("storyboard_path"),
+                    "low_confidence_cut_ids": [cut.cut_id for cut in low_confidence_cuts],
+                    "broad_window_ids": [window.window_id for window in overly_broad_windows],
+                },
+            )
+        )
     for index, issue in enumerate(bundle.validation.issues):
         issue_id = issue.issue_id or f"validation-{index:04d}"
         if issue.issue_type == "route_inconsistency":
@@ -391,6 +473,27 @@ def _build_issues(
                 payload=payload,
             )
         )
+    stale_group_ids = [
+        group.group_id
+        for group in bundle.generation_groups
+        if getattr(group, "description_stale", False)
+    ]
+    if stale_group_ids:
+        issues.append(
+            AgentIssue(
+                issue_id="description-stale",
+                issue_type="description_stale",
+                description="Some generation groups need a fresh description rewrite",
+                priority=18,
+                payload={
+                    "generation_groups": list(bundle.generation_groups),
+                    "sound_events": list(bundle.sound_events),
+                    "ambience_beds": list(bundle.ambience_beds),
+                    "physical_sources": list(bundle.physical_sources),
+                    "stale_group_ids": stale_group_ids,
+                },
+            )
+        )
     return issues
 
 
@@ -419,3 +522,40 @@ def _trace_path(bundle: MultitrackDescriptionBundle) -> Path:
         return Path(bundle.artifacts.trace_path)
     root = Path(bundle.artifacts.run_dir or ".")
     return root / f"{bundle.video_id}-agent-trace.jsonl"
+
+
+def _adjudicate_issue(
+    *,
+    inspect_state: Mapping[str, object],
+    bundle: MultitrackDescriptionBundle,
+    issue: AgentIssue | None,
+    planned_tool_name: str,
+    tooling_runtime: "ToolingRuntime",
+) -> dict[str, object] | None:
+    if issue is None or issue.issue_type not in {
+        "cut_ambiguity",
+        "grouping_ambiguity",
+        "routing_ambiguity",
+        "description_stale",
+    }:
+        return None
+    judge = getattr(tooling_runtime, "adjudication_judge", None)
+    if judge is None:
+        return None
+    decision = judge.judge_issue(
+        {
+            "video_id": bundle.video_id,
+            "issue_id": issue.issue_id,
+            "issue_type": issue.issue_type,
+            "issue_description": issue.description,
+            "planned_tool_name": planned_tool_name,
+            "validation_issues": [item.model_dump(mode="json") for item in bundle.validation.issues],
+            "candidate_cut_count": len(bundle.candidate_cuts),
+            "evidence_window_count": len(bundle.evidence_windows),
+            "generation_group_count": len(bundle.generation_groups),
+            "issue_payload": issue.payload,
+        }
+    )
+    if decision is None:
+        return None
+    return decision.model_dump(mode="json")

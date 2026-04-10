@@ -117,6 +117,29 @@ class PlannerExecutorTests(unittest.TestCase):
         self.assertEqual(state.issues[0].attempts, 1)
         self.assertEqual(state.issues[0].status, "resolved")
 
+    def test_planner_maps_new_ambiguity_issue_types_to_tools(self) -> None:
+        state = PlannerState(
+            video_id="vid-001",
+            issues=[
+                AgentIssue(
+                    issue_id="issue-cut",
+                    issue_type="cut_ambiguity",
+                    description="cut ambiguity",
+                    priority=1,
+                ),
+                AgentIssue(
+                    issue_id="issue-desc",
+                    issue_type="description_stale",
+                    description="description stale",
+                    priority=2,
+                ),
+            ],
+        )
+        action = plan_next_action(state)
+        self.assertIsNotNone(action)
+        action = cast(PlannedAction, action)
+        self.assertEqual(action.tool_name, "refine_candidate_cuts")
+
 
 if __name__ == "__main__":
     unittest.main()

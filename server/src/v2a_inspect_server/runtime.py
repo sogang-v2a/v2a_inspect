@@ -28,6 +28,7 @@ from .tool_context import build_tool_context
 
 if TYPE_CHECKING:
     from v2a_inspect.contracts import MultitrackDescriptionBundle
+    from .adjudicator import GeminiIssueJudge
     from .embeddings import EmbeddingClient, LabelClient
     from .description_writer import GeminiDescriptionWriter
     from .sam3 import Sam3Client
@@ -50,6 +51,7 @@ class ToolingRuntime:
         self._embedding_client: "EmbeddingClient | None" = None
         self._label_client: "LabelClient | None" = None
         self._description_writer: "GeminiDescriptionWriter | None" = None
+        self._adjudication_judge: "GeminiIssueJudge | None" = None
 
     @property
     def sam3_client(self) -> "Sam3Client":
@@ -89,6 +91,19 @@ class ToolingRuntime:
                 api_key=server_settings.gemini_api_key
             )
         return self._description_writer
+
+    @property
+    def adjudication_judge(self) -> "GeminiIssueJudge | None":
+        if self._adjudication_judge is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .adjudicator import GeminiIssueJudge
+
+            self._adjudication_judge = GeminiIssueJudge(
+                api_key=server_settings.gemini_api_key
+            )
+        return self._adjudication_judge
 
     def artifacts_missing(self) -> list[str]:
         return [

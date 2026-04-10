@@ -6,11 +6,13 @@ from v2a_inspect.agent.state import PlannedAction, PlannerState
 
 _TOOL_BY_ISSUE = {
     "structural_gap": "structural_overview",
+    "cut_ambiguity": "refine_candidate_cuts",
     "ambiguous_source": "recover_with_text_prompt",
     "missing_crops": "crop_tracks",
     "missing_labels": "score_track_labels",
     "grouping_ambiguity": "group_embeddings",
     "routing_ambiguity": "routing_priors",
+    "description_stale": "rerun_description_writer",
     "validation_issue": "validate_bundle",
 }
 
