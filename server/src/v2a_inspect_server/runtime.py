@@ -13,7 +13,6 @@ from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlparse
 
 from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
-from v2a_inspect.runner import run_inspect
 from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
@@ -227,6 +226,8 @@ def _analyze_with_pipeline(
     )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_all()
+    from v2a_inspect.runner import run_inspect
+
     return run_inspect(
         video_path,
         options=options,
