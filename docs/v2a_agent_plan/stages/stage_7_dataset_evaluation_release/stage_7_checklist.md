@@ -15,14 +15,14 @@ Use this checklist as the stage exit gate. If a blocking item is still incomplet
 
 - [x] Implement structural metrics.
 - [x] Implement downstream generation experiment hooks.
-- [x] Run TTA-only, VTA-only, legacy, tool-only, and agentic baselines.
-- [x] Run at least one ablation on crop evidence.
+- [ ] Run TTA-only, VTA-only, legacy, tool-only, and agentic baselines.
+- [ ] Run at least one ablation on crop evidence.
 
 ## Demo and reporting
 
 - [x] Create a reproducible demo script or guide.
-- [x] Collect qualitative examples and failure cases.
-- [x] Prepare tables and figures for report or paper.
+- [ ] Collect qualitative examples and failure cases.
+- [ ] Prepare tables and figures for report or paper.
 
 ## Tests
 
