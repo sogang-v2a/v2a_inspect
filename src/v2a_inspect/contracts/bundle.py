@@ -135,6 +135,8 @@ class ValidationIssue(BaseModel):
         "low_confidence_identity_merge",
         "suspicious_cross_scene_generation_merge",
         "missing_dominant_source",
+        "recovery_exhausted",
+        "accepted_ambience_only",
         "overlapping_contradictory_assignments",
         "route_inconsistency",
         "overly_vague_description",

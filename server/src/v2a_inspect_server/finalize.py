@@ -8,6 +8,7 @@ from v2a_inspect.contracts import (
     MultitrackDescriptionBundle,
     ReviewMetadata,
     RoutingDecision,
+    ValidationIssue,
     ValidationReport,
     VideoMeta,
 )
@@ -76,6 +77,7 @@ def build_final_bundle(
         },
     )
     issues = validate_bundle(bundle)
+    issues = _normalize_recovery_validation_issues(bundle, state=state, issues=issues)
     bundle.validation = ValidationReport(
         status="fail" if any(issue.severity == "error" for issue in issues) else ("pass_with_warnings" if issues else "pass"),
         issues=issues,
@@ -171,3 +173,55 @@ def _state_path(value: object) -> str | None:
 
 def _video_id_from_path(video_path: str) -> str:
     return Path(video_path or "video").stem or "video"
+
+
+def _normalize_recovery_validation_issues(
+    bundle: MultitrackDescriptionBundle,
+    *,
+    state: InspectState,
+    issues: list[ValidationIssue],
+) -> list[ValidationIssue]:
+    if bundle.physical_sources:
+        return issues
+    attempts = list(state.get("recovery_attempts", []))
+    if not attempts:
+        return issues
+
+    filtered = [issue for issue in issues if issue.issue_type != "missing_dominant_source"]
+    if _looks_like_accepted_ambience_only(bundle):
+        filtered.append(
+            ValidationIssue(
+                issue_type="accepted_ambience_only",
+                severity="info",
+                message="Bounded foreground recovery still yielded an ambience-only bundle that looks structurally consistent.",
+                recommended_action="none",
+            )
+        )
+        return filtered
+
+    filtered.append(
+        ValidationIssue(
+            issue_type="recovery_exhausted",
+            severity="warning",
+            message="Foreground recovery attempts were exhausted without producing physical sources.",
+            recommended_action="human_review",
+        )
+    )
+    return filtered
+
+
+def _looks_like_accepted_ambience_only(bundle: MultitrackDescriptionBundle) -> bool:
+    if bundle.physical_sources or bundle.sound_events or not bundle.ambience_beds:
+        return False
+    if any(group.member_event_ids for group in bundle.generation_groups):
+        return False
+    if not bundle.generation_groups:
+        return False
+    total_duration = float(bundle.video_meta.duration_seconds or 0.0)
+    if total_duration <= 0.0:
+        return False
+    ambience_coverage = sum(
+        max(bed.end_time - bed.start_time, 0.0)
+        for bed in bundle.ambience_beds
+    )
+    return ambience_coverage >= total_duration * 0.85

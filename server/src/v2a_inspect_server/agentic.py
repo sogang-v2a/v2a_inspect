@@ -550,6 +550,8 @@ def _build_issues(
         issue_id = issue.issue_id or f"validation-{index:04d}"
         if issue.issue_type == "missing_dominant_source":
             continue
+        if issue.issue_type in {"recovery_exhausted", "accepted_ambience_only"}:
+            continue
         if issue.issue_type == "route_inconsistency":
             payload = {
                 "tracks": list(getattr(inspect_state.get("sam3_track_set"), "tracks", []))
