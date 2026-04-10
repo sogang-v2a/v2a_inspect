@@ -5,7 +5,6 @@ from pathlib import Path
 from urllib import parse, request
 
 from v2a_inspect.contracts import MultitrackDescriptionBundle
-from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
 from v2a_inspect.workflows import InspectOptions, InspectState
 
 CLIENT_USER_AGENT = "v2a-inspect-client/1.0"
@@ -45,28 +44,16 @@ def run_server_inspect(
     if not isinstance(decoded, dict):
         raise TypeError("Server analysis response must be a JSON object.")
 
-    scene_analysis_payload = decoded.get("scene_analysis")
-    grouped_analysis_payload = decoded.get("grouped_analysis")
-    if not isinstance(scene_analysis_payload, dict):
-        raise ValueError("Server analysis response is missing scene_analysis.")
-    if not isinstance(grouped_analysis_payload, dict):
-        raise ValueError("Server analysis response is missing grouped_analysis.")
-
-    scene_analysis = VideoSceneAnalysis.model_validate(scene_analysis_payload)
-    grouped_analysis = GroupedAnalysis.model_validate(grouped_analysis_payload)
     bundle_payload = decoded.get("multitrack_bundle")
+    if not isinstance(bundle_payload, dict):
+        raise ValueError("Server analysis response is missing multitrack_bundle.")
     warnings = list(decoded.get("warnings", []))
     progress_messages = list(decoded.get("progress_messages", []))
     state: InspectState = {
-        "scene_analysis": scene_analysis,
-        "grouped_analysis": grouped_analysis,
+        "multitrack_bundle": MultitrackDescriptionBundle.model_validate(bundle_payload),
         "warnings": [str(item) for item in warnings],
         "progress_messages": [str(item) for item in progress_messages],
     }
-    if isinstance(bundle_payload, dict):
-        state["multitrack_bundle"] = MultitrackDescriptionBundle.model_validate(
-            bundle_payload
-        )
     return state
 
 

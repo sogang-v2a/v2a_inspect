@@ -13,7 +13,7 @@ from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlparse
 
 from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
-from v2a_inspect.runner import get_grouped_analysis, run_inspect
+from v2a_inspect.runner import run_inspect
 from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
@@ -596,7 +596,6 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         options=server_options,
                         tooling_runtime=tooling_runtime,
                     )
-                    grouped = state.get("grouped_analysis") or get_grouped_analysis(state)
                     bundle = state.get("multitrack_bundle") or build_final_bundle(state)
                     if server_options.pipeline_mode != "agentic_tool_first":
                         planner_state, trace_path = run_agent_review_pass(
@@ -612,10 +611,6 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     state["multitrack_bundle"] = bundle
                     self._write_json(
                         {
-                            "scene_analysis": state["scene_analysis"].model_dump(
-                                mode="json"
-                            ),
-                            "grouped_analysis": grouped.model_dump(mode="json"),
                             "multitrack_bundle": bundle.model_dump(mode="json"),
                             "warnings": state.get("warnings", []),
                             "progress_messages": state.get("progress_messages", []),

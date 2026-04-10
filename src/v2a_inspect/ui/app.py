@@ -8,7 +8,7 @@ import streamlit as st
 
 from v2a_inspect.observability import WorkflowTraceContext
 from v2a_inspect.review import persist_bundle
-from v2a_inspect.runner import get_grouped_analysis, run_inspect
+from v2a_inspect.runner import run_inspect
 from v2a_inspect.settings import settings
 from v2a_inspect.ui.auth import require_authentication
 from v2a_inspect.ui.render import (
@@ -45,7 +45,8 @@ def main() -> None:
 
     grouped = st.session_state.get("grouped")
     scene_analysis = st.session_state.get("scene_analysis")
-    if grouped is not None and scene_analysis is not None:
+    bundle = st.session_state.get("multitrack_bundle")
+    if bundle is not None or (grouped is not None and scene_analysis is not None):
         render_results(
             grouped,
             scene_analysis,
@@ -138,31 +139,31 @@ def run_analysis(video_path: str, options: InspectOptions) -> None:
                     status.write(message)
                 for message in state.get("warnings", []):
                     status.write(f"⚠️ {message}")
-                scene_analysis = state.get("scene_analysis")
-                if scene_analysis is None:
-                    raise ValueError(
-                        "Inspect workflow completed without scene analysis output."
-                    )
-
-                grouped = get_grouped_analysis(state)
                 st.session_state.inspect_state = state
-                st.session_state.scene_analysis = scene_analysis
-                st.session_state.grouped = grouped
                 bundle = state.get("multitrack_bundle")
                 if bundle is not None:
                     bundle_path = Path(clip_dir) / "review_bundle.json"
                     persist_bundle(bundle, bundle_path)
                     st.session_state.multitrack_bundle = bundle
                     st.session_state.review_bundle_path = str(bundle_path)
+                scene_analysis = state.get("scene_analysis")
+                if scene_analysis is not None:
+                    st.session_state.scene_analysis = scene_analysis
+                grouped = state.get("grouped_analysis")
+                if grouped is not None:
+                    st.session_state.grouped = grouped
 
-                n_model_assigned = sum(
-                    1
-                    for track in grouped.raw_tracks
-                    if track.model_selection is not None
+                if bundle is None:
+                    raise ValueError(
+                        "Inspect workflow completed without a multitrack bundle."
+                    )
+
+                message = (
+                    f"✅ 번들 생성 완료: "
+                    f"{len(bundle.physical_sources)}개 source / "
+                    f"{len(bundle.sound_events)}개 event / "
+                    f"{len(bundle.generation_groups)}개 generation group"
                 )
-                message = f"✅ 그루핑 완료: {len(grouped.raw_tracks)}개 raw 트랙 → {len(grouped.groups)}개 그룹"
-                if n_model_assigned:
-                    message += f" | 모델 판정 {n_model_assigned}개 트랙"
 
                 status.write(message)
                 status.update(label="분석 완료!", state="complete")

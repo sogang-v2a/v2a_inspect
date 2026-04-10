@@ -62,19 +62,6 @@ class ServerClientTests(unittest.TestCase):
                 _FakeResponse({"ok": True, "video_path": "/remote/tmp/clip.mp4"}),
                 _FakeResponse(
                     {
-                        "scene_analysis": {
-                            "total_duration": 1.0,
-                            "scenes": [],
-                        },
-                        "grouped_analysis": {
-                            "scene_analysis": {
-                                "total_duration": 1.0,
-                                "scenes": [],
-                            },
-                            "raw_tracks": [],
-                            "groups": [],
-                            "track_to_group": {},
-                        },
                         "multitrack_bundle": {
                             "video_id": "clip",
                             "video_meta": {

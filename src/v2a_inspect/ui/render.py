@@ -113,8 +113,8 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
 
 
 def render_results(
-    grouped: GroupedAnalysis,
-    scene_analysis: VideoSceneAnalysis,
+    grouped: GroupedAnalysis | None,
+    scene_analysis: VideoSceneAnalysis | None,
     *,
     video_path: str,
     clip_dir: str,
@@ -125,6 +125,24 @@ def render_results(
 
     _render_state_messages(inspect_state)
     _render_langfuse_summary(inspect_state)
+
+    bundle = inspect_state.get("multitrack_bundle") if inspect_state else None
+    if isinstance(bundle, MultitrackDescriptionBundle):
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🪟 Evidence windows", len(bundle.evidence_windows))
+        c2.metric("🔊 Physical sources", len(bundle.physical_sources))
+        c3.metric("🎞️ Sound events", len(bundle.sound_events))
+        c4.metric("🧩 Generation groups", len(bundle.generation_groups))
+        st.divider()
+        st.header("Step 3: Multitrack bundle review")
+        _render_bundle_review(
+            bundle=bundle, inspect_state=inspect_state, clip_dir=clip_dir
+        )
+        return
+
+    if grouped is None or scene_analysis is None:
+        st.info("No bundle or legacy grouped analysis is available yet.")
+        return
 
     n_scenes = len(scene_analysis.scenes)
     n_backgrounds = n_scenes
@@ -174,57 +192,6 @@ def render_results(
     st.caption(
         f"멀티멤버 그룹 {n_multi}개 (같은 개체로 판단된 트랙들이 하나의 그룹으로 묶임)"
     )
-
-    col_left, col_right = st.columns(2)
-    with col_left:
-        with st.expander("📋 씬 분석 JSON (raw)", expanded=False):
-            st.json(scene_analysis.model_dump())
-
-    with col_right:
-        with st.expander("📋 트랙 그룹 JSON", expanded=False):
-            st.json(
-                {
-                    "groups": {
-                        group.group_id: {
-                            "canonical_description": group.canonical_description,
-                            "member_ids": group.member_ids,
-                            "vlm_verified": group.vlm_verified,
-                        }
-                        for group in grouped.groups
-                    },
-                    "track_assignments": grouped.track_to_group,
-                }
-            )
-
-    st.divider()
-    st.header("Step 3: 그루핑 검증")
-    st.caption(
-        "각 그룹의 **canonical description**과 멤버별 원본 description·영상 클립을 나란히 배치합니다.  \n"
-        "멀티멤버 그룹에서 같은 개체인지 직접 확인하세요."
-    )
-
-    tracks_by_id = {track.track_id: track for track in grouped.raw_tracks}
-    for group in grouped.groups:
-        members = [
-            tracks_by_id[member_id]
-            for member_id in group.member_ids
-            if member_id in tracks_by_id
-        ]
-        _render_group_expander(
-            group=group,
-            members=members,
-            video_path=video_path,
-            clip_dir=clip_dir,
-            trace_id=inspect_state.get("trace_id") if inspect_state else None,
-        )
-
-    bundle = inspect_state.get("multitrack_bundle") if inspect_state else None
-    if isinstance(bundle, MultitrackDescriptionBundle):
-        st.divider()
-        st.header("Step 4: Multitrack bundle review")
-        _render_bundle_review(
-            bundle=bundle, inspect_state=inspect_state, clip_dir=clip_dir
-        )
 
 
 def render_footer() -> None:
