@@ -19,10 +19,11 @@ services:
       AUTH_MODE: password
       AUTH_CREDENTIALS_PATH: /data/credentials.yaml
 
-      PROMPT_BACKEND: langfuse
+      PROMPT_BACKEND: local
       RUNTIME_MODE: nvidia_docker
       SERVER_BASE_URL: http://v2a-inspect-server:8080
       SHARED_VIDEO_DIR: /data/uploads
+      RUNTIME_PROFILE: mig10_safe
 
       STREAMLIT_SERVER_HEADLESS: "true"
       STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
@@ -66,7 +67,8 @@ services:
       SHARED_VIDEO_DIR: /data/uploads
       MODEL_CACHE_DIR: /data/model-cache
       WEIGHTS_MANIFEST_PATH: /app/server/model-manifest.json
-      MINIMUM_GPU_VRAM_GB: 16
+      MINIMUM_GPU_VRAM_GB: 10
+      RUNTIME_PROFILE: mig10_safe
       HF_TOKEN: ${HF_TOKEN:-}
     gpus: all
     secrets:
@@ -79,7 +81,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz').read()",
         ]
       interval: 30s
       timeout: 5s

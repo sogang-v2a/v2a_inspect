@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from langfuse.model import ChatMessageDict
-
-from v2a_inspect.observability.langfuse import (
-    LangfusePromptClient,
-    fetch_chat_prompt,
-    get_langfuse_client,
-    sync_chat_prompt,
-)
 from v2a_inspect.settings import settings
 
 from .utils import _get_prompt_parts
+
+if TYPE_CHECKING:
+    from langfuse.model import ChatMessageDict
+
+    from v2a_inspect.observability.langfuse import LangfusePromptClient
+else:
+    ChatMessageDict = dict[str, Any]
+    LangfusePromptClient = Any
 
 PromptName = Literal[
     "grouping",
@@ -71,6 +71,11 @@ def resolve_prompt(prompt_name: PromptName) -> ResolvedPrompt:
     if backend == "local":
         return local_prompt
 
+    from v2a_inspect.observability.langfuse import (
+        fetch_chat_prompt,
+        get_langfuse_client,
+    )
+
     prompt_client = fetch_chat_prompt(
         prompt_name,
         fallback=(
@@ -96,6 +101,8 @@ def resolve_prompt(prompt_name: PromptName) -> ResolvedPrompt:
 
 
 def sync_prompts(*, label: str | None = None) -> list[ResolvedPrompt]:
+    from v2a_inspect.observability.langfuse import sync_chat_prompt
+
     synced: list[ResolvedPrompt] = []
     for resolved_prompt in iter_local_prompts():
         prompt_client = sync_chat_prompt(

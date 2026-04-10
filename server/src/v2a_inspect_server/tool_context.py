@@ -10,6 +10,7 @@ from v2a_inspect.contracts import IdentityEdge, LabelCandidate, PhysicalSourceTr
 from v2a_inspect.tools import (
     FrameBatch,
     Sam3EntityTrack,
+    Sam3TrackPoint,
     Sam3VisualFeatures,
     TrackRoutingDecision,
     aggregate_group_routes,
@@ -390,13 +391,47 @@ def _normalize_track(track: object) -> Sam3EntityTrack | None:
         end_seconds=max(end_seconds, start_seconds),
         confidence=_clamp01(getattr(track, "confidence", 0.0)),
         label_hint=getattr(track, "label_hint", None),
-        points=list(getattr(track, "points", [])),
+        points=_normalize_points(getattr(track, "points", [])),
         features=Sam3VisualFeatures(
             motion_score=_feature_value(features, "motion_score"),
             interaction_score=_feature_value(features, "interaction_score"),
             crowd_score=_feature_value(features, "crowd_score"),
             camera_dynamics_score=_feature_value(features, "camera_dynamics_score"),
         ),
+    )
+
+
+def _normalize_points(points: object) -> list[Sam3TrackPoint]:
+    if not isinstance(points, Sequence) or isinstance(points, (str, bytes)):
+        return []
+    normalized: list[Sam3TrackPoint] = []
+    for point in points:
+        normalized_point = _normalize_point(point)
+        if normalized_point is not None:
+            normalized.append(normalized_point)
+    return normalized
+
+
+def _normalize_point(point: object) -> Sam3TrackPoint | None:
+    if isinstance(point, Sam3TrackPoint):
+        return point
+    timestamp_seconds = _safe_float(getattr(point, "timestamp_seconds", 0.0))
+    frame_path = getattr(point, "frame_path", "")
+    bbox = getattr(point, "bbox_xyxy", [])
+    if not isinstance(frame_path, str):
+        frame_path = str(frame_path or "")
+    bbox_xyxy = [
+        _safe_float(value)
+        for value in bbox[:4]
+    ] if isinstance(bbox, Sequence) and not isinstance(bbox, (str, bytes)) else [0.0, 0.0, 0.0, 0.0]
+    if len(bbox_xyxy) != 4:
+        bbox_xyxy = [0.0, 0.0, 0.0, 0.0]
+    return Sam3TrackPoint(
+        timestamp_seconds=max(timestamp_seconds, 0.0),
+        frame_path=frame_path,
+        confidence=_clamp01(getattr(point, "confidence", 0.0)),
+        bbox_xyxy=bbox_xyxy,
+        mask_rle=getattr(point, "mask_rle", None),
     )
 
 

@@ -4,15 +4,22 @@ import getpass
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Literal, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
-from langfuse import Langfuse
-from langfuse.langchain import CallbackHandler
-from langfuse.model import ChatMessageDict, ChatPromptClient
 
 from v2a_inspect.settings import settings
+
+if TYPE_CHECKING:
+    from langfuse import Langfuse
+    from langfuse.langchain import CallbackHandler
+    from langfuse.model import ChatMessageDict, ChatPromptClient
+else:
+    Langfuse = Any
+    CallbackHandler = Any
+    ChatMessageDict = dict[str, Any]
+    ChatPromptClient = Any
 
 LangfusePromptClient: TypeAlias = ChatPromptClient
 
@@ -41,11 +48,13 @@ def get_langfuse_client() -> Langfuse | None:
     global _langfuse_client
 
     if _langfuse_client is not _UNINITIALIZED:
-        return cast(Langfuse | None, _langfuse_client)
+        return cast("Langfuse | None", _langfuse_client)
 
     if not is_langfuse_enabled():
         _langfuse_client = None
         return None
+
+    from langfuse import Langfuse
 
     _langfuse_client = Langfuse(
         public_key=settings.langfuse_public_key.get_secret_value()
@@ -106,6 +115,8 @@ def create_langfuse_handler(
 ) -> CallbackHandler | None:
     if get_langfuse_client() is None:
         return None
+
+    from langfuse.langchain import CallbackHandler
 
     return CallbackHandler(
         trace_context={
