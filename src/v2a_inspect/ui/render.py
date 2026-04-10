@@ -8,6 +8,7 @@ import streamlit as st
 from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.observability import build_score_id, create_trace_score
 from v2a_inspect.pipeline.response_models import RawTrack, TrackGroup
+from v2a_inspect.settings import settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 from v2a_inspect.review import (
     apply_route_override,
@@ -23,11 +24,11 @@ from .video import extract_clip
 
 
 def render_page_header() -> None:
-    st.title("🔍 V2A Inspect — 트랙 그루핑 검증 시스템")
+    st.title("🔍 V2A Inspect — Tool-First Multitrack Description Inspector")
     st.markdown(
-        "시각 기반 장면 분석과 크로스씬 트랙 그루핑 결과를 시각화하여 "
-        "**사람이 직접 검증**할 수 있는 검사 도구입니다.  \n"
-        "오디오 생성 없음 — 분석과 그루핑 단계만 실행합니다."
+        "시각 증거 기반 구조화 파이프라인으로 **multitrack description bundle**을 만들고, "
+        "**agentic repair**와 **사람 검토**까지 이어지는 연구용 검사 도구입니다.  \n"
+        "오디오 입력/생성 없음 — video-only evidence, grouping, routing, validation만 수행합니다."
     )
     st.divider()
 
@@ -41,20 +42,57 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
         )
         st.caption("초당 분석 프레임 수. 높을수록 정밀하지만 느림")
 
+        pipeline_mode = cast(
+            Literal["legacy_gemini", "tool_first_foundation", "agentic_tool_first"],
+            st.selectbox(
+                "Pipeline Mode",
+                ["agentic_tool_first", "tool_first_foundation", "legacy_gemini"],
+                index=[
+                    "agentic_tool_first",
+                    "tool_first_foundation",
+                    "legacy_gemini",
+                ].index(settings.visual_pipeline_mode),
+                format_func=lambda value: {
+                    "agentic_tool_first": "agentic_tool_first — bounded repair + bundle adjudication",
+                    "tool_first_foundation": "tool_first_foundation — deterministic bundle baseline",
+                    "legacy_gemini": "legacy_gemini — compatibility fallback",
+                }[value],
+            ),
+        )
+        st.caption(
+            "University GPU 실험 기본값은 agentic_tool_first입니다. "
+            "foundation은 baseline 비교용, legacy_gemini는 fallback용입니다."
+        )
+
         prompt_type = cast(
             Literal["default", "extended"],
             st.selectbox("Prompt Type", ["default", "extended"], index=0),
         )
         st.caption("`default`: 간결 | `extended`: Foley 상세")
 
-        enable_vlm_verify = st.checkbox("VLM 그룹 검증 사용", value=True)
-        st.caption("시각 검증 단계가 실제 영상 프레임으로 그룹핑 결과를 확인")
-
-        enable_model_select = st.checkbox("TTA/VTA 모델 자동 선정", value=False)
-        st.caption(
-            "시각 기반 라우팅 단계가 각 씬의 동적 특성(싱크 중요도 vs 트랙 분리 중요도)을 분석하여 "
-            "TTA 또는 VTA 모델을 자동 판정"
+        enable_vlm_verify = pipeline_mode == "legacy_gemini" and st.checkbox(
+            "VLM 그룹 검증 사용",
+            value=True,
         )
+        if pipeline_mode == "legacy_gemini":
+            st.caption("시각 검증 단계가 실제 영상 프레임으로 그룹핑 결과를 확인")
+        else:
+            st.caption(
+                "Tool-first 모드에서는 bundle validator와 agentic repair가 기본 경로입니다."
+            )
+
+        enable_model_select = pipeline_mode == "legacy_gemini" and st.checkbox(
+            "TTA/VTA 모델 자동 선정",
+            value=False,
+        )
+        if pipeline_mode == "legacy_gemini":
+            st.caption(
+                "Legacy 경로에서만 별도 모델 선정 단계를 사용합니다."
+            )
+        else:
+            st.caption(
+                "Tool-first 모드에서는 source/event semantics와 route priors가 항상 계산됩니다."
+            )
 
         st.divider()
 
@@ -65,28 +103,27 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
 📹 Video Upload
       │
       ▼
-🤖 Current Scene Analysis Backend
-   FPS · Prompt Type
+🪟 Candidate Cuts + Evidence Windows
+   FPS · Prompt Type · Pipeline Mode
       │
       ▼
- VideoSceneAnalysis
-  ├─ Scene 0
-  │   ├─ background_sound
-  │   └─ objects (≤2)
-  └─ Scene N ...
+🧭 Tool-First Structural Pass
+  ├─ sampled frames / storyboard / clips
+  ├─ SAM3 extraction
+  ├─ crop generation
+  ├─ crop embeddings + labels
+  └─ source / event / ambience semantics
+      │
+      ▼  (agentic_tool_first)
+🤖 Bounded Agentic Repair
+  ├─ regroup / reroute / recover
+  └─ traceable validator-driven actions
       │
       ▼
-🔗 Cross-Scene Text Grouping
-   (Current grouping backend)
-      │
-      ▼  (VLM verify ON)
-👁️ VLM Group Verification
-   (Current visual backend + video frames)
-      │
-      ▼
-📦 GroupedAnalysis
-  ├─ groups (canonical desc)
-  └─ track_assignments
+📦 MultitrackDescriptionBundle
+  ├─ sources / events / ambience / groups
+  ├─ routing / validation / review edits
+  └─ canonical descriptions + rationale
 ```
 """
             )
@@ -101,6 +138,7 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
 
     return InspectOptions(
         fps=fps,
+        pipeline_mode=pipeline_mode,
         scene_analysis_mode=prompt_type,
         enable_vlm_verify=enable_vlm_verify,
         enable_model_select=enable_model_select,
@@ -138,7 +176,7 @@ def render_results(
 def render_footer() -> None:
     st.divider()
     st.caption(
-        "V2A Inspect | Visual Scene Analysis + Cross-Scene Track Grouping | No Audio Generation"
+        "V2A Inspect | tool-first bundle pipeline + agentic repair | No audio input or generation"
     )
 
 

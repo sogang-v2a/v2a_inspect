@@ -88,7 +88,7 @@ def render_upload_step(options: InspectOptions) -> None:
 
     st.video(uploaded_file)
 
-    analyze_disabled = st.session_state.grouped is not None
+    analyze_disabled = st.session_state.multitrack_bundle is not None
     if st.button(
         "🔍 Analyze & Group",
         type="primary",
@@ -187,6 +187,7 @@ def _build_ui_trace_context(options: InspectOptions) -> WorkflowTraceContext:
         tags=tuple(tags),
         metadata={
             "scene_analysis_mode": options.scene_analysis_mode,
+            "pipeline_mode": options.pipeline_mode,
             "fps": options.fps,
             "auth_mode": settings.auth_mode,
         },

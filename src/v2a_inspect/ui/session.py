@@ -14,8 +14,6 @@ from v2a_inspect.settings_views import get_client_runtime_settings
 
 SESSION_DEFAULTS: tuple[str, ...] = (
     "video_path",
-    "scene_analysis",
-    "grouped",
     "multitrack_bundle",
     "inspect_state",
     "clip_dir",

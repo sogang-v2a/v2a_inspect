@@ -183,6 +183,11 @@ def _add_common_runtime_arguments(
     *,
     defaults: InspectOptions,
 ) -> None:
+    parser.add_argument(
+        "--pipeline-mode",
+        choices=("legacy_gemini", "tool_first_foundation", "agentic_tool_first"),
+        default=defaults.pipeline_mode,
+    )
     parser.add_argument("--gemini-model", default=defaults.gemini_model)
     parser.add_argument(
         "--upload-timeout-seconds",
@@ -331,6 +336,7 @@ def _run_plan_scenes_command(args: argparse.Namespace) -> int:
 def _build_analyze_options(args: argparse.Namespace) -> InspectOptions:
     return InspectOptions(
         fps=args.fps,
+        pipeline_mode=args.pipeline_mode,
         scene_analysis_mode=args.scene_analysis_mode,
         enable_vlm_verify=args.enable_vlm_verify,
         enable_model_select=args.enable_model_select,
@@ -346,6 +352,7 @@ def _build_analyze_options(args: argparse.Namespace) -> InspectOptions:
 def _build_group_options(args: argparse.Namespace) -> InspectOptions:
     return InspectOptions(
         fps=args.fps,
+        pipeline_mode=args.pipeline_mode,
         scene_analysis_mode="default",
         enable_vlm_verify=args.enable_vlm_verify,
         enable_model_select=args.enable_model_select,
@@ -396,7 +403,7 @@ def _print_trace_id(state: Mapping[str, object]) -> None:
 
 
 def _build_runtime_tags(options: InspectOptions) -> list[str]:
-    tags: list[str] = []
+    tags: list[str] = [f"pipeline:{options.pipeline_mode}"]
     if options.enable_vlm_verify:
         tags.append("vlm-verify")
     if options.enable_model_select:

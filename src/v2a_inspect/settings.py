@@ -67,7 +67,7 @@ class Settings(BaseSettings):
         "legacy_gemini",
         "tool_first_foundation",
         "agentic_tool_first",
-    ] = "tool_first_foundation"
+    ] = "agentic_tool_first"
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.secure"),

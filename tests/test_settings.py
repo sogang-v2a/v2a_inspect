@@ -6,6 +6,7 @@ from unittest.mock import patch
 from pydantic import SecretStr
 
 from v2a_inspect.settings import Settings
+from v2a_inspect.workflows import InspectOptions
 
 
 class SettingsTests(unittest.TestCase):
@@ -24,6 +25,10 @@ class SettingsTests(unittest.TestCase):
                     "minimum_gpu_vram_gb": 16,
                 }
             )
+
+    def test_agentic_bundle_path_is_the_default_research_mode(self) -> None:
+        self.assertEqual(Settings().visual_pipeline_mode, "agentic_tool_first")
+        self.assertEqual(InspectOptions().pipeline_mode, "agentic_tool_first")
 
 
 if __name__ == "__main__":

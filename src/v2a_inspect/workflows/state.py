@@ -43,7 +43,7 @@ class InspectOptions(BaseModel):
         "legacy_gemini",
         "tool_first_foundation",
         "agentic_tool_first",
-    ] = "tool_first_foundation"
+    ] = "agentic_tool_first"
     scene_analysis_mode: Literal["default", "extended"] = "default"
     enable_vlm_verify: bool = True
     enable_model_select: bool = False
