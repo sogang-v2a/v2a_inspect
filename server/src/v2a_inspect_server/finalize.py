@@ -58,6 +58,8 @@ def build_final_bundle(
                 state.get("evidence_windows", []), attr="artifact_refs"
             ),
             trace_path=_state_path(state.get("agent_trace_path")),
+            bundle_path=_state_path(state.get("bundle_path")),
+            review_bundle_path=_state_path(state.get("review_bundle_path")),
         ),
         review_metadata=ReviewMetadata(),
         pipeline_metadata={

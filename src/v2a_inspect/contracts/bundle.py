@@ -191,6 +191,8 @@ class ArtifactRefs(BaseModel):
     crop_dir: str | None = None
     clip_dir: str | None = None
     trace_path: str | None = None
+    bundle_path: str | None = None
+    review_bundle_path: str | None = None
 
 
 class VideoMeta(BaseModel):

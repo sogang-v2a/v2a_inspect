@@ -7,12 +7,7 @@ import streamlit as st
 
 from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.observability import build_score_id, create_trace_score
-from v2a_inspect.pipeline.response_models import (
-    GroupedAnalysis,
-    RawTrack,
-    TrackGroup,
-    VideoSceneAnalysis,
-)
+from v2a_inspect.pipeline.response_models import RawTrack, TrackGroup
 from v2a_inspect.workflows import InspectOptions, InspectState
 from v2a_inspect.review import (
     apply_route_override,
@@ -113,8 +108,6 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
 
 
 def render_results(
-    grouped: GroupedAnalysis | None,
-    scene_analysis: VideoSceneAnalysis | None,
     *,
     video_path: str,
     clip_dir: str,
@@ -139,59 +132,7 @@ def render_results(
             bundle=bundle, inspect_state=inspect_state, clip_dir=clip_dir
         )
         return
-
-    if grouped is None or scene_analysis is None:
-        st.info("No bundle or legacy grouped analysis is available yet.")
-        return
-
-    n_scenes = len(scene_analysis.scenes)
-    n_backgrounds = n_scenes
-    n_objects = sum(len(scene.objects) for scene in scene_analysis.scenes)
-    n_raw = len(grouped.raw_tracks)
-    n_groups = len(grouped.groups)
-    n_multi = sum(1 for group in grouped.groups if len(group.member_ids) > 1)
-    n_verified = sum(1 for group in grouped.groups if group.vlm_verified)
-    n_merged = n_raw - n_groups
-    n_model_vta = sum(
-        1
-        for track in grouped.raw_tracks
-        if track.model_selection and track.model_selection.model_type == "VTA"
-    )
-    n_model_tta = sum(
-        1
-        for track in grouped.raw_tracks
-        if track.model_selection and track.model_selection.model_type == "TTA"
-    )
-
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("🎬 씬 수", n_scenes)
-    c2.metric("🌲 배경 트랙", n_backgrounds)
-    c3.metric("🎯 객체 트랙", n_objects)
-    c4.metric("📦 Raw 트랙 수", n_raw)
-    c5.metric(
-        "🔗 최종 그룹 수",
-        n_groups,
-        delta=f"-{n_merged} 병합" if n_merged > 0 else "병합 없음",
-        delta_color="normal" if n_merged > 0 else "off",
-    )
-    c6.metric("✅ VLM 검증 그룹", n_verified)
-
-    if n_model_vta + n_model_tta > 0:
-        mc1, mc2, mc3 = st.columns(3)
-        mc1.metric("🟢 TTA 트랙", n_model_tta)
-        mc2.metric("🔵 VTA 트랙", n_model_vta)
-        mc3.metric(
-            "⚠️ 그룹 내 이견",
-            sum(
-                1
-                for group in grouped.groups
-                if group.model_selection and group.model_selection.confidence < 0.6
-            ),
-        )
-
-    st.caption(
-        f"멀티멤버 그룹 {n_multi}개 (같은 개체로 판단된 트랙들이 하나의 그룹으로 묶임)"
-    )
+    st.info("No multitrack bundle is available yet.")
 
 
 def render_footer() -> None:
@@ -635,6 +576,7 @@ def _persist_review_bundle(
     )
     if not bundle_path:
         bundle_path = str(Path(clip_dir) / "review_bundle.json")
+    bundle.artifacts.review_bundle_path = bundle_path
     persist_bundle(bundle, bundle_path)
     st.session_state.multitrack_bundle = bundle
     st.session_state.review_bundle_path = bundle_path

@@ -161,7 +161,7 @@ def build_generation_groups(
                 member_track_ids,
                 routing_decisions_by_track,
             )
-            routing_candidates = [aggregated_route]
+            routing_candidates = [aggregated_route.model_dump(mode="json")]
             route_decision = RoutingDecision(
                 model_type=aggregated_route.model_type,
                 confidence=aggregated_route.confidence,

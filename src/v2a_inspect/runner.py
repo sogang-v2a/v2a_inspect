@@ -11,6 +11,7 @@ from v2a_inspect.observability import (
     start_observation,
 )
 from v2a_inspect.clients import run_server_inspect
+from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
 from v2a_inspect.settings_views import get_client_runtime_settings
 from v2a_inspect.runtime import build_inspect_runtime
@@ -102,6 +103,15 @@ def get_grouped_analysis(state: InspectState) -> GroupedAnalysis:
     if grouped_analysis is None:
         raise ValueError("Inspect workflow did not produce 'grouped_analysis'.")
     return grouped_analysis
+
+
+def get_multitrack_bundle(state: InspectState) -> MultitrackDescriptionBundle:
+    """Extract the final multitrack bundle from workflow state."""
+
+    bundle = state.get("multitrack_bundle")
+    if bundle is None:
+        raise ValueError("Inspect workflow did not produce 'multitrack_bundle'.")
+    return bundle
 
 
 def _run_workflow(

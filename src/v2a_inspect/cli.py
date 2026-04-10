@@ -9,11 +9,12 @@ import sys
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from v2a_inspect.contracts import MultitrackDescriptionBundle
 from v2a_inspect.observability import build_cli_trace_context, flush_langfuse
-from v2a_inspect.pipeline.response_models import GroupedAnalysis, VideoSceneAnalysis
+from v2a_inspect.pipeline.response_models import VideoSceneAnalysis
 from v2a_inspect.pipeline.prompt_templates import sync_prompts
 from v2a_inspect.runner import (
-    get_grouped_analysis,
+    get_multitrack_bundle,
     run_group_from_scene_analysis,
     run_inspect,
 )
@@ -45,7 +46,7 @@ def _build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument(
         "-o",
         "--output",
-        help="Write GroupedAnalysis JSON to this path instead of stdout",
+        help="Write MultitrackDescriptionBundle JSON to this path instead of stdout",
     )
     analyze_parser.set_defaults(func=_run_analyze_command)
 
@@ -66,7 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
     group_parser.add_argument(
         "-o",
         "--output",
-        help="Write GroupedAnalysis JSON to this path instead of stdout",
+        help="Write MultitrackDescriptionBundle JSON to this path instead of stdout",
     )
     group_parser.set_defaults(func=_run_group_command)
 
@@ -227,7 +228,7 @@ def _run_analyze_command(args: argparse.Namespace) -> int:
         trace_context=trace_context,
     )
     _print_trace_id(state)
-    _write_grouped_analysis_json(get_grouped_analysis(state), output_path=args.output)
+    _write_bundle_json(get_multitrack_bundle(state), output_path=args.output)
     return 0
 
 
@@ -261,7 +262,7 @@ def _run_group_command(args: argparse.Namespace) -> int:
         trace_context=trace_context,
     )
     _print_trace_id(state)
-    _write_grouped_analysis_json(get_grouped_analysis(state), output_path=args.output)
+    _write_bundle_json(get_multitrack_bundle(state), output_path=args.output)
     return 0
 
 
@@ -362,10 +363,10 @@ def _load_scene_analysis(scene_analysis_path: str) -> VideoSceneAnalysis:
     return VideoSceneAnalysis.model_validate_json(payload)
 
 
-def _write_grouped_analysis_json(
-    grouped_analysis: GroupedAnalysis, *, output_path: str | None
+def _write_bundle_json(
+    bundle: MultitrackDescriptionBundle, *, output_path: str | None
 ) -> None:
-    payload = grouped_analysis.model_dump_json(indent=2) + "\n"
+    payload = bundle.model_dump_json(indent=2) + "\n"
     _write_json_payload(payload, output_path=output_path)
 
 

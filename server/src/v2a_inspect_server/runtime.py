@@ -13,6 +13,7 @@ from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlparse
 
 from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
+from v2a_inspect.review import persist_bundle
 from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
@@ -26,6 +27,7 @@ from .tool_registry import build_tool_registry
 from .tool_context import build_tool_context
 
 if TYPE_CHECKING:
+    from v2a_inspect.contracts import MultitrackDescriptionBundle
     from .embeddings import EmbeddingClient, LabelClient
     from .description_writer import GeminiDescriptionWriter
     from .sam3 import Sam3Client
@@ -351,6 +353,7 @@ def _run_tool_first_pipeline(
         state,
         description_writer=getattr(tooling_runtime, "description_writer", None),
     )
+    _persist_runtime_bundle(bundle, state)
     grouped = bundle_to_grouped_analysis(bundle)
     state["scene_analysis"] = grouped.scene_analysis
     state["grouped_analysis"] = grouped
@@ -379,6 +382,7 @@ def _run_agentic_tool_first_pipeline(
     bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
     bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
     bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
+    _persist_runtime_bundle(bundle, state)
     grouped = bundle_to_grouped_analysis(bundle)
     state["scene_analysis"] = grouped.scene_analysis
     state["grouped_analysis"] = grouped
@@ -392,6 +396,18 @@ def _coerce_tracks(extraction_result: object) -> list[object]:
     else:
         tracks = getattr(extraction_result, "tracks", [])
     return list(tracks) if isinstance(tracks, list) else list(tracks or [])
+
+
+def _persist_runtime_bundle(
+    bundle: "MultitrackDescriptionBundle", state: InspectState
+) -> None:
+    artifact_run_dir = state.get("artifact_run_dir")
+    if not isinstance(artifact_run_dir, str) or not artifact_run_dir:
+        return
+    bundle_path = Path(artifact_run_dir) / "bundle.json"
+    persist_bundle(bundle, bundle_path)
+    state["bundle_path"] = str(bundle_path)
+    bundle.artifacts.bundle_path = str(bundle_path)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -43,13 +43,9 @@ def main() -> None:
     options = render_sidebar(authenticator)
     render_upload_step(options)
 
-    grouped = st.session_state.get("grouped")
-    scene_analysis = st.session_state.get("scene_analysis")
     bundle = st.session_state.get("multitrack_bundle")
-    if bundle is not None or (grouped is not None and scene_analysis is not None):
+    if bundle is not None:
         render_results(
-            grouped,
-            scene_analysis,
             video_path=st.session_state.get("video_path") or "",
             clip_dir=st.session_state.get("clip_dir") or "",
             inspect_state=st.session_state.get("inspect_state"),
@@ -143,16 +139,10 @@ def run_analysis(video_path: str, options: InspectOptions) -> None:
                 bundle = state.get("multitrack_bundle")
                 if bundle is not None:
                     bundle_path = Path(clip_dir) / "review_bundle.json"
+                    bundle.artifacts.review_bundle_path = str(bundle_path)
                     persist_bundle(bundle, bundle_path)
                     st.session_state.multitrack_bundle = bundle
                     st.session_state.review_bundle_path = str(bundle_path)
-                scene_analysis = state.get("scene_analysis")
-                if scene_analysis is not None:
-                    st.session_state.scene_analysis = scene_analysis
-                grouped = state.get("grouped_analysis")
-                if grouped is not None:
-                    st.session_state.grouped = grouped
-
                 if bundle is None:
                     raise ValueError(
                         "Inspect workflow completed without a multitrack bundle."
