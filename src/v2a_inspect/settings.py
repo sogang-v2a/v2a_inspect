@@ -57,9 +57,11 @@ class Settings(BaseSettings):
     remote_gpu_fallback: str | None = None
     remote_gpu_vram_preference_gb: int = Field(default=10, ge=1, le=80)
     remote_gpu_vram_cap_gb: int = Field(default=80, ge=1, le=80)
-    visual_pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = (
-        "tool_first_foundation"
-    )
+    visual_pipeline_mode: Literal[
+        "legacy_gemini",
+        "tool_first_foundation",
+        "agentic_tool_first",
+    ] = "tool_first_foundation"
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.secure"),

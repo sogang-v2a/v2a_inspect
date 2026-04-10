@@ -87,6 +87,7 @@ class FakeLabelClient:
 
 @dataclass(frozen=True)
 class FakeToolingRuntime:
+    runtime_profile: str = "cpu_dev"
     sam3_client: FakeSam3Client = field(default_factory=FakeSam3Client)
     embedding_client: FakeEmbeddingClient = field(default_factory=FakeEmbeddingClient)
     label_client: FakeLabelClient = field(default_factory=FakeLabelClient)

@@ -199,6 +199,89 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertEqual(payload["progress_messages"], ["done"])
         self.assertIn("multitrack_bundle", payload)
 
+    @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
+    @patch("v2a_inspect_server.runtime.run_agent_review_pass")
+    @patch("v2a_inspect_server.runtime._resolve_request_video_path")
+    @patch("v2a_inspect_server.runtime._analyze_with_pipeline")
+    @patch("v2a_inspect_server.runtime.build_tooling_runtime")
+    def test_analyze_endpoint_skips_review_pass_for_agentic_mode(
+        self,
+        mock_build_tooling_runtime,
+        mock_analyze_with_pipeline,
+        mock_resolve_request_video_path,
+        mock_run_agent_review_pass,
+        mock_inspect_nvidia_runtime,
+        mock_server_settings,
+    ) -> None:
+        mock_server_settings.return_value = SimpleNamespace(
+            runtime_mode="nvidia_docker",
+            runtime_profile="mig10_safe",
+            remote_gpu_target="sogang_gpu",
+            minimum_gpu_vram_gb=10,
+            model_cache_dir=Path('.cache/models'),
+            weights_manifest_path=Path('server/model-manifest.json'),
+            server_bind_host='127.0.0.1',
+            server_bind_port=8080,
+            shared_video_dir=Path('/tmp'),
+            hf_token=None,
+        )
+        mock_build_tooling_runtime.return_value = SimpleNamespace()
+        mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
+            available=True,
+            devices=[],
+            minimum_vram_gb=10,
+            message="ok",
+        )
+        bundle = SimpleNamespace(
+            pipeline_metadata={},
+            model_dump=lambda mode="json": {"video_id": "video"},
+        )
+        grouped = SimpleNamespace(
+            model_dump=lambda mode="json": {
+                "scene_analysis": {"total_duration": 1.0, "scenes": []},
+                "raw_tracks": [],
+                "groups": [],
+                "track_to_group": {},
+            }
+        )
+        mock_analyze_with_pipeline.return_value = {
+            "scene_analysis": SimpleNamespace(
+                model_dump=lambda mode="json": {"total_duration": 1.0, "scenes": []}
+            ),
+            "grouped_analysis": grouped,
+            "multitrack_bundle": bundle,
+            "warnings": [],
+            "progress_messages": [],
+        }
+        mock_resolve_request_video_path.return_value = "/tmp/fake.mp4"
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            response = request.urlopen(
+                request.Request(
+                    f"http://127.0.0.1:{server.server_port}/analyze",
+                    data=json.dumps(
+                        {
+                            "video_path": "/data/uploads/video.mp4",
+                            "video_filename": "video.mp4",
+                            "options": {"pipeline_mode": "agentic_tool_first"},
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        finally:
+            server.server_close()
+            thread.join(timeout=1)
+
+        payload = json.loads(response.decode("utf-8"))
+        self.assertIn("multitrack_bundle", payload)
+        mock_run_agent_review_pass.assert_not_called()
+
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
     def test_analyze_endpoint_rejects_when_gpu_runtime_is_unavailable(

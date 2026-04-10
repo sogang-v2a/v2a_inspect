@@ -18,7 +18,7 @@ from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
-from .agentic import run_agent_review_pass
+from .agentic import run_agent_review_pass, run_agentic_tool_loop
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
@@ -194,11 +194,9 @@ def _analyze_with_pipeline(
     tooling_runtime: ToolingRuntime,
 ) -> InspectState:
     if options.pipeline_mode == "agentic_tool_first":
-        return _run_tool_first_pipeline(
+        return _run_agentic_tool_first_pipeline(
             video_path=video_path,
-            options=options.model_copy(
-                update={"pipeline_mode": "tool_first_foundation"}
-            ),
+            options=options,
             tooling_runtime=tooling_runtime,
         )
     if options.pipeline_mode == "tool_first_foundation":
@@ -291,6 +289,7 @@ def _run_tool_first_pipeline(
         "sam3_track_set": extraction,
         "track_crops": track_crops,
         "entity_embeddings": embeddings,
+        "track_label_candidates": track_label_candidates,
         "physical_sources": list(semantics["physical_sources"]),
         "sound_event_segments": list(semantics["sound_events"]),
         "ambience_beds": list(semantics["ambience_beds"]),
@@ -313,6 +312,29 @@ def _run_tool_first_pipeline(
     grouped = bundle_to_grouped_analysis(bundle)
     state["scene_analysis"] = grouped.scene_analysis
     state["grouped_analysis"] = grouped
+    state["multitrack_bundle"] = bundle
+    return state
+
+
+def _run_agentic_tool_first_pipeline(
+    *,
+    video_path: str,
+    options: InspectOptions,
+    tooling_runtime: ToolingRuntime,
+) -> InspectState:
+    state = _run_tool_first_pipeline(
+        video_path=video_path,
+        options=options.model_copy(update={"pipeline_mode": "tool_first_foundation"}),
+        tooling_runtime=tooling_runtime,
+    )
+    state, planner_state, trace_path = run_agentic_tool_loop(
+        inspect_state=state,
+        tooling_runtime=tooling_runtime,
+    )
+    bundle = state["multitrack_bundle"]
+    bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
+    bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
+    bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
     state["multitrack_bundle"] = bundle
     return state
 
@@ -552,14 +574,15 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     )
                     grouped = state.get("grouped_analysis") or get_grouped_analysis(state)
                     bundle = state.get("multitrack_bundle") or build_final_bundle(state)
-                    planner_state, trace_path = run_agent_review_pass(
-                        inspect_state=state,
-                        tooling_runtime=tooling_runtime,
-                        bundle=bundle,
-                    )
-                    bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
-                    bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
-                    bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
+                    if server_options.pipeline_mode != "agentic_tool_first":
+                        planner_state, trace_path = run_agent_review_pass(
+                            inspect_state=state,
+                            tooling_runtime=tooling_runtime,
+                            bundle=bundle,
+                        )
+                        bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
+                        bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
+                        bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
                     state["multitrack_bundle"] = bundle
                     self._write_json(
                         {

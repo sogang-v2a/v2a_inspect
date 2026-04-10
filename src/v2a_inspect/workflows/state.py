@@ -6,7 +6,17 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from v2a_inspect.clients.video import DEFAULT_GEMINI_MODEL
-from v2a_inspect.contracts import CandidateCut, EvidenceWindow, MultitrackDescriptionBundle
+from v2a_inspect.contracts import (
+    AmbienceBed,
+    CandidateCut,
+    EvidenceWindow,
+    IdentityEdge,
+    LabelCandidate,
+    MultitrackDescriptionBundle,
+    PhysicalSourceTrack,
+    SoundEventSegment,
+    TrackCrop,
+)
 from v2a_inspect.pipeline.response_models import (
     GroupedAnalysis,
     RawTrack,
@@ -28,7 +38,11 @@ class InspectOptions(BaseModel):
     """User-configurable options for the inspection workflow."""
 
     fps: float = Field(default=2.0, gt=0.0)
-    pipeline_mode: Literal["legacy_gemini", "tool_first_foundation"] = "tool_first_foundation"
+    pipeline_mode: Literal[
+        "legacy_gemini",
+        "tool_first_foundation",
+        "agentic_tool_first",
+    ] = "tool_first_foundation"
     scene_analysis_mode: Literal["default", "extended"] = "default"
     enable_vlm_verify: bool = True
     enable_model_select: bool = False
@@ -75,9 +89,15 @@ class InspectState(TypedDict, total=False):
     frame_batches: list[FrameBatch]
     storyboard_path: str
     sam3_track_set: Sam3TrackSet
+    track_crops: list[TrackCrop]
     entity_embeddings: list[EntityEmbedding]
+    track_label_candidates: dict[str, list[LabelCandidate]]
     candidate_groups: list[CandidateGroup]
     routing_decisions: list[GroupRoutingDecision]
+    identity_edges: list[IdentityEdge]
+    physical_sources: list[PhysicalSourceTrack]
+    sound_event_segments: list[SoundEventSegment]
+    ambience_beds: list[AmbienceBed]
     tool_scene_summary: str
     tool_grouping_hints: str
     tool_verify_hints: str
