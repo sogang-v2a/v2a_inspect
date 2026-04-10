@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-import google.genai as genai
-from langchain_google_genai import ChatGoogleGenerativeAI
+from typing import TYPE_CHECKING
 
-from v2a_inspect.clients import DEFAULT_GEMINI_MODEL
+from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 from v2a_inspect.workflows import InspectRuntime
+
+if TYPE_CHECKING:
+    import google.genai as genai
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 def build_genai_client(*, api_key: str | None = None) -> genai.Client:
     """Build a Gemini SDK client for file uploads and file lookup."""
+
+    import google.genai as genai
 
     return genai.Client(api_key=api_key or _require_gemini_api_key())
 
@@ -21,6 +26,8 @@ def build_llm(
     timeout_seconds: float | None = None,
 ) -> ChatGoogleGenerativeAI:
     """Build the LangChain Gemini chat model used by the workflow."""
+
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(
         model=model,

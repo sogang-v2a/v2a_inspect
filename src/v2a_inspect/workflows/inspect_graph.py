@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, cast
 
-import google.genai as genai
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -24,6 +23,9 @@ from v2a_inspect.pipeline.nodes import (
 from v2a_inspect.pipeline.response_models import VideoSceneAnalysis
 
 from .state import InspectOptions, InspectState
+
+if TYPE_CHECKING:
+    import google.genai as genai
 
 
 @dataclass(frozen=True)

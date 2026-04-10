@@ -26,6 +26,24 @@ class ServerPackageRootImportTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0)
 
+    def test_ui_package_root_import_stays_lightweight(self) -> None:
+        completed = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "-c",
+                (
+                    "import sys, v2a_inspect.ui; "
+                    "assert 'streamlit' not in sys.modules"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

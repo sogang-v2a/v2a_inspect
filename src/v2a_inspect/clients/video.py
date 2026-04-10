@@ -4,13 +4,13 @@ import base64
 import mimetypes
 import time
 from pathlib import Path
-from typing import Any
-
-import google.genai as genai
+from typing import TYPE_CHECKING, Any
 
 from v2a_inspect.observability import start_observation
 
-DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
+if TYPE_CHECKING:
+    import google.genai as genai
+
 DEFAULT_POLL_INTERVAL_SECONDS = 2.0
 
 

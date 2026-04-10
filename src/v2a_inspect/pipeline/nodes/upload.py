@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import google.genai as genai
+from typing import TYPE_CHECKING
 
 from v2a_inspect.clients import upload_video as upload_gemini_video
 from v2a_inspect.workflows.state import InspectState
 
 from ._shared import append_state_message
+
+if TYPE_CHECKING:
+    import google.genai as genai
 
 
 def upload_video(

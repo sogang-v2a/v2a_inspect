@@ -15,7 +15,9 @@ class PackageRootImportTests(unittest.TestCase):
                 (
                     "import sys, v2a_inspect; "
                     "assert 'google.genai' not in sys.modules; "
-                    "assert 'langchain_google_genai' not in sys.modules"
+                    "assert 'langchain_google_genai' not in sys.modules; "
+                    "assert 'langfuse' not in sys.modules; "
+                    "assert 'streamlit' not in sys.modules"
                 ),
             ],
             check=True,

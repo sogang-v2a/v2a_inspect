@@ -4,8 +4,6 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable, Literal, cast
 
-from langfuse import propagate_attributes
-
 from v2a_inspect.observability import (
     WorkflowTraceContext,
     build_langgraph_runnable_config,
@@ -148,7 +146,7 @@ def _run_workflow(
         metadata=trace_metadata,
     ) as root_observation:
         trace_attributes_context = (
-            propagate_attributes(
+            _propagate_attributes(
                 user_id=resolved_trace_context.user_id,
                 session_id=resolved_trace_context.session_id,
                 tags=[
@@ -233,6 +231,14 @@ def _run_workflow(
             root_observation.update(output=_summarize_workflow_output(final_state))
 
     return final_state
+
+
+def _propagate_attributes(**kwargs: object) -> object:
+    try:
+        from langfuse import propagate_attributes
+    except ImportError:
+        return nullcontext(None)
+    return propagate_attributes(**kwargs)
 
 
 def _detect_operation(initial_state: InspectState) -> Literal["analyze", "group"]:

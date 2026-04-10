@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .server import run_server_inspect
+    from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
     from .video import (
-        DEFAULT_GEMINI_MODEL,
         build_inline_video_content_block,
         build_uploaded_video_content_block,
         encode_file_base64,
@@ -31,7 +31,7 @@ __all__ = [
 ]
 
 _EXPORT_MAP = {
-    "DEFAULT_GEMINI_MODEL": ("v2a_inspect.clients.video", "DEFAULT_GEMINI_MODEL"),
+    "DEFAULT_GEMINI_MODEL": ("v2a_inspect.constants", "DEFAULT_GEMINI_MODEL"),
     "build_inline_video_content_block": (
         "v2a_inspect.clients.video",
         "build_inline_video_content_block",

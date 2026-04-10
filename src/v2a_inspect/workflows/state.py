@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from v2a_inspect.clients.video import DEFAULT_GEMINI_MODEL
+from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 from v2a_inspect.contracts import (
     AmbienceBed,
     CandidateCut,
