@@ -262,6 +262,16 @@ def _run_tool_first_pipeline(
     )
     if tooling_runtime.runtime_profile == "mig10_safe":
         tooling_runtime.release_client("label")
+    refined_structure = registry["refine_candidate_cuts"].handler(
+        probe=probe,
+        candidate_cuts=candidate_cuts,
+        frame_batches=frame_batches,
+        tracks=tracks,
+        label_candidates_by_track=track_label_candidates,
+        storyboard_path=storyboard_path,
+    )
+    candidate_cuts = list(refined_structure["candidate_cuts"])
+    evidence_windows = list(refined_structure["evidence_windows"])
     semantics = registry["build_source_semantics"].handler(
         tracks=tracks,
         embeddings=embeddings,
@@ -295,6 +305,7 @@ def _run_tool_first_pipeline(
             f"Tool-first pipeline: extracted {len(tracks)} source tracks.",
             f"Tool-first pipeline: generated {len(track_crops)} track crops.",
             f"Tool-first pipeline: embedded {len(embeddings)} crop-backed track identities.",
+            f"Tool-first pipeline: refined structure with {len(candidate_cuts)} merged candidate cuts.",
             "Tool-first pipeline: built source, event, ambience, and generation-group semantics.",
         ],
     }

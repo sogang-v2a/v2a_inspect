@@ -11,6 +11,8 @@ class CutReason(BaseModel):
         "composition_change",
         "motion_regime_change",
         "source_lifecycle_change",
+        "label_context_change",
+        "interaction_onset",
         "fallback_window",
     ]
     confidence: float = Field(ge=0.0, le=1.0)

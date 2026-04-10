@@ -5,15 +5,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from v2a_inspect.contracts import CandidateCut, CutReason
+from v2a_inspect.contracts import CandidateCut, CutReason, LabelCandidate
 from v2a_inspect.tools.media import (
     build_candidate_cuts,
+    build_context_candidate_cuts,
     build_evidence_windows,
     export_window_clips,
     generate_storyboard,
     merge_candidate_cuts,
     probe_video,
     sample_frames,
+)
+from v2a_inspect.tools.types import (
+    FrameBatch,
+    Sam3EntityTrack,
+    Sam3TrackPoint,
+    Sam3VisualFeatures,
+    SampledFrame,
 )
 
 
@@ -149,6 +157,100 @@ class MediaStructureTests(unittest.TestCase):
             self.assertTrue(Path(storyboard_path).exists())
             self.assertEqual(len(clip_paths), 1)
             self.assertTrue(Path(next(iter(clip_paths.values()))).exists())
+
+    def test_context_candidate_cuts_add_source_and_label_change_signals(self) -> None:
+        candidate_cuts = [
+            CandidateCut(
+                cut_id="fallback",
+                timestamp_seconds=2.0,
+                confidence=0.2,
+                reasons=[
+                    CutReason(
+                        kind="fallback_window",
+                        confidence=0.2,
+                        rationale="fallback",
+                    )
+                ],
+            )
+        ]
+        probe = type("Probe", (), {"duration_seconds": 6.0})()
+        frame_batches = [
+            FrameBatch(
+                scene_index=0,
+                frames=[
+                    SampledFrame(
+                        scene_index=0,
+                        timestamp_seconds=0.5,
+                        image_path="/tmp/scene0.jpg",
+                    )
+                ],
+            ),
+            FrameBatch(
+                scene_index=1,
+                frames=[
+                    SampledFrame(
+                        scene_index=1,
+                        timestamp_seconds=3.0,
+                        image_path="/tmp/scene1.jpg",
+                    )
+                ],
+            ),
+        ]
+        tracks = [
+            Sam3EntityTrack(
+                track_id="trk0",
+                scene_index=0,
+                start_seconds=0.5,
+                end_seconds=1.4,
+                confidence=0.8,
+                label_hint="cat",
+                points=[
+                    Sam3TrackPoint(
+                        timestamp_seconds=0.5,
+                        frame_path="/tmp/scene0.jpg",
+                        confidence=0.8,
+                        bbox_xyxy=[0, 0, 10, 10],
+                    )
+                ],
+                features=Sam3VisualFeatures(interaction_score=0.7),
+            ),
+            Sam3EntityTrack(
+                track_id="trk1",
+                scene_index=1,
+                start_seconds=3.0,
+                end_seconds=4.0,
+                confidence=0.8,
+                label_hint="car",
+                points=[
+                    Sam3TrackPoint(
+                        timestamp_seconds=3.0,
+                        frame_path="/tmp/scene1.jpg",
+                        confidence=0.8,
+                        bbox_xyxy=[0, 0, 10, 10],
+                    )
+                ],
+                features=Sam3VisualFeatures(),
+            ),
+        ]
+        label_candidates = {
+            "trk0": [LabelCandidate(label="cat", score=0.9)],
+            "trk1": [LabelCandidate(label="car", score=0.9)],
+        }
+
+        merged_cuts, evidence_windows = build_context_candidate_cuts(
+            candidate_cuts=candidate_cuts,
+            probe=probe,
+            frame_batches=frame_batches,
+            tracks=tracks,
+            label_candidates_by_track=label_candidates,
+            storyboard_path="/tmp/storyboard.jpg",
+        )
+
+        reason_kinds = {reason.kind for cut in merged_cuts for reason in cut.reasons}
+        self.assertIn("source_lifecycle_change", reason_kinds)
+        self.assertIn("label_context_change", reason_kinds)
+        self.assertIn("interaction_onset", reason_kinds)
+        self.assertTrue(any("/tmp/scene0.jpg" in window.sampled_frame_ids for window in evidence_windows))
 
 
 if __name__ == "__main__":

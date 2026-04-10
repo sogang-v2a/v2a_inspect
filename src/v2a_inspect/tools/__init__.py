@@ -11,6 +11,7 @@ from v2a_inspect.contracts import (
 from .grouping import cosine_similarity, group_entity_embeddings
 from .media import (
     build_candidate_cuts,
+    build_context_candidate_cuts,
     build_evidence_windows,
     detect_scenes,
     evidence_windows_to_scene_boundaries,
@@ -53,6 +54,7 @@ __all__ = [
     "TrackCrop",
     "probe_video",
     "build_candidate_cuts",
+    "build_context_candidate_cuts",
     "build_evidence_windows",
     "detect_scenes",
     "evidence_windows_to_scene_boundaries",

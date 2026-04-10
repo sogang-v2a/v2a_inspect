@@ -7,9 +7,15 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageStat
 
-from v2a_inspect.contracts import CandidateCut, CutReason, EvidenceWindow
+from v2a_inspect.contracts import CandidateCut, CutReason, EvidenceWindow, LabelCandidate
 
-from .types import FrameBatch, SampledFrame, SceneBoundary, VideoProbe
+from .types import (
+    FrameBatch,
+    SampledFrame,
+    Sam3EntityTrack,
+    SceneBoundary,
+    VideoProbe,
+)
 
 _DEFAULT_ANALYSIS_FPS = 2.0
 _DEFAULT_HARD_CUT_THRESHOLD = 0.35
@@ -254,9 +260,13 @@ def hydrate_evidence_windows(
     clip_paths_by_window: dict[str, str] | None = None,
 ) -> list[EvidenceWindow]:
     hydrated: list[EvidenceWindow] = []
-    for index, window in enumerate(evidence_windows):
-        batch = frame_batches[index] if index < len(frame_batches) else None
-        frame_ids = [frame.image_path for frame in batch.frames] if batch else []
+    all_frames = [frame for batch in frame_batches for frame in batch.frames]
+    for window in evidence_windows:
+        frame_ids = [
+            frame.image_path
+            for frame in all_frames
+            if window.start_time <= frame.timestamp_seconds <= window.end_time
+        ]
         artifact_refs = list(window.artifact_refs)
         if storyboard_path is not None:
             artifact_refs.append(storyboard_path)
@@ -271,6 +281,38 @@ def hydrate_evidence_windows(
             )
         )
     return hydrated
+
+
+def build_context_candidate_cuts(
+    *,
+    candidate_cuts: list[CandidateCut],
+    probe: VideoProbe,
+    frame_batches: list[FrameBatch],
+    tracks: list[Sam3EntityTrack],
+    label_candidates_by_track: dict[str, list[LabelCandidate]],
+    storyboard_path: str | None = None,
+) -> tuple[list[CandidateCut], list[EvidenceWindow]]:
+    merged_candidate_cuts = merge_candidate_cuts(
+        [
+            *candidate_cuts,
+            *_source_lifecycle_cuts(probe=probe, tracks=tracks),
+            *_label_context_cuts(
+                frame_batches=frame_batches,
+                tracks=tracks,
+                label_candidates_by_track=label_candidates_by_track,
+            ),
+            *_interaction_onset_cuts(probe=probe, tracks=tracks),
+        ]
+    )
+    evidence_windows = build_evidence_windows(
+        probe=probe,
+        candidate_cuts=merged_candidate_cuts,
+    )
+    return merged_candidate_cuts, hydrate_evidence_windows(
+        evidence_windows,
+        frame_batches,
+        storyboard_path=storyboard_path,
+    )
 
 
 def detect_scenes(
@@ -538,6 +580,116 @@ def _fallback_candidate_cuts(
             )
         )
         timestamp += target_scene_seconds
+    return cuts
+
+
+def _source_lifecycle_cuts(
+    *,
+    probe: VideoProbe,
+    tracks: list[Sam3EntityTrack],
+) -> list[CandidateCut]:
+    cuts: list[CandidateCut] = []
+    for track in tracks:
+        for offset, timestamp in enumerate((track.start_seconds, track.end_seconds)):
+            if timestamp <= 0.0 or timestamp >= probe.duration_seconds:
+                continue
+            confidence = round(max(0.35, track.confidence), 3)
+            cuts.append(
+                CandidateCut(
+                    cut_id=f"source-lifecycle-{track.track_id}-{offset}",
+                    timestamp_seconds=round(timestamp, 3),
+                    confidence=confidence,
+                    reasons=[
+                        CutReason(
+                            kind="source_lifecycle_change",
+                            confidence=confidence,
+                            rationale=f"{track.track_id} {'appears' if offset == 0 else 'disappears'}",
+                        )
+                    ],
+                )
+            )
+    return cuts
+
+
+def _label_context_cuts(
+    *,
+    frame_batches: list[FrameBatch],
+    tracks: list[Sam3EntityTrack],
+    label_candidates_by_track: dict[str, list[LabelCandidate]],
+) -> list[CandidateCut]:
+    cuts: list[CandidateCut] = []
+    track_ids_by_scene: dict[int, list[str]] = {}
+    for track in tracks:
+        track_ids_by_scene.setdefault(track.scene_index, []).append(track.track_id)
+    scene_labels: list[tuple[int, str | None, float]] = []
+    for batch in frame_batches:
+        labels: list[LabelCandidate] = []
+        for track_id in track_ids_by_scene.get(batch.scene_index, []):
+            labels.extend(label_candidates_by_track.get(track_id, [])[:1])
+        labels.sort(key=lambda candidate: candidate.score, reverse=True)
+        scene_labels.append(
+            (
+                batch.scene_index,
+                labels[0].label if labels else None,
+                labels[0].score if labels else 0.0,
+            )
+        )
+    for left, right in zip(scene_labels, scene_labels[1:], strict=False):
+        if left[1] is None or right[1] is None or left[1] == right[1]:
+            continue
+        right_batch = next(
+            (batch for batch in frame_batches if batch.scene_index == right[0]),
+            None,
+        )
+        if right_batch is None or not right_batch.frames:
+            continue
+        confidence = round(min(1.0, max(left[2], right[2])), 3)
+        cuts.append(
+            CandidateCut(
+                cut_id=f"label-context-{left[0]}-{right[0]}",
+                timestamp_seconds=round(right_batch.frames[0].timestamp_seconds, 3),
+                confidence=confidence,
+                reasons=[
+                    CutReason(
+                        kind="label_context_change",
+                        confidence=confidence,
+                        rationale=f"{left[1]} -> {right[1]}",
+                    )
+                ],
+            )
+        )
+    return cuts
+
+
+def _interaction_onset_cuts(
+    *,
+    probe: VideoProbe,
+    tracks: list[Sam3EntityTrack],
+) -> list[CandidateCut]:
+    cuts: list[CandidateCut] = []
+    for track in tracks:
+        if track.features.interaction_score < 0.6:
+            continue
+        if track.start_seconds <= 0.0 or track.start_seconds >= probe.duration_seconds:
+            continue
+        confidence = round(
+            min(1.0, max(track.features.interaction_score, track.confidence)),
+            3,
+        )
+        cuts.append(
+            CandidateCut(
+                cut_id=f"interaction-onset-{track.track_id}",
+                timestamp_seconds=round(track.start_seconds, 3),
+                confidence=confidence,
+                reasons=[
+                    CutReason(
+                        kind="interaction_onset",
+                        confidence=confidence,
+                        rationale=f"{track.track_id} interaction_score={track.features.interaction_score:.2f}",
+                    )
+                ],
+            )
+        )
     return cuts
 
 

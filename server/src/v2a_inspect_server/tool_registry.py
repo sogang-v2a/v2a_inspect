@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from v2a_inspect.contracts import (
+    CandidateCut,
     EvidenceWindow,
     LabelCandidate,
     MultitrackDescriptionBundle,
@@ -12,6 +13,7 @@ from v2a_inspect.contracts import (
 )
 from v2a_inspect.tools import (
     build_candidate_cuts,
+    build_context_candidate_cuts,
     build_evidence_windows,
     evidence_windows_to_scene_boundaries,
     generate_storyboard,
@@ -90,6 +92,28 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "evidence_windows": evidence_windows,
             "frame_batches": frame_batches,
             "storyboard_path": storyboard_path,
+        }
+
+    def refine_candidate_cuts(
+        *,
+        probe: object,
+        candidate_cuts: list[CandidateCut],
+        frame_batches: list[FrameBatch],
+        tracks: list[Sam3EntityTrack],
+        label_candidates_by_track: dict[str, list[LabelCandidate]],
+        storyboard_path: str | None = None,
+    ) -> dict[str, object]:
+        merged_candidate_cuts, evidence_windows = build_context_candidate_cuts(
+            candidate_cuts=candidate_cuts,
+            probe=probe,
+            frame_batches=frame_batches,
+            tracks=tracks,
+            label_candidates_by_track=label_candidates_by_track,
+            storyboard_path=storyboard_path,
+        )
+        return {
+            "candidate_cuts": merged_candidate_cuts,
+            "evidence_windows": evidence_windows,
         }
 
     def extract_entities(
@@ -195,6 +219,11 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         ),
         "extract_entities": ToolDefinition(
             "extract_entities", extract_entities, "Run prompt-free SAM extraction."
+        ),
+        "refine_candidate_cuts": ToolDefinition(
+            "refine_candidate_cuts",
+            refine_candidate_cuts,
+            "Merge structural, source-lifecycle, label-context, and interaction cut cues.",
         ),
         "recover_with_text_prompt": ToolDefinition(
             "recover_with_text_prompt",

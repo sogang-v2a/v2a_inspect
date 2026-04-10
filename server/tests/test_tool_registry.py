@@ -32,6 +32,7 @@ class ToolRegistryTests(unittest.TestCase):
         )
         registry = build_tool_registry(fake_runtime)
         self.assertIn("structural_overview", registry)
+        self.assertIn("refine_candidate_cuts", registry)
         self.assertIn("recover_with_text_prompt", registry)
         self.assertIn("validate_bundle", registry)
 
