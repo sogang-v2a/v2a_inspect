@@ -12,6 +12,7 @@ from v2a_inspect.contracts import (
     SoundEventSegment,
 )
 from v2a_inspect.tools.types import VideoProbe
+from v2a_inspect.workflows import InspectOptions
 from v2a_inspect_server.finalize import build_final_bundle, finalize_route_decision
 
 
@@ -87,3 +88,27 @@ class FinalizeTests(unittest.TestCase):
         bundle = build_final_bundle(state, description_writer=_FakeWriter())
         self.assertEqual(bundle.generation_groups[0].canonical_description, "rich inferred footsteps")
         self.assertEqual(bundle.generation_groups[0].description_rationale, "writer saw person:continuous_motion:ground_contact")
+
+    def test_build_final_bundle_records_active_pipeline_mode_and_recovery_actions(self) -> None:
+        state = {
+            "video_path": "/tmp/video.mp4",
+            "options": InspectOptions(pipeline_mode="agentic_tool_first"),
+            "video_probe": VideoProbe(video_path="/tmp/video.mp4", duration_seconds=3.0, fps=2.0, width=320, height=240),
+            "candidate_cuts": [],
+            "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=3.0)],
+            "physical_sources": [],
+            "sound_event_segments": [],
+            "ambience_beds": [],
+            "generation_groups": [],
+            "storyboard_path": "/tmp/storyboard/storyboard.jpg",
+            "track_crops": [],
+            "frames_per_window": 6,
+            "recovery_actions": ["densify_window_sampling", "recover_foreground_sources"],
+        }
+        bundle = build_final_bundle(state)
+        self.assertEqual(bundle.pipeline_metadata["pipeline_version"], "agentic_tool_first")
+        self.assertEqual(bundle.pipeline_metadata["sampling_frames_per_window"], 6)
+        self.assertEqual(
+            bundle.pipeline_metadata["recovery_actions"],
+            ["densify_window_sampling", "recover_foreground_sources"],
+        )

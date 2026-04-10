@@ -87,7 +87,7 @@ Recent remote smoke outputs persisted bundle artifacts successfully, e.g.:
   - `/data/artifacts/v2a_smoke_box-e75100aa-tm140mk1/bundle.json`
 
 ## Main blocker now
-The main blocker is **quality**, not runtime plumbing.
+The main blocker is **foreground/source recall and meaningful recovery**, not runtime plumbing.
 
 Even with:
 - real GPU availability
@@ -100,10 +100,10 @@ recent smoke runs still produced:
 - only `1 generation group`
 
 That means the remaining problem is not “is the server running?” or “is CUDA real?”
-It is:
-- extraction quality
-- cut/group adjudication quality
-- richer real-clip evaluation
+More specifically, it is:
+- extraction recall on nontrivial clips
+- materially different recovery actions when the first pass finds no sources
+- richer real-clip evaluation after those recovery actions land
 
 ## Roadmap honesty update
 The Stage 7 checklist was partially reopened because the repo has:
@@ -120,6 +120,16 @@ but does **not yet** have all claimed completed artifacts for:
 2. Evaluate real short clips on `sogang_gpu`, not just smoke clips.
 3. Compare `tool_first_foundation` vs `agentic_tool_first` on saved artifacts.
 4. Strengthen final grouping and description quality based on those results.
+5. Track real experiment outcomes in `docs/experiment_ledger_2026-04-10.md`.
+
+## Latest implementation note
+The newest recovery slice (`aa65248`) added:
+- explicit foreground-collapse / missing-source repair issues
+- denser window resampling
+- scene-prompt foreground recovery
+- more honest extraction and pipeline metadata
+
+That means the next remote benchmark should focus on whether these changes raise **foreground recall**, not just whether the server stays up.
 
 ## Commits from the latest implementation stretch
 - `c8e31ab` — visible research path clearly agentic
