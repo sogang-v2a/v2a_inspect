@@ -41,6 +41,8 @@ class FakeSam3Client:
                     points=[
                         Sam3TrackPoint(
                             timestamp_seconds=frame.timestamp_seconds,
+                            frame_path=frame.image_path,
+                            confidence=0.9,
                             bbox_xyxy=[8.0, 8.0, 32.0, 32.0],
                         )
                         for frame in batch.frames

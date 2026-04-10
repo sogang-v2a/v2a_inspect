@@ -75,6 +75,10 @@ def _match_frame(
 ) -> SampledFrame | None:
     if not scene_frames:
         return None
+    if point.frame_path:
+        for frame in scene_frames:
+            if frame.image_path == point.frame_path:
+                return frame
     return min(
         scene_frames,
         key=lambda frame: abs(

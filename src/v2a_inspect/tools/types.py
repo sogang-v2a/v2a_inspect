@@ -44,6 +44,8 @@ class Sam3VisualFeatures(BaseModel):
 
 class Sam3TrackPoint(BaseModel):
     timestamp_seconds: float = Field(ge=0.0)
+    frame_path: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     bbox_xyxy: list[float] | None = Field(default=None, min_length=4, max_length=4)
     mask_rle: str | None = None
 
@@ -61,7 +63,7 @@ class Sam3EntityTrack(BaseModel):
 
 class Sam3TrackSet(BaseModel):
     provider: str = "sam3"
-    strategy: Literal["prompt_free", "text_recovery"] = "prompt_free"
+    strategy: Literal["prompt_free", "prompt_seeded", "text_recovery"] = "prompt_free"
     tracks: list[Sam3EntityTrack] = Field(default_factory=list)
 
 

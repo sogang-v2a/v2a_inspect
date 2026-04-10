@@ -128,6 +128,7 @@ class ReidTests(unittest.TestCase):
             label_candidates_by_track=label_candidates,
         )
         self.assertEqual(len(sources), 2)
+        self.assertEqual({source.source_id for source in sources}, {"source-a", "source-d"})
         self.assertTrue(any(source.identity_confidence > 0.9 for source in sources))
         self.assertTrue(any(source.identity_confidence < 0.9 for source in sources))
 

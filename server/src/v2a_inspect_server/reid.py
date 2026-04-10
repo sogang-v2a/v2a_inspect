@@ -39,8 +39,15 @@ def build_identity_edges(
                 label_candidates_by_track.get(left_track.track_id, []),
                 label_candidates_by_track.get(right_track.track_id, []),
             )
+            continuity_bonus = _continuity_bonus(left_track, right_track)
             confidence = max(
-                0.0, min(1.0, (similarity * 0.8) + (label_compatibility * 0.2))
+                0.0,
+                min(
+                    1.0,
+                    (similarity * 0.7)
+                    + (label_compatibility * 0.2)
+                    + continuity_bonus,
+                ),
             )
             accepted = confidence >= threshold
             edges.append(
@@ -59,7 +66,7 @@ def build_identity_edges(
                     rationale=(
                         "same-window identity requires stricter confidence"
                         if same_window
-                        else "cross-window identity candidate"
+                        else f"cross-window identity candidate with continuity_bonus={continuity_bonus:.2f}"
                     ),
                 )
             )
@@ -107,7 +114,15 @@ def build_provisional_source_tracks(
             accepted_neighbors[edge.target_track_id].append(edge.source_track_id)
 
     physical_sources: list[PhysicalSourceTrack] = []
-    for index, member_tracks in enumerate(groups.values()):
+    ordered_groups = sorted(
+        groups.values(),
+        key=lambda member_tracks: (
+            min(track.start_seconds for track in member_tracks),
+            min(track.track_id for track in member_tracks),
+        ),
+    )
+    for member_tracks in ordered_groups:
+        canonical_track_id = min(member_tracks, key=lambda track: (track.start_seconds, track.track_id)).track_id
         spans = sorted(
             {
                 (round(track.start_seconds, 3), round(track.end_seconds, 3))
@@ -140,7 +155,7 @@ def build_provisional_source_tracks(
         )
         physical_sources.append(
             PhysicalSourceTrack(
-                source_id=f"source-{index:04d}",
+                source_id=f"source-{canonical_track_id}",
                 kind="foreground",
                 label_candidates=label_candidates,
                 spans=spans,
@@ -187,3 +202,17 @@ def _aggregate_label_candidates(
     ]
     aggregated.sort(key=lambda candidate: candidate.score, reverse=True)
     return aggregated
+
+
+def _continuity_bonus(
+    left_track: Sam3EntityTrack,
+    right_track: Sam3EntityTrack,
+) -> float:
+    temporal_gap = max(right_track.start_seconds - left_track.end_seconds, 0.0)
+    if left_track.scene_index == right_track.scene_index:
+        return 0.0
+    if temporal_gap <= 1.5:
+        return 0.1
+    if temporal_gap <= 4.0:
+        return 0.05
+    return 0.0
