@@ -4,7 +4,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .server import run_server_inspect
+    from .server import run_server_inspect, run_server_inspect_raw
     from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
     from .video import (
         build_inline_video_content_block,
@@ -28,6 +28,7 @@ __all__ = [
     "upload_video",
     "wait_for_file_active",
     "run_server_inspect",
+    "run_server_inspect_raw",
 ]
 
 _EXPORT_MAP = {
@@ -47,6 +48,7 @@ _EXPORT_MAP = {
     "upload_video": ("v2a_inspect.clients.video", "upload_video"),
     "wait_for_file_active": ("v2a_inspect.clients.video", "wait_for_file_active"),
     "run_server_inspect": ("v2a_inspect.clients.server", "run_server_inspect"),
+    "run_server_inspect_raw": ("v2a_inspect.clients.server", "run_server_inspect_raw"),
 }
 
 

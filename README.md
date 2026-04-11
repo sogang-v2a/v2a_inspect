@@ -40,3 +40,34 @@ server can analyze the same real files.
 - `sogang_gpu` is the primary deployment target today
 - Use `server/scripts/warmup_university_gpu.sh` or `POST /warmup` for the university warmup path
 - Use `POST /upload` followed by `POST /analyze` for remote client/server runs
+
+## Local benchmarking against the remote university server
+
+Keep the remote `sogang_gpu` server running, then drive experiments from this machine:
+
+```bash
+./scripts/forward_sogang_gpu.sh
+```
+
+This forwards:
+
+- local `http://127.0.0.1:18080`
+- to remote `http://127.0.0.1:8080`
+
+The local sample pack lives in `data/video_samples.zip` and is treated as local-only scratch data.
+Run the benchmark pack like this:
+
+```bash
+uv run python scripts/run_video_samples_benchmark.py
+```
+
+This will:
+
+- extract `data/video_samples.zip` into `data/video_samples/`
+- warm the forwarded server once
+- run both `tool_first_foundation` and `agentic_tool_first`
+- save local outputs under `data/benchmarks/<run_id>/`
+
+Tracked benchmark metadata for the sample pack lives in:
+
+- `docs/benchmark_video_samples_manifest.json`

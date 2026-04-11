@@ -16,6 +16,30 @@ def run_server_inspect(
     video_path: str,
     options: InspectOptions,
 ) -> InspectState:
+    decoded = run_server_inspect_raw(
+        server_base_url=server_base_url,
+        video_path=video_path,
+        options=options,
+    )
+    bundle_payload = decoded.get("multitrack_bundle")
+    if not isinstance(bundle_payload, dict):
+        raise ValueError("Server analysis response is missing multitrack_bundle.")
+    warnings = list(decoded.get("warnings", []))
+    progress_messages = list(decoded.get("progress_messages", []))
+    state: InspectState = {
+        "multitrack_bundle": MultitrackDescriptionBundle.model_validate(bundle_payload),
+        "warnings": [str(item) for item in warnings],
+        "progress_messages": [str(item) for item in progress_messages],
+    }
+    return state
+
+
+def run_server_inspect_raw(
+    *,
+    server_base_url: str,
+    video_path: str,
+    options: InspectOptions,
+) -> dict[str, object]:
     remote_video_path = _upload_video(
         server_base_url=server_base_url,
         video_path=video_path,
@@ -43,18 +67,7 @@ def run_server_inspect(
     decoded = json.loads(body)
     if not isinstance(decoded, dict):
         raise TypeError("Server analysis response must be a JSON object.")
-
-    bundle_payload = decoded.get("multitrack_bundle")
-    if not isinstance(bundle_payload, dict):
-        raise ValueError("Server analysis response is missing multitrack_bundle.")
-    warnings = list(decoded.get("warnings", []))
-    progress_messages = list(decoded.get("progress_messages", []))
-    state: InspectState = {
-        "multitrack_bundle": MultitrackDescriptionBundle.model_validate(bundle_payload),
-        "warnings": [str(item) for item in warnings],
-        "progress_messages": [str(item) for item in progress_messages],
-    }
-    return state
+    return decoded
 
 
 def _upload_video(
