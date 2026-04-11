@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-from urllib import request
+from urllib import error, request
 from zipfile import ZipFile
 
 from v2a_inspect.clients.server import run_server_inspect_raw
@@ -173,11 +173,29 @@ def run_video_sample_benchmark(
         pipeline_mode=mode,  # type: ignore[arg-type]
     )
     started = perf_counter()
-    response_payload = run_server_inspect_raw(
-        server_base_url=server_base_url,
-        video_path=video_path,
-        options=options,
-    )
+    try:
+        response_payload = run_server_inspect_raw(
+            server_base_url=server_base_url,
+            video_path=video_path,
+            options=options,
+        )
+    except error.HTTPError as exc:
+        elapsed = round(perf_counter() - started, 4)
+        error_body = exc.read().decode("utf-8")
+        error_payload = _decode_error_payload(error_body)
+        _write_json(
+            output_root / "error.json",
+            {
+                "clip_id": clip_id,
+                "mode": mode,
+                "elapsed_seconds": elapsed,
+                "http_status": exc.code,
+                "reason": exc.reason,
+                "error_body": error_payload,
+                "recorded_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        raise
     elapsed = round(perf_counter() - started, 4)
     _write_json(output_root / "response.json", response_payload)
 
@@ -255,3 +273,13 @@ def _is_valid_sample_member(member: str) -> bool:
     if name.startswith("._"):
         return False
     return name.lower().endswith(".mp4")
+
+
+def _decode_error_payload(body: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return {"raw_body": body}
+    if isinstance(payload, dict):
+        return payload
+    return {"raw_body": body}

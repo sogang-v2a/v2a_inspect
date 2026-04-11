@@ -99,6 +99,37 @@ class PlannerExecutorTests(unittest.TestCase):
         self.assertEqual(len(replay), 2)
         self.assertEqual(replay[0]["kind"], "tool_call")
         self.assertEqual(replay[1]["kind"], "decision")
+        self.assertEqual(replay[0]["effective_request_payload"], replay[0]["request_payload"])
+        self.assertEqual(replay[0]["dropped_request_keys"], [])
+
+    def test_executor_filters_unknown_kwargs_for_strict_handler(self) -> None:
+        captured: dict[str, object] = {}
+
+        def strict_handler(*, candidate_cuts: list[str]) -> dict[str, object]:
+            captured["candidate_cuts"] = candidate_cuts
+            return {"storyboard_path": "/tmp/storyboard.jpg"}
+
+        executor = ToolExecutor(
+            registry={"refine_candidate_cuts": strict_handler},
+        )
+        state = PlannerState(video_id="vid-001")
+        action = PlannedAction(
+            issue_id="issue-cut",
+            tool_name="refine_candidate_cuts",
+            request_payload={
+                "candidate_cuts": ["cut-1"],
+                "low_confidence_cut_ids": ["cut-1"],
+                "broad_window_ids": ["window-1"],
+            },
+            rationale="repair cut ambiguity",
+        )
+        state, _ = executor.execute(state, action)
+        self.assertEqual(captured["candidate_cuts"], ["cut-1"])
+        self.assertEqual(state.tool_calls[0].effective_request_payload["candidate_cuts"], ["cut-1"])
+        self.assertEqual(
+            state.tool_calls[0].dropped_request_keys,
+            ["broad_window_ids", "low_confidence_cut_ids"],
+        )
 
     def test_mark_and_resolve_issue(self) -> None:
         state = PlannerState(

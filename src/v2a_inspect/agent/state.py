@@ -48,6 +48,8 @@ class ToolCallRecord(BaseModel):
     issue_id: str
     tool_name: str
     request_payload: dict[str, object] = Field(default_factory=dict)
+    effective_request_payload: dict[str, object] = Field(default_factory=dict)
+    dropped_request_keys: list[str] = Field(default_factory=list)
     output_refs: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 

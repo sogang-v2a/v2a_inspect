@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,12 +24,18 @@ class ToolExecutor:
         self, state: PlannerState, action: PlannedAction
     ) -> tuple[PlannerState, object]:
         handler = self.registry[action.tool_name]
-        result = handler(**action.request_payload)
+        effective_request_payload, dropped_request_keys = _filter_payload_for_handler(
+            handler,
+            action.request_payload,
+        )
+        result = handler(**effective_request_payload)
         record = ToolCallRecord(
             call_id=uuid4().hex,
             issue_id=action.issue_id,
             tool_name=action.tool_name,
             request_payload=_sanitize_payload(action.request_payload),
+            effective_request_payload=_sanitize_payload(effective_request_payload),
+            dropped_request_keys=dropped_request_keys,
             output_refs=_extract_output_refs(result),
         )
         updated = state.model_copy(deep=True)
@@ -115,3 +122,30 @@ def _sanitize_payload(payload: dict[str, object]) -> dict[str, object]:
         else:
             sanitized[key] = repr(value)
     return sanitized
+
+
+def _filter_payload_for_handler(
+    handler: Callable[..., object],
+    payload: dict[str, object],
+) -> tuple[dict[str, object], list[str]]:
+    signature = inspect.signature(handler)
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return dict(payload), []
+
+    accepted_keys = {
+        name
+        for name, parameter in signature.parameters.items()
+        if parameter.kind
+        in {
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        }
+    }
+    effective = {
+        key: value for key, value in payload.items() if key in accepted_keys
+    }
+    dropped = sorted(key for key in payload if key not in accepted_keys)
+    return effective, dropped
