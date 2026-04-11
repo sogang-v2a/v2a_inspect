@@ -56,7 +56,7 @@ def resolve_issue(state: PlannerState, issue_id: str) -> PlannerState:
 
 def _tool_for_issue(issue: AgentIssue) -> str:
     if issue.issue_type == "foreground_collapse":
-        if issue.attempts <= 0 and int(issue.payload.get("frames_per_scene", 3)) < 6:
+        if issue.attempts <= 0 and int(issue.payload.get("frames_per_scene", 2)) < 4:
             return "densify_window_sampling"
         if not bool(issue.payload.get("scene_prompt_recovery_attempted")):
             return "recover_foreground_sources"

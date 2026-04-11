@@ -20,7 +20,12 @@ class FakeSam3Client:
         frame_batches: list[FrameBatch],
         *,
         prompts_by_scene: dict[int, list[str]] | None = None,
+        score_threshold: float = 0.35,
+        min_points: int = 2,
+        high_confidence_threshold: float = 0.45,
+        match_threshold: float = 0.45,
     ) -> Sam3TrackSet:
+        del score_threshold, min_points, high_confidence_threshold, match_threshold
         tracks: list[Sam3EntityTrack] = []
         for batch in frame_batches:
             if not batch.frames:

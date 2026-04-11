@@ -22,7 +22,7 @@ The current blocker is:
 ## What is failing now
 On nontrivial remote clips such as `v2a_cat.mp4`:
 - the run reaches `structural_overview`
-- then spends the observed window in early SAM3 load / extraction work on the 10GB MiG slice
+- even after the prompt-narrowed baseline patch, the run can still spend the observed window in the first SAM3 load / extraction work on the 10GB MiG slice
 - and does **not** yet complete to a useful bundle with foreground structure
 
 So the practical failure mode is still:
@@ -46,6 +46,6 @@ The immediate blocker is still the **early visual stage cost + recall problem**.
 ## Highest-priority next step
 The next work should focus on one question:
 
-> **Why does the nontrivial MiG run spend so long in early SAM3 load/extraction, and how do we improve foreground recall enough to produce at least one physical source and one sound event on real short clips?**
+> **Why does the nontrivial MiG run still spend so long in the first SAM3 extraction even after prompt narrowing and cheaper sampling, and how do we improve foreground recall enough to produce at least one physical source and one sound event on real short clips?**
 
 Until that is solved, later improvements to grouping, adjudication quality, and writer quality will remain downstream of weak or missing structure.

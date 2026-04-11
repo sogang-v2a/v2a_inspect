@@ -51,6 +51,9 @@ class Sam3Client:
         *,
         prompts_by_scene: Mapping[int, Sequence[str]] | None = None,
         score_threshold: float = 0.35,
+        min_points: int = 2,
+        high_confidence_threshold: float = 0.45,
+        match_threshold: float = 0.45,
     ) -> Sam3TrackSet:
         tracks: list[Sam3EntityTrack] = []
         strategy = (
@@ -61,6 +64,9 @@ class Sam3Client:
                 batch,
                 prompts=prompts_by_scene.get(batch.scene_index) if prompts_by_scene else None,
                 score_threshold=score_threshold,
+                min_points=min_points,
+                high_confidence_threshold=high_confidence_threshold,
+                match_threshold=match_threshold,
             )
             tracks.extend(batch_tracks)
         return Sam3TrackSet(provider="sam3", strategy=strategy, tracks=tracks)
@@ -70,7 +76,7 @@ class Sam3Client:
         frame_batches: list[FrameBatch],
         *,
         text_prompt: str,
-        score_threshold: float = 0.25,
+        score_threshold: float = 0.2,
     ) -> Sam3TrackSet:
         prompt = text_prompt.strip() or "object"
         prompts_by_scene = {
@@ -81,6 +87,9 @@ class Sam3Client:
             frame_batches,
             prompts_by_scene=prompts_by_scene,
             score_threshold=score_threshold,
+            min_points=1,
+            high_confidence_threshold=0.35,
+            match_threshold=0.3,
         )
         track_set.strategy = "text_recovery"
         return track_set
@@ -91,6 +100,9 @@ class Sam3Client:
         *,
         prompts: Sequence[str] | None,
         score_threshold: float,
+        min_points: int,
+        high_confidence_threshold: float,
+        match_threshold: float,
     ) -> list[Sam3EntityTrack]:
         if not batch.frames:
             return []
@@ -145,4 +157,7 @@ class Sam3Client:
             batch,
             detections_by_frame=detections_by_frame,
             features=features,
+            min_points=min_points,
+            high_confidence_threshold=high_confidence_threshold,
+            match_threshold=match_threshold,
         )

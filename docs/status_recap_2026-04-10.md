@@ -137,9 +137,14 @@ The newest recovery-correctness slice (`af731c7`) added:
 - richer adjudicator context
 - no bogus crop repair on empty track sets
 
-The newest remote-runtime unblockers (uncommitted follow-up after `af731c7`) added:
+The newest remote-runtime unblockers (`0fde19f`) added:
 - packaged-server manifest fallback resolution
 - `ffprobe` fallback through the Python-side media stack when the remote host lacks a system binary
+
+The newest recall-bias slice (uncommitted after `0fde19f`) added:
+- prompt-narrowed default extraction instead of a brute-force default SAM3 prompt sweep
+- cheaper first-pass sampling (`2` frames/window) and cheaper densification (`4` frames/window)
+- more permissive singleton-track retention for hard clips
 
 The newest observability slice (`94ad5fa`) added:
 - per-stage timing history in `pipeline_metadata`
@@ -150,6 +155,7 @@ Verified on `sogang_gpu`:
 - a nontrivial interrupted `v2a_cat.mp4` run now creates `v2a_cat-runtime-trace.jsonl`
 - the trace already records `structural_overview` timing before the run finishes, which makes slow remote runs diagnosable instead of opaque
 - after the manifest-path and `ffprobe` fixes, the next fresh cat-loop run no longer failed immediately; it progressed into long SAM3 loading on the MiG slice before manual shutdown
+- after the prompt-narrowed baseline patch, the next fresh cat-loop run sampled only **2 frames** in `structural_overview`, but still failed to complete before manual shutdown; this suggests the current bottleneck is still the first SAM3 extraction/load path rather than later grouping or description stages
 
 That means the next remote benchmark should focus on whether these changes raise **foreground recall**, not just whether the server stays up.
 

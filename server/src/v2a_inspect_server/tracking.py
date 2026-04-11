@@ -39,7 +39,7 @@ def link_frame_detections(
     detections_by_frame: Sequence[Sequence[FrameDetection]],
     features: Sam3VisualFeatures,
     min_points: int = 2,
-    high_confidence_threshold: float = 0.6,
+    high_confidence_threshold: float = 0.45,
     match_threshold: float = 0.45,
 ) -> list[Sam3EntityTrack]:
     active_tracks: list[dict[str, object]] = []

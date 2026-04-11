@@ -73,7 +73,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         *,
         video_path: str,
         target_scene_seconds: float = 5.0,
-        frames_per_scene: int = 3,
+        frames_per_scene: int = 2,
         output_root: str | None = None,
     ) -> dict[str, object]:
         probe = probe_video(video_path)
@@ -131,7 +131,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         frame_batches: list[FrameBatch],
         window_ids: list[str] | None = None,
         output_root: str | None = None,
-        frames_per_scene: int = 6,
+        frames_per_scene: int = 4,
         storyboard_path: str | None = None,
         **_: object,
     ) -> dict[str, object]:
@@ -206,8 +206,24 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         frame_batches: list[FrameBatch],
         prompts_by_scene: dict[int, list[str]] | None = None,
     ) -> object:
+        resolved_prompts = prompts_by_scene
+        if resolved_prompts is None:
+            resolved_prompts = _scene_prompt_candidates(
+                frame_batches,
+                tooling_runtime.label_client,
+                prompt_vocabulary=list(RECOVERY_SCENE_LABELS),
+                per_scene_top_k=2,
+                score_threshold=0.12,
+            )
+            if (
+                getattr(tooling_runtime, "runtime_profile", None) == "mig10_safe"
+                and callable(getattr(tooling_runtime, "release_client", None))
+            ):
+                tooling_runtime.release_client("label")
         return tooling_runtime.sam3_client.extract_entities(
-            frame_batches, prompts_by_scene=prompts_by_scene
+            frame_batches,
+            prompts_by_scene=resolved_prompts,
+            score_threshold=0.25,
         )
 
     def recover_with_text_prompt(
@@ -237,7 +253,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         track_set = tooling_runtime.sam3_client.extract_entities(
             frame_batches,
             prompts_by_scene=prompts_by_scene,
-            score_threshold=0.25,
+            score_threshold=0.22,
         )
         track_set.strategy = "scene_prompt_recovery"
         return {
@@ -429,10 +445,22 @@ def _scene_prompt_candidates(
             image_paths=image_paths,
             labels=prompt_vocabulary,
         )
+        ranked_prompts = [
+            score.label
+            for score in scored[: max(per_scene_top_k, 1)]
+        ]
         prompts = [
             score.label
             for score in scored[: max(per_scene_top_k, 1)]
             if score.score >= score_threshold
         ]
-        prompts_by_scene[batch.scene_index] = prompts or list(prompt_vocabulary[:3])
+        if not prompts:
+            prompts = ranked_prompts
+        if "object" not in prompts:
+            prompts.append("object")
+        deduped: list[str] = []
+        for prompt in prompts:
+            if prompt not in deduped:
+                deduped.append(prompt)
+        prompts_by_scene[batch.scene_index] = deduped
     return prompts_by_scene

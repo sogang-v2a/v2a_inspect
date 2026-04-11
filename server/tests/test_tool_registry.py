@@ -152,6 +152,54 @@ class ToolRegistryTests(unittest.TestCase):
             self.assertEqual(recovered["prompts_by_scene"][0][0], "vehicle")
             self.assertEqual(recovered["track_set"].strategy, "scene_prompt_recovery")
 
+    def test_extract_entities_uses_scene_prompt_candidates_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            frame_path = Path(tmp_dir) / "frame.jpg"
+            from PIL import Image
+
+            Image.new("RGB", (64, 64), color="white").save(frame_path)
+            captured: dict[str, object] = {}
+
+            fake_runtime = SimpleNamespace(
+                runtime_profile="mig10_safe",
+                release_client=lambda name: captured.setdefault("released", []).append(name),
+                sam3_client=SimpleNamespace(
+                    extract_entities=lambda frame_batches, prompts_by_scene=None, score_threshold=0.35, **kwargs: captured.update(
+                        {
+                            "prompts_by_scene": prompts_by_scene,
+                            "score_threshold": score_threshold,
+                            "extra_kwargs": kwargs,
+                        }
+                    )
+                    or SimpleNamespace(strategy="scene_prompt_seeded", tracks=[])
+                ),
+                embedding_client=SimpleNamespace(embed_images=lambda track_image_paths: track_image_paths),
+                label_client=SimpleNamespace(
+                    score_image_labels=lambda image_paths, labels: [
+                        SimpleNamespace(label="cat", score=0.11),
+                        SimpleNamespace(label="animal", score=0.09),
+                    ]
+                ),
+            )
+            registry = build_tool_registry(fake_runtime)
+            frame_batches = [
+                FrameBatch(
+                    scene_index=0,
+                    frames=[
+                        SampledFrame(
+                            scene_index=0,
+                            timestamp_seconds=0.0,
+                            image_path=str(frame_path),
+                        )
+                    ],
+                )
+            ]
+            registry["extract_entities"].handler(frame_batches=frame_batches)
+
+        self.assertEqual(captured["prompts_by_scene"], {0: ["cat", "animal", "object"]})
+        self.assertEqual(captured["score_threshold"], 0.25)
+        self.assertEqual(captured["released"], ["label"])
+
 
 if __name__ == "__main__":
     unittest.main()

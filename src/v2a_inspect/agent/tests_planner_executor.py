@@ -155,7 +155,7 @@ class PlannerExecutorTests(unittest.TestCase):
                     issue_type="foreground_collapse",
                     description="no tracks",
                     priority=0,
-                    payload={"frames_per_scene": 3},
+                    payload={"frames_per_scene": 2},
                 )
             ],
         )

@@ -72,6 +72,33 @@ class TrackingTests(unittest.TestCase):
 
         self.assertEqual(tracks, [])
 
+    def test_link_frame_detections_keeps_single_moderate_confidence_observation(self) -> None:
+        batch = FrameBatch(
+            scene_index=0,
+            frames=[
+                SampledFrame(scene_index=0, timestamp_seconds=0.0, image_path="/tmp/f0.jpg"),
+            ],
+        )
+        detections_by_frame = [
+            [
+                FrameDetection(
+                    frame=batch.frames[0],
+                    bbox_xyxy=[10.0, 10.0, 30.0, 30.0],
+                    confidence=0.5,
+                    label_hint="cat",
+                )
+            ],
+        ]
+
+        tracks = link_frame_detections(
+            batch,
+            detections_by_frame=detections_by_frame,
+            features=Sam3VisualFeatures(),
+        )
+
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0].label_hint, "cat")
+
     def test_link_frame_detections_computes_track_local_features(self) -> None:
         batch = FrameBatch(
             scene_index=0,
