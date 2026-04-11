@@ -17,7 +17,7 @@ from v2a_inspect.contracts import MultitrackDescriptionBundle, PhysicalSourceTra
 from v2a_inspect.workflows import InspectState
 
 from .crops import group_crop_paths_by_track
-from .finalize import build_final_bundle
+from .finalize import build_final_bundle, build_interim_bundle
 from .telemetry import record_recovery_attempt, record_stage, stage_start
 from .tool_registry import build_tool_registry
 
@@ -35,9 +35,8 @@ def run_agentic_tool_loop(
         name: definition.handler
         for name, definition in build_tool_registry(tooling_runtime).items()
     }
-    bundle = inspect_state.get("multitrack_bundle") or build_final_bundle(
-        inspect_state,
-        description_writer=getattr(tooling_runtime, "description_writer", None),
+    bundle = inspect_state.get("multitrack_bundle") or build_interim_bundle(
+        inspect_state
     )
     trace_path = _trace_path(bundle)
     trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,10 +102,7 @@ def run_agentic_tool_loop(
             result=result,
             registry=registry,
         )
-        bundle = build_final_bundle(
-            inspect_state,
-            description_writer=getattr(tooling_runtime, "description_writer", None),
-        )
+        bundle = build_interim_bundle(inspect_state)
         inspect_state["multitrack_bundle"] = bundle
 
         current_issue_ids = {
@@ -688,7 +684,7 @@ def _trace_path(bundle: MultitrackDescriptionBundle) -> Path:
 
 def _adjudicate_issue(
     *,
-    inspect_state: Mapping[str, object],
+    inspect_state: InspectState,
     bundle: MultitrackDescriptionBundle,
     issue: AgentIssue | None,
     planned_tool_name: str,
@@ -706,28 +702,45 @@ def _adjudicate_issue(
     judge = getattr(tooling_runtime, "adjudication_judge", None)
     if judge is None:
         return None
-    decision = judge.judge_issue(
-        {
-            "video_id": bundle.video_id,
-            "issue_id": issue.issue_id,
+    started = stage_start()
+    try:
+        decision = judge.judge_issue(
+            {
+                "video_id": bundle.video_id,
+                "issue_id": issue.issue_id,
+                "issue_type": issue.issue_type,
+                "issue_attempts": issue.attempts,
+                "issue_description": issue.description,
+                "planned_tool_name": planned_tool_name,
+                "current_frames_per_window": inspect_state.get("frames_per_window"),
+                "current_track_count": len(_tracks_from_result(inspect_state.get("sam3_track_set"))),
+                "current_source_count": len(bundle.physical_sources),
+                "current_event_count": len(bundle.sound_events),
+                "scene_prompt_candidates_present": bool(inspect_state.get("scene_prompt_candidates")),
+                "recovery_actions": list(inspect_state.get("recovery_actions", []))[-3:],
+                "recovery_attempts": list(inspect_state.get("recovery_attempts", []))[-3:],
+                "stage_history": list(inspect_state.get("stage_history", []))[-5:],
+                "validation_issues": [item.model_dump(mode="json") for item in bundle.validation.issues],
+                "candidate_cut_count": len(bundle.candidate_cuts),
+                "evidence_window_count": len(bundle.evidence_windows),
+                "generation_group_count": len(bundle.generation_groups),
+                "issue_payload": issue.payload,
+            }
+        )
+    except Exception:  # noqa: BLE001
+        decision = None
+    inspect_state["adjudicator_call_count"] = int(
+        inspect_state.get("adjudicator_call_count", 0)
+    ) + 1
+    record_stage(
+        inspect_state,
+        stage="agent:adjudicate_issue",
+        started_at=started,
+        metrics={
             "issue_type": issue.issue_type,
-            "issue_attempts": issue.attempts,
-            "issue_description": issue.description,
             "planned_tool_name": planned_tool_name,
-            "current_frames_per_window": inspect_state.get("frames_per_window"),
-            "current_track_count": len(_tracks_from_result(inspect_state.get("sam3_track_set"))),
-            "current_source_count": len(bundle.physical_sources),
-            "current_event_count": len(bundle.sound_events),
-            "scene_prompt_candidates_present": bool(inspect_state.get("scene_prompt_candidates")),
-            "recovery_actions": list(inspect_state.get("recovery_actions", []))[-3:],
-            "recovery_attempts": list(inspect_state.get("recovery_attempts", []))[-3:],
-            "stage_history": list(inspect_state.get("stage_history", []))[-5:],
-            "validation_issues": [item.model_dump(mode="json") for item in bundle.validation.issues],
-            "candidate_cut_count": len(bundle.candidate_cuts),
-            "evidence_window_count": len(bundle.evidence_windows),
-            "generation_group_count": len(bundle.generation_groups),
-            "issue_payload": issue.payload,
-        }
+            "decision": None if decision is None else getattr(decision, "resolution", None),
+        },
     )
     if decision is None:
         return None

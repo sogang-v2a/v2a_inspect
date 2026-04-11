@@ -19,9 +19,9 @@ from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
-from .agentic import run_agent_review_pass, run_agentic_tool_loop
+from .agentic import run_agentic_tool_loop
 from .crops import group_crop_paths_by_track
-from .finalize import build_final_bundle
+from .finalize import build_final_bundle, build_interim_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
 from .model_runtime import clear_cuda_cache
 from .telemetry import ensure_runtime_trace_path, record_stage, stage_start
@@ -385,6 +385,7 @@ def _run_tool_first_pipeline(
     video_path: str,
     options: InspectOptions,
     tooling_runtime: ToolingRuntime,
+    bundle_mode: Literal["final", "interim"] = "final",
 ) -> InspectState:
     registry = build_tool_registry(tooling_runtime)
     state: InspectState = {
@@ -579,12 +580,23 @@ def _run_tool_first_pipeline(
             "Tool-first pipeline: built source, event, ambience, and generation-group semantics.",
         ],
     })
-    bundle = build_final_bundle(
-        state,
-        description_writer=getattr(tooling_runtime, "description_writer", None),
+    bundle = (
+        build_final_bundle(
+            state,
+            description_writer=getattr(tooling_runtime, "description_writer", None),
+        )
+        if bundle_mode == "final"
+        else build_interim_bundle(state)
     )
     bundle.pipeline_metadata["resident_models_after_run"] = tooling_runtime.resident_client_names()
+    started = stage_start()
     _persist_runtime_bundle(bundle, state)
+    record_stage(
+        state,
+        stage="persist_bundle",
+        started_at=started,
+        metrics={"bundle_path": state.get("bundle_path"), "pipeline_mode": options.pipeline_mode},
+    )
     grouped = bundle_to_grouped_analysis(bundle)
     state["scene_analysis"] = grouped.scene_analysis
     state["grouped_analysis"] = grouped
@@ -602,6 +614,7 @@ def _run_agentic_tool_first_pipeline(
         video_path=video_path,
         options=options.model_copy(update={"pipeline_mode": "tool_first_foundation"}),
         tooling_runtime=tooling_runtime,
+        bundle_mode="interim",
     )
     state["options"] = options
     state, planner_state, trace_path = run_agentic_tool_loop(
@@ -899,17 +912,6 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                             tooling_runtime, "description_writer", None
                         ),
                     )
-                    if server_options.pipeline_mode != "agentic_tool_first":
-                        planner_state, trace_path = run_agent_review_pass(
-                            inspect_state=state,
-                            tooling_runtime=tooling_runtime,
-                            bundle=bundle,
-                        )
-                        state["agent_trace_path"] = trace_path
-                        bundle.artifacts.trace_path = trace_path
-                        bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
-                        bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
-                        bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
                     state["multitrack_bundle"] = bundle
                     warnings = list(state.get("warnings", []))
                     if runtime_profile_warning is not None:

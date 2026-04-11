@@ -3,6 +3,57 @@
 ## Scope
 This note records the first real resident-server benchmark run on `sogang_gpu` after switching the university runtime policy to resident `full_gpu`.
 
+## Post-plan rerun: honest foundation + interim agentic loop
+After removing the hidden foundation review pass and switching the agentic loop to interim bundles, the hot cat benchmark was rerun on the same resident server.
+
+### `v2a_cat.mp4` — `tool_first_foundation` — honest hot rerun
+- wall time: **59.56s**
+- result:
+  - `3` physical sources
+  - `3` sound events
+  - `2` generation groups
+- notable metadata:
+  - `description_writer_call_count = 2`
+  - `adjudicator_call_count = 0`
+  - `final_bundle_build_count = 1`
+  - `interim_bundle_build_count = 0`
+- newly visible timing:
+  - `final_description_synthesis`: **10.62s**
+- artifact:
+  - `/data/artifacts/v2a_cat-43cdb91f-nbw6ul7u/bundle.json`
+
+### `v2a_cat.mp4` — `agentic_tool_first` — interim-bundle hot rerun
+- wall time: **108.25s**
+- result:
+  - `3` physical sources
+  - `3` sound events
+  - `2` generation groups
+- notable metadata:
+  - `description_writer_call_count = 2`
+  - `final_description_writer_call_count = 2`
+  - `interim_description_writer_call_count = 0`
+  - `adjudicator_call_count = 2`
+  - `interim_bundle_build_count = 4`
+  - `final_bundle_build_count = 1`
+- newly visible timing:
+  - `agent:recover_with_text_prompt`: **20.56s**
+  - `agent:adjudicate_issue`: **6.54s** + **6.00s**
+  - `final_description_synthesis`: **9.88s**
+- artifact:
+  - `/data/artifacts/v2a_cat-063991ad-ub038vvo/bundle.json`
+
+### Interpretation after the rerun
+- The benchmark is now more honest:
+  - foundation mode no longer executes a hidden mutating review pass
+  - agentic mode no longer rewrites descriptions after every repair step
+- The cat control clip still shows **no top-line structural gain** from the agentic layer.
+- The latest blocker is therefore:
+  - **agentic cost/benefit on truly temporal clips**, not resident-server survival
+- During this rerun, Gemini calls on the university server hit `RESOURCE_EXHAUSTED`:
+  - final descriptions fell back to heuristics
+  - adjudication fell back to deterministic planning
+  - the rerun should therefore be read primarily as a **structural latency** comparison
+
 Server/runtime shape used:
 - launch path: `uv run --project server v2a-inspect-server serve`
 - interaction path: HTTP only

@@ -156,7 +156,6 @@ class RuntimeHttpTests(unittest.TestCase):
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
-    @patch("v2a_inspect_server.runtime.run_agent_review_pass")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime._analyze_with_pipeline")
     @patch("v2a_inspect_server.runtime.build_tooling_runtime")
@@ -165,7 +164,6 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_build_tooling_runtime,
         mock_analyze_with_pipeline,
         mock_resolve_request_video_path,
-        mock_run_agent_review_pass,
         mock_inspect_nvidia_runtime,
         mock_server_settings,
     ) -> None:
@@ -192,7 +190,6 @@ class RuntimeHttpTests(unittest.TestCase):
             minimum_vram_gb=10,
             message="ok",
         )
-        mock_run_agent_review_pass.return_value = (SimpleNamespace(issues=[], tool_calls=[]), "/tmp/agent-trace.jsonl")
         mock_analyze_with_pipeline.return_value = {
             "scene_analysis": SimpleNamespace(
                 model_dump=lambda mode="json": {"total_duration": 1.0, "scenes": []}
@@ -268,7 +265,6 @@ class RuntimeHttpTests(unittest.TestCase):
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
-    @patch("v2a_inspect_server.runtime.run_agent_review_pass")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime._analyze_with_pipeline")
     @patch("v2a_inspect_server.runtime.build_tooling_runtime")
@@ -277,7 +273,6 @@ class RuntimeHttpTests(unittest.TestCase):
         mock_build_tooling_runtime,
         mock_analyze_with_pipeline,
         mock_resolve_request_video_path,
-        mock_run_agent_review_pass,
         mock_inspect_nvidia_runtime,
         mock_server_settings,
     ) -> None:
@@ -352,7 +347,6 @@ class RuntimeHttpTests(unittest.TestCase):
 
         payload = json.loads(response.decode("utf-8"))
         self.assertIn("multitrack_bundle", payload)
-        mock_run_agent_review_pass.assert_not_called()
 
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")

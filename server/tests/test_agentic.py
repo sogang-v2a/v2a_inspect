@@ -141,6 +141,114 @@ class AgenticIntegrationTests(unittest.TestCase):
             self.assertLessEqual(len(planner_state.tool_calls), 1)
             self.assertTrue(Path(trace_path).exists())
 
+    def test_agentic_tool_loop_uses_final_writer_once_after_structural_repairs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            frame_path = root / "frame.jpg"
+            Image.new("RGB", (64, 64), color="white").save(frame_path)
+
+            writer_calls: list[dict[str, object]] = []
+
+            class _Writer:
+                def write_group_description(self, context: dict[str, object]) -> object:
+                    writer_calls.append(context)
+                    return SimpleNamespace(
+                        canonical_description="writer-final",
+                        description_confidence=0.9,
+                        description_rationale="writer-finalized",
+                    )
+
+            fake_runtime = build_fake_tooling_runtime()
+            tooling_runtime = SimpleNamespace(
+                sam3_client=fake_runtime.sam3_client,
+                embedding_client=fake_runtime.embedding_client,
+                label_client=fake_runtime.label_client,
+                description_writer=_Writer(),
+                adjudication_judge=None,
+                should_release_clients=False,
+                residency_mode="resident",
+                resident_client_names=lambda: ["sam3", "embedding", "label", "description_writer"],
+            )
+
+            inspect_state = {
+                "video_path": str(root / "video.mp4"),
+                "video_probe": SimpleNamespace(
+                    duration_seconds=1.0,
+                    fps=2.0,
+                    width=64,
+                    height=64,
+                ),
+                "candidate_cuts": [],
+                "evidence_windows": [
+                    EvidenceWindow(
+                        window_id="window-0000",
+                        start_time=0.0,
+                        end_time=1.0,
+                        sampled_frame_ids=[str(frame_path)],
+                        artifact_refs=[str(root / "storyboard.jpg")],
+                    )
+                ],
+                "frame_batches": [
+                    FrameBatch(
+                        scene_index=0,
+                        frames=[
+                            SampledFrame(
+                                scene_index=0,
+                                timestamp_seconds=0.0,
+                                image_path=str(frame_path),
+                            )
+                        ],
+                    )
+                ],
+                "storyboard_path": str(root / "storyboard.jpg"),
+                "sam3_track_set": Sam3TrackSet(
+                    provider="fake-sam3",
+                    strategy="prompt_free",
+                    tracks=[
+                        Sam3EntityTrack(
+                            track_id="trk0",
+                            scene_index=0,
+                            start_seconds=0.0,
+                            end_seconds=0.0,
+                            confidence=0.9,
+                            label_hint="object",
+                            points=[
+                                Sam3TrackPoint(
+                                    timestamp_seconds=0.0,
+                                    frame_path=str(frame_path),
+                                    confidence=0.9,
+                                    bbox_xyxy=[8.0, 8.0, 32.0, 32.0],
+                                )
+                            ],
+                        )
+                    ],
+                ),
+                "generation_groups": [],
+                "sound_event_segments": [],
+                "ambience_beds": [],
+                "physical_sources": [],
+            }
+
+            updated_state, _, _ = run_agentic_tool_loop(
+                inspect_state=inspect_state,
+                tooling_runtime=tooling_runtime,
+                max_actions=1,
+            )
+
+            self.assertGreaterEqual(len(writer_calls), 1)
+            self.assertEqual(
+                updated_state["multitrack_bundle"].pipeline_metadata["interim_description_writer_call_count"],
+                0,
+            )
+            self.assertGreaterEqual(
+                updated_state["multitrack_bundle"].pipeline_metadata["interim_bundle_build_count"],
+                1,
+            )
+            self.assertEqual(
+                updated_state["multitrack_bundle"].pipeline_metadata["description_writer_call_count"],
+                updated_state["multitrack_bundle"].pipeline_metadata["final_description_writer_call_count"],
+            )
+
     def test_build_issues_emits_cut_and_description_repair_signals(self) -> None:
         bundle = MultitrackDescriptionBundle(
             video_id="video",
@@ -281,3 +389,37 @@ class AgenticIntegrationTests(unittest.TestCase):
         self.assertEqual(captured["recovery_actions"], ["densify_window_sampling"])
         self.assertEqual(captured["recovery_attempts"], [{"tool_name": "densify_window_sampling", "frames_per_scene": 6}])
         self.assertEqual(captured["stage_history"], [{"kind": "stage", "stage": "extract_entities", "track_count": 0}])
+
+    def test_adjudicator_failure_falls_back_to_deterministic_plan(self) -> None:
+        bundle = MultitrackDescriptionBundle(
+            video_id="video",
+            video_meta=VideoMeta(duration_seconds=8.0, fps=2.0, width=320, height=240),
+            evidence_windows=[
+                EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)
+            ],
+            validation=ValidationReport(status="pass_with_warnings", issues=[]),
+            artifacts=ArtifactRefs(run_dir="/tmp/run", storyboard_path="/tmp/run/storyboard.jpg"),
+        )
+        issue = AgentIssue(
+            issue_id="foreground-collapse",
+            issue_type="foreground_collapse",
+            description="No foreground tracks were extracted from a non-trivial clip.",
+            payload={},
+        )
+
+        class _BrokenJudge:
+            def judge_issue(self, context: dict[str, object]) -> object:
+                raise RuntimeError(f"quota exhausted for {context['issue_id']}")
+
+        decision = _adjudicate_issue(
+            inspect_state={
+                "video_path": "/tmp/video.mp4",
+                "frame_batches": [],
+                "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
+            },
+            bundle=bundle,
+            issue=issue,
+            planned_tool_name="densify_window_sampling",
+            tooling_runtime=SimpleNamespace(adjudication_judge=_BrokenJudge()),
+        )
+        self.assertIsNone(decision)

@@ -17,13 +17,29 @@ def synthesize_canonical_descriptions(
     ambience_beds: list[AmbienceBed],
     physical_sources: list[PhysicalSourceTrack],
     description_writer: DescriptionWriterLike | None = None,
+    preserve_existing_descriptions: bool = False,
+    stats: dict[str, int] | None = None,
 ) -> list[GenerationGroup]:
     events_by_id = {event.event_id: event for event in sound_events}
     ambience_by_id = {ambience.ambience_id: ambience for ambience in ambience_beds}
     sources_by_id = {source.source_id: source for source in physical_sources}
     updated: list[GenerationGroup] = []
 
+    if stats is not None:
+        stats.setdefault("description_writer_calls", 0)
+        stats.setdefault("preserved_description_count", 0)
+
     for group in generation_groups:
+        if (
+            preserve_existing_descriptions
+            and group.canonical_description
+            and not group.description_stale
+            and group.description_origin in {"writer", "manual"}
+        ):
+            updated.append(group)
+            if stats is not None:
+                stats["preserved_description_count"] += 1
+            continue
         if group.member_event_ids:
             member_events = [events_by_id[event_id] for event_id in group.member_event_ids if event_id in events_by_id]
             source_labels = []
@@ -54,13 +70,18 @@ def synthesize_canonical_descriptions(
                 }
             )
             if description_writer is not None:
-                draft = description_writer.write_group_description(
-                    _event_group_context(
-                        group=updated_group,
-                        member_events=member_events,
-                        physical_sources=physical_sources,
+                if stats is not None:
+                    stats["description_writer_calls"] += 1
+                try:
+                    draft = description_writer.write_group_description(
+                        _event_group_context(
+                            group=updated_group,
+                            member_events=member_events,
+                            physical_sources=physical_sources,
+                        )
                     )
-                )
+                except Exception:  # noqa: BLE001
+                    draft = None
                 if draft is not None:
                     updated_group = updated_group.model_copy(
                         update={
@@ -89,12 +110,17 @@ def synthesize_canonical_descriptions(
             }
         )
         if description_writer is not None:
-            draft = description_writer.write_group_description(
-                _ambience_group_context(
-                    group=updated_group,
-                    member_ambience=member_ambience,
+            if stats is not None:
+                stats["description_writer_calls"] += 1
+            try:
+                draft = description_writer.write_group_description(
+                    _ambience_group_context(
+                        group=updated_group,
+                        member_ambience=member_ambience,
+                    )
                 )
-            )
+            except Exception:  # noqa: BLE001
+                draft = None
             if draft is not None:
                 updated_group = updated_group.model_copy(
                     update={

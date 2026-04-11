@@ -15,6 +15,9 @@ def stage_start() -> float:
 def ensure_runtime_trace_path(state: InspectState) -> str | None:
     existing = state.get("runtime_trace_path")
     if isinstance(existing, str) and existing:
+        path = Path(existing)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch(exist_ok=True)
         return existing
     run_dir = state.get("artifact_run_dir")
     video_path = state.get("video_path")

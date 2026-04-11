@@ -3,6 +3,11 @@
 ## Current state
 The project is now a **bundle-first, tool-first research prototype** running against the university GPU target (`sogang_gpu`) rather than Runpod.
 
+As of the resident-server hot-run rerun:
+- `tool_first_foundation` completes on `v2a_cat.mp4` in about **59.6s**
+- `agentic_tool_first` completes on the same clip in about **108.3s**
+- both runs produce non-empty structure on the university MiG host
+
 The active system can:
 - probe silent video
 - propose candidate cuts / evidence windows
@@ -41,6 +46,8 @@ The active system can:
   - stale descriptions
 - A Gemini-backed adjudication layer exists for ambiguous cases, on top of the bounded tool loop.
 - The loop can now choose whether to accept the current bundle or run a targeted repair action.
+- The agentic loop now uses **interim bundles** during repair and does a single final writer-backed bundle build after structure is accepted.
+- Foundation mode no longer pays for a hidden post-hoc mutating review pass.
 
 ### Remote runtime
 - Remote model loading is confirmed to use CUDA on `sogang_gpu`.
@@ -74,7 +81,8 @@ Most recent full local result:
 ## Verified remote runtime status
 Validated on `sogang_gpu`:
 - `/healthz` works
-- plain `/readyz` works after the server-manifest fallback fix
+- `/readyz` works
+- `POST /warmup` works and keeps `sam3`, `embedding`, and `label` resident
 - `/analyze` works for both:
   - `tool_first_foundation`
   - `agentic_tool_first`
@@ -87,25 +95,34 @@ Recent remote smoke outputs persisted bundle artifacts successfully, e.g.:
 - moving-box clip, agentic:
   - `/data/artifacts/v2a_smoke_box-e75100aa-tm140mk1/bundle.json`
 
+Recent resident hot-run outputs also persisted on the cat control clip, e.g.:
+- cat clip, foundation:
+  - `/data/artifacts/v2a_cat-43cdb91f-nbw6ul7u/bundle.json`
+- cat clip, agentic:
+  - `/data/artifacts/v2a_cat-063991ad-ub038vvo/bundle.json`
+
 ## Main blocker now
-The main blocker is **foreground/source recall and meaningful recovery**, not runtime plumbing.
+The main blocker is no longer “can the MiG runtime survive?” or “can any nontrivial run complete?”.
+The main blocker is now **agentic cost/benefit plus better temporal evaluation**, not runtime plumbing.
 
-Even with:
-- real GPU availability
-- confirmed VRAM use
-- successful remote `/analyze`
+The latest honest hot-run comparison shows:
+- foundation is materially faster than agentic on the current cat control clip
+- both modes currently produce the same top-line structure on that clip
+- the newly instrumented stage history explains more of the wall time, especially:
+  - final description synthesis
+  - adjudication
+  - bundle persistence
+- the remaining evaluation gap is that the benchmark set still leans too heavily on controls / static-image loops
 
-recent smoke runs still produced:
-- `0 source tracks`
-- `0 sound events`
-- only `1 generation group`
+At the same time:
+- `v2a_smoke_box.mp4` remains a useful failure/control case
+- Gemini quota exhaustion currently forces heuristic final descriptions and null adjudication decisions on the university server, so the latest benchmark is best read as a **structural** comparison rather than a full writer/judge quality comparison
 
-That means the remaining problem is not “is the server running?” or “is CUDA real?”
+That means the remaining problem is not “is the server running?” or “is CUDA real?”.
 More specifically, it is:
-- extraction recall on nontrivial clips
-- materially different recovery actions when the first pass finds no sources
-- richer real-clip evaluation after those recovery actions land
-- understanding why the first real cat-loop run still spends its early budget in SAM3 load/extraction before any later stage records
+- making the agentic layer selective enough to justify itself
+- evaluating on genuinely temporal short clips from the frozen gold-set categories
+- restoring writer/judge-backed quality comparisons once Gemini budget is available again
 
 ## Roadmap honesty update
 The Stage 7 checklist was partially reopened because the repo has:
@@ -118,11 +135,11 @@ but does **not yet** have all claimed completed artifacts for:
 - report-ready tables/figures
 
 ## Best next steps
-1. Improve extraction quality so nontrivial clips actually produce source tracks.
-2. Evaluate real short clips on `sogang_gpu`, not just smoke clips.
-3. Compare `tool_first_foundation` vs `agentic_tool_first` on saved artifacts.
-4. Strengthen final grouping and description quality based on those results.
-5. Track real experiment outcomes in `docs/experiment_ledger_2026-04-10.md`.
+1. Compare `tool_first_foundation` vs `agentic_tool_first` on a small fixed temporal clip pack, not only smoke/static controls.
+2. Keep the agentic loop focused on high-value structural issues; do not spend time where it cannot plausibly change the bundle.
+3. Re-run the same comparison once Gemini writer/judge budget is available so final description/adjudication quality can be measured honestly.
+4. Track all successful hot runs in `docs/experiment_ledger_2026-04-10.md`.
+5. Only then decide whether the next bottleneck is extraction, grouping, routing, or description quality.
 
 ## Latest implementation note
 The newest recovery slice (`aa65248`) added:

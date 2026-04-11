@@ -9,6 +9,8 @@
 | `v2a_cat.mp4` | real-image loop (COCO cats image) | `tool_first_foundation` | interrupted | 20 | — | — | — | After `94ad5fa`, a short remote probe confirmed `v2a_cat-runtime-trace.jsonl` is created early and already records `structural_overview` timing (`~0.66s`) before the run was intentionally stopped. |
 | `v2a_cat.mp4` | real-image loop (COCO cats image) | `tool_first_foundation` | interrupted | >60 | — | — | — | After `af731c7`, plus local manifest-path and `ffprobe` fallback fixes, a fresh remote run no longer failed immediately on startup. It created `/data/artifacts/v2a_cat-54a749f2-4jlud_ap/`, recorded `structural_overview` in `v2a_cat-runtime-trace.jsonl`, then spent the observed window loading SAM3 on the 10GB MiG slice before shutdown. |
 | `v2a_cat.mp4` | real-image loop (COCO cats image) | `tool_first_foundation` | interrupted | >145 | — | — | — | After the round-7 prompt-narrowed baseline patch, a fresh run created `/data/artifacts/v2a_cat-1a5038e8-pfe53o1l/` and recorded `structural_overview` with only **2 sampled frames**. The run still failed to complete before shutdown, so the remaining blocker appears to be first-pass SAM3 extraction cost/latency even after prompt narrowing and cheaper sampling. |
+| `v2a_cat.mp4` | real-image loop (COCO cats image) | `tool_first_foundation` | completed | 59.56 | 3 | 3 | 2 | Resident `full_gpu` hot run after removing the hidden foundation review pass. Bundle persisted at `/data/artifacts/v2a_cat-43cdb91f-nbw6ul7u/bundle.json`. Final descriptions fell back to heuristics because Gemini writer calls hit `RESOURCE_EXHAUSTED`. |
+| `v2a_cat.mp4` | real-image loop (COCO cats image) | `agentic_tool_first` | completed | 108.25 | 3 | 3 | 2 | Resident `full_gpu` hot run after switching the repair loop to interim bundles. Agentic mode remained slower without a top-line structural gain on this clip. Adjudicator calls also hit Gemini quota exhaustion and fell back to deterministic planning. Bundle persisted at `/data/artifacts/v2a_cat-063991ad-ub038vvo/bundle.json`. |
 
 ## Notes
 - `v2a_cat.mp4` was created remotely from `https://images.cocodataset.org/val2017/000000039769.jpg`.
@@ -17,4 +19,5 @@
   - server-manifest fallback for packaged server installs
   - `ffprobe` fallback for remote environments without a system ffprobe binary
 - The newest cat-loop row captures the first run after making scene-prompt narrowing the default baseline and reducing initial sampling from 3 frames to 2.
-- Future rows should include bundle/trace artifact paths once the runs complete successfully.
+- The two newest cat-loop rows supersede the earlier interrupted cat runs as the current baseline comparison for the resident MiG server.
+- Future rows should prioritize truly temporal clips from the frozen gold-set categories over additional smoke/static controls.

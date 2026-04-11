@@ -14,7 +14,6 @@ from v2a_inspect_server.runtime import _build_handler
 
 class RuntimeHttpFakeSmokeTests(unittest.TestCase):
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
-    @patch("v2a_inspect_server.runtime.run_agent_review_pass")
     @patch("v2a_inspect_server.runtime._resolve_request_video_path")
     @patch("v2a_inspect_server.runtime._analyze_with_pipeline")
     @patch("v2a_inspect_server.runtime.build_tooling_runtime")
@@ -23,7 +22,6 @@ class RuntimeHttpFakeSmokeTests(unittest.TestCase):
         mock_build_tooling_runtime,
         mock_analyze_with_pipeline,
         mock_resolve_request_video_path,
-        mock_run_agent_review_pass,
         mock_inspect_nvidia_runtime,
     ) -> None:
         mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
@@ -34,10 +32,6 @@ class RuntimeHttpFakeSmokeTests(unittest.TestCase):
         )
         mock_build_tooling_runtime.return_value = build_fake_tooling_runtime(
             runtime_profile="full_gpu"
-        )
-        mock_run_agent_review_pass.return_value = (
-            SimpleNamespace(issues=[], tool_calls=[]),
-            "/tmp/agent-trace.jsonl",
         )
         mock_analyze_with_pipeline.return_value = {
             "scene_analysis": SimpleNamespace(

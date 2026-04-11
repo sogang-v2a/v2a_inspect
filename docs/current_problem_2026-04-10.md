@@ -1,51 +1,56 @@
 # V2A Inspect — Current Problem (2026-04-10)
 
 ## Short version
-The project is no longer blocked by packaging or basic remote runtime setup.
+The project is no longer blocked by packaging, MiG model coexistence, or inability to complete a nontrivial run.
 The current blocker is:
 
-> **the nontrivial visual pipeline is still too slow and too weak at foreground/source recall on `sogang_gpu`, and it often fails before reaching the later bundle-quality stages.**
+> **the benchmark is now structurally working on `sogang_gpu`, but the agentic layer is still expensive relative to its measured value, and the evaluation set is still too weakly temporal to justify the extra cost.**
 
 ## What is already working
-- The server runs on the university GPU target (`sogang_gpu`).
-- `/healthz` works.
-- Plain `/readyz` works.
-- The packaged-server manifest fallback is fixed.
-- Missing-system-`ffprobe` no longer causes immediate `/analyze` failure.
-- Nontrivial runs now create remote artifact directories and runtime traces.
-- The agentic recovery ladder is now more correct:
-  - `densify_window_sampling`
-  - `recover_foreground_sources`
-  - `recover_with_text_prompt`
-- Ambience-only acceptance now requires explicit terminal resolution.
+- The server runs as a resident `full_gpu` runtime on `sogang_gpu`.
+- `/healthz`, `/readyz`, `/runtime-info`, and `POST /warmup` all work through the normal HTTP path.
+- Hot `tool_first_foundation` completes on `v2a_cat.mp4`.
+- Hot `agentic_tool_first` also completes on `v2a_cat.mp4`.
+- Foundation no longer runs a hidden post-hoc mutating review pass.
+- Agentic mode now uses interim bundles during the repair loop and does a single final writer-backed bundle build at the end.
+- Stage history now records description synthesis, adjudication, and bundle persistence timing.
+- Writer/adjudicator failures now fall back instead of crashing the whole run.
 
 ## What is failing now
-On nontrivial remote clips such as `v2a_cat.mp4`:
-- the run reaches `structural_overview`
-- even after the prompt-narrowed baseline patch, the run can still spend the observed window in the first SAM3 load / extraction work on the 10GB MiG slice
-- and does **not** yet complete to a useful bundle with foreground structure
+On the current hot-run benchmark:
+- `tool_first_foundation` completed `v2a_cat.mp4` in about **59.6s**
+- `agentic_tool_first` completed the same clip in about **108.3s**
+- both runs produced the same top-line structure:
+  - `3` physical sources
+  - `3` sound events
+  - `2` generation groups
 
-So the practical failure mode is still:
-- no completed nontrivial bundle
-- no proven improvement in physical-source recall
-- no evidence yet that the later recovery ladder steps materially improve results on real clips
+So the practical failure mode has shifted:
+- the agentic path is still materially slower without a demonstrated quality win on the current clip
+- the benchmark set is still dominated by controls / static-image loops rather than truly temporal clips
+- Gemini quota exhaustion currently forces heuristic final descriptions and null adjudication decisions, so the latest benchmark mostly measures **structural** cost/benefit rather than full writer/judge quality
 
 ## Important clarification about Gemini
-The codebase does contain Gemini-backed components:
+The codebase still contains Gemini-backed components:
 - `GeminiDescriptionWriter`
 - `GeminiIssueJudge`
 
-But in the latest remote validation there is **no evidence that Gemini was called**.
-The run appears to stall before reaching:
-- description writing
-- adjudication
+But the latest resident hot-run rerun hit **Gemini quota exhaustion** (`RESOURCE_EXHAUSTED: 429`) on the university server.
+The pipeline now falls back cleanly:
+- final descriptions remain heuristic if the writer fails
+- adjudication returns `None` and the deterministic plan continues if the judge fails
 
-So the immediate blocker is **not** the Gemini API key.
-The immediate blocker is still the **early visual stage cost + recall problem**.
+So the immediate blocker is **not** pipeline survivability anymore.
+The immediate blocker is:
+- benchmarking honest structural agentic ROI
+- then re-running the comparison on truly temporal clips once writer/judge budget is available again
 
 ## Highest-priority next step
 The next work should focus on one question:
 
-> **Why does the nontrivial MiG run still spend so long in the first SAM3 extraction even after prompt narrowing and cheaper sampling, and how do we improve foreground recall enough to produce at least one physical source and one sound event on real short clips?**
+> **On a small fixed temporal clip pack, when does `agentic_tool_first` actually improve structure or grouping enough to justify its extra time over `tool_first_foundation`?**
 
-Until that is solved, later improvements to grouping, adjudication quality, and writer quality will remain downstream of weak or missing structure.
+Until that is answered, the next optimizations should focus on:
+- selective agent activation for high-value issues only
+- temporal benchmark coverage beyond smoke/static controls
+- restoring writer/judge-backed quality evaluation once Gemini budget is available

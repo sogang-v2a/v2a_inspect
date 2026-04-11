@@ -13,7 +13,11 @@ from v2a_inspect.contracts import (
 )
 from v2a_inspect.tools.types import VideoProbe
 from v2a_inspect.workflows import InspectOptions
-from v2a_inspect_server.finalize import build_final_bundle, finalize_route_decision
+from v2a_inspect_server.finalize import (
+    build_final_bundle,
+    build_interim_bundle,
+    finalize_route_decision,
+)
 
 
 class FinalizeTests(unittest.TestCase):
@@ -88,6 +92,68 @@ class FinalizeTests(unittest.TestCase):
         bundle = build_final_bundle(state, description_writer=_FakeWriter())
         self.assertEqual(bundle.generation_groups[0].canonical_description, "rich inferred footsteps")
         self.assertEqual(bundle.generation_groups[0].description_rationale, "writer saw person:continuous_motion:ground_contact")
+        self.assertEqual(bundle.pipeline_metadata["description_writer_call_count"], 1)
+        self.assertEqual(bundle.pipeline_metadata["final_description_writer_call_count"], 1)
+
+    def test_build_interim_bundle_preserves_existing_writer_descriptions(self) -> None:
+        state = {
+            "video_path": "/tmp/video.mp4",
+            "video_probe": VideoProbe(video_path="/tmp/video.mp4", duration_seconds=3.0, fps=2.0, width=320, height=240),
+            "candidate_cuts": [],
+            "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=3.0)],
+            "physical_sources": [],
+            "sound_event_segments": [],
+            "ambience_beds": [],
+            "generation_groups": [
+                GenerationGroup(
+                    group_id="gen-0000",
+                    member_event_ids=[],
+                    member_ambience_ids=[],
+                    canonical_label="writer:kept",
+                    canonical_description="writer-kept description",
+                    description_origin="writer",
+                    description_stale=False,
+                    group_confidence=0.8,
+                    route_decision=RoutingDecision(model_type="VTA", confidence=0.6, factors=[], reasoning="", rule_based=True),
+                )
+            ],
+            "storyboard_path": "/tmp/storyboard/storyboard.jpg",
+            "track_crops": [],
+        }
+        bundle = build_interim_bundle(state)
+        self.assertEqual(
+            bundle.generation_groups[0].canonical_description,
+            "writer-kept description",
+        )
+        self.assertEqual(bundle.pipeline_metadata["description_writer_call_count"], 0)
+        self.assertEqual(bundle.pipeline_metadata["interim_bundle_build_count"], 1)
+
+    def test_build_final_bundle_falls_back_to_heuristics_when_writer_raises(self) -> None:
+        class _BrokenWriter:
+            def write_group_description(self, context: dict[str, object]) -> object:
+                raise RuntimeError(f"quota exhausted for {context['group_id']}")
+
+        state = {
+            "video_path": "/tmp/video.mp4",
+            "video_probe": VideoProbe(video_path="/tmp/video.mp4", duration_seconds=3.0, fps=2.0, width=320, height=240),
+            "candidate_cuts": [],
+            "evidence_windows": [EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=3.0)],
+            "physical_sources": [
+                PhysicalSourceTrack(source_id="source-0000", kind="foreground", label_candidates=[LabelCandidate(label="person", score=0.9)], spans=[(0.0, 1.0)], track_refs=["trk0"], identity_confidence=0.8, reid_neighbors=[])
+            ],
+            "sound_event_segments": [
+                SoundEventSegment(event_id="event-0000", source_id="source-0000", start_time=0.0, end_time=1.0, event_type="continuous_motion", confidence=0.8)
+            ],
+            "ambience_beds": [],
+            "generation_groups": [
+                GenerationGroup(group_id="gen-0000", member_event_ids=["event-0000"], canonical_label="person:continuous_motion:ground_contact", canonical_description="placeholder", group_confidence=0.8, route_decision=RoutingDecision(model_type="VTA", confidence=0.6, factors=[], reasoning="", rule_based=True))
+            ],
+            "storyboard_path": "/tmp/storyboard/storyboard.jpg",
+            "track_crops": [],
+        }
+        bundle = build_final_bundle(state, description_writer=_BrokenWriter())
+        self.assertEqual(bundle.generation_groups[0].description_origin, "heuristic")
+        self.assertTrue(bundle.generation_groups[0].canonical_description.startswith("person"))
 
     def test_build_final_bundle_records_active_pipeline_mode_and_recovery_actions(self) -> None:
         state = {
@@ -120,8 +186,16 @@ class FinalizeTests(unittest.TestCase):
             [{"tool_name": "densify_window_sampling", "frames_per_scene": 6}],
         )
         self.assertEqual(
-            bundle.pipeline_metadata["stage_history"],
-            [{"kind": "stage", "stage": "extract_entities", "elapsed_seconds": 1.23}],
+            bundle.pipeline_metadata["stage_history"][0],
+            {"kind": "stage", "stage": "extract_entities", "elapsed_seconds": 1.23},
+        )
+        self.assertIn(
+            "final_description_synthesis",
+            {
+                entry["stage"]
+                for entry in bundle.pipeline_metadata["stage_history"]
+                if isinstance(entry, dict) and "stage" in entry
+            },
         )
         self.assertEqual(
             bundle.pipeline_metadata["runtime_trace_path"],

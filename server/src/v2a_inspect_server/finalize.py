@@ -15,6 +15,7 @@ from v2a_inspect.contracts import (
 from v2a_inspect.workflows import InspectState
 
 from .descriptions import synthesize_canonical_descriptions
+from .telemetry import record_stage, stage_start
 from .validators import validate_bundle
 
 
@@ -23,19 +24,72 @@ def build_final_bundle(
     *,
     description_writer: object | None = None,
 ) -> MultitrackDescriptionBundle:
+    return _build_bundle(
+        state,
+        description_writer=description_writer,
+        description_mode="final",
+    )
+
+
+def build_interim_bundle(
+    state: InspectState,
+) -> MultitrackDescriptionBundle:
+    return _build_bundle(
+        state,
+        description_writer=None,
+        description_mode="interim",
+    )
+
+
+def _build_bundle(
+    state: InspectState,
+    *,
+    description_writer: object | None,
+    description_mode: str,
+) -> MultitrackDescriptionBundle:
     probe = state["video_probe"]
+    description_started = stage_start()
+    description_stats: dict[str, int] = {}
     generation_groups = synthesize_canonical_descriptions(
         list(state.get("generation_groups", [])),
         sound_events=list(state.get("sound_event_segments", [])),
         ambience_beds=list(state.get("ambience_beds", [])),
         physical_sources=list(state.get("physical_sources", [])),
         description_writer=description_writer,
+        preserve_existing_descriptions=description_mode == "interim",
+        stats=description_stats,
+    )
+    state[f"{description_mode}_bundle_build_count"] = (
+        int(state.get(f"{description_mode}_bundle_build_count", 0)) + 1
+    )
+    state[f"{description_mode}_description_writer_call_count"] = (
+        int(state.get(f"{description_mode}_description_writer_call_count", 0))
+        + int(description_stats.get("description_writer_calls", 0))
+    )
+    state["description_writer_call_count"] = (
+        int(state.get("description_writer_call_count", 0))
+        + int(description_stats.get("description_writer_calls", 0))
+    )
+    record_stage(
+        state,
+        stage=f"{description_mode}_description_synthesis",
+        started_at=description_started,
+        metrics={
+            "generation_group_count": len(generation_groups),
+            "description_writer_calls": int(
+                description_stats.get("description_writer_calls", 0)
+            ),
+            "preserved_description_count": int(
+                description_stats.get("preserved_description_count", 0)
+            ),
+        },
     )
     finalized_groups = [
         group.model_copy(update={"route_decision": finalize_route_decision(group)})
         for group in generation_groups
     ]
 
+    bundle_started = stage_start()
     bundle = MultitrackDescriptionBundle(
         video_id=_video_id_from_path(state.get("video_path", "video")),
         video_meta=VideoMeta(
@@ -83,6 +137,20 @@ def build_final_bundle(
             "resident_models_before_run": list(
                 state.get("resident_models_before_run", [])
             ),
+            "description_writer_call_count": int(
+                state.get("description_writer_call_count", 0)
+            ),
+            "final_description_writer_call_count": int(
+                state.get("final_description_writer_call_count", 0)
+            ),
+            "interim_description_writer_call_count": int(
+                state.get("interim_description_writer_call_count", 0)
+            ),
+            "adjudicator_call_count": int(state.get("adjudicator_call_count", 0)),
+            "final_bundle_build_count": int(state.get("final_bundle_build_count", 0)),
+            "interim_bundle_build_count": int(
+                state.get("interim_bundle_build_count", 0)
+            ),
         },
     )
     issues = validate_bundle(bundle)
@@ -90,6 +158,18 @@ def build_final_bundle(
     bundle.validation = ValidationReport(
         status="fail" if any(issue.severity == "error" for issue in issues) else ("pass_with_warnings" if issues else "pass"),
         issues=issues,
+    )
+    record_stage(
+        state,
+        stage=f"build_{description_mode}_bundle",
+        started_at=bundle_started,
+        metrics={
+            "validation_status": bundle.validation.status,
+            "validation_issue_count": len(bundle.validation.issues),
+            "physical_source_count": len(bundle.physical_sources),
+            "sound_event_count": len(bundle.sound_events),
+            "generation_group_count": len(bundle.generation_groups),
+        },
     )
     return bundle
 
