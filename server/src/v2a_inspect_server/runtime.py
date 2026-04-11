@@ -8,6 +8,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
+from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlparse
@@ -53,6 +54,14 @@ class ToolingRuntime:
         self._label_client: "LabelClient | None" = None
         self._description_writer: "GeminiDescriptionWriter | None" = None
         self._adjudication_judge: "GeminiIssueJudge | None" = None
+
+    @property
+    def should_release_clients(self) -> bool:
+        return self.runtime_profile == "mig10_safe"
+
+    @property
+    def residency_mode(self) -> Literal["resident", "release_after_stage"]:
+        return "release_after_stage" if self.should_release_clients else "resident"
 
     @property
     def sam3_client(self) -> "Sam3Client":
@@ -130,6 +139,39 @@ class ToolingRuntime:
         self._label_client = None
         clear_cuda_cache()
 
+    def resident_client_names(self) -> list[str]:
+        clients: list[str] = []
+        if self._sam3_client is not None:
+            clients.append("sam3")
+        if self._embedding_client is not None:
+            clients.append("embedding")
+        if self._label_client is not None:
+            clients.append("label")
+        if self._description_writer is not None:
+            clients.append("description_writer")
+        if self._adjudication_judge is not None:
+            clients.append("adjudication_judge")
+        return clients
+
+    def warmup_visual_clients(self) -> dict[str, object]:
+        timings: dict[str, float] = {}
+        status: dict[str, str] = {}
+        for client_name in ("sam3", "embedding", "label"):
+            started = perf_counter()
+            try:
+                getattr(self, f"{client_name}_client")
+                timings[client_name] = round(perf_counter() - started, 4)
+                status[client_name] = "ready"
+            except Exception as exc:  # noqa: BLE001
+                timings[client_name] = round(perf_counter() - started, 4)
+                status[client_name] = f"error: {exc}"
+                raise
+        return {
+            "model_load_status": status,
+            "model_load_seconds": timings,
+            "resident_models": self.resident_client_names(),
+        }
+
 
 @lru_cache(maxsize=1)
 def build_tooling_runtime() -> ToolingRuntime:
@@ -190,16 +232,11 @@ def _readyz_payload(
         missing = tooling_runtime.artifacts_missing()
         tooling_error = None
         model_load_status: dict[str, str] = {}
-        if include_model_load_check and not missing:
-            for client_name in ("sam3", "embedding", "label"):
-                try:
-                    getattr(tooling_runtime, f"{client_name}_client")
-                    model_load_status[client_name] = "ready"
-                except Exception as exc:  # noqa: BLE001
-                    model_load_status[client_name] = f"error: {exc}"
-                    tooling_error = str(exc)
-                finally:
-                    tooling_runtime.release_client(client_name)
+        warnings: list[str] = []
+        if include_model_load_check:
+            warnings.append(
+                "The load_models query flag is deprecated; use POST /warmup for persistent model warmup."
+            )
         payload.update(
             {
                 "ok": not missing and tooling_error is None,
@@ -208,6 +245,9 @@ def _readyz_payload(
                 "tooling_runtime_ready": not missing and tooling_error is None,
                 "tooling_error": tooling_error,
                 "model_load_status": model_load_status,
+                "resident_models": tooling_runtime.resident_client_names(),
+                "residency_mode": tooling_runtime.residency_mode,
+                "warnings": warnings,
             }
         )
     except Exception as exc:  # noqa: BLE001
@@ -221,6 +261,89 @@ def _readyz_payload(
         )
     status = HTTPStatus.OK if payload["ok"] else HTTPStatus.SERVICE_UNAVAILABLE
     return payload, status
+
+
+def _warmup_payload(
+    *,
+    source: Literal["warmup_endpoint", "readyz_alias"] = "warmup_endpoint",
+) -> tuple[dict[str, object], HTTPStatus]:
+    payload, status = _readyz_payload(include_model_load_check=False)
+    if status != HTTPStatus.OK:
+        payload["warmup_ok"] = False
+        payload["warmup_source"] = source
+        return payload, status
+
+    tooling_runtime = build_tooling_runtime()
+    try:
+        warmup = tooling_runtime.warmup_visual_clients()
+    except Exception as exc:  # noqa: BLE001
+        payload.update(
+            {
+                "ok": False,
+                "warmup_ok": False,
+                "warmup_source": source,
+                "tooling_error": str(exc),
+                "resident_models": tooling_runtime.resident_client_names(),
+                "residency_mode": tooling_runtime.residency_mode,
+            }
+        )
+        return payload, HTTPStatus.INTERNAL_SERVER_ERROR
+
+    warnings = list(payload.get("warnings", []))
+    if source == "readyz_alias":
+        warnings.append(
+            "POST /warmup is the preferred warmup path; /readyz?load_models=true is a deprecated alias."
+        )
+    payload.update(
+        {
+            "warmup_ok": True,
+            "warmup_source": source,
+            "model_load_status": warmup["model_load_status"],
+            "model_load_seconds": warmup["model_load_seconds"],
+            "resident_models": warmup["resident_models"],
+            "residency_mode": tooling_runtime.residency_mode,
+            "warnings": warnings,
+        }
+    )
+    return payload, HTTPStatus.OK
+
+
+def _runtime_info_payload() -> tuple[dict[str, object], HTTPStatus]:
+    server_settings = get_server_runtime_settings()
+    payload: dict[str, object] = {
+        "runtime_mode": server_settings.runtime_mode,
+        "runtime_profile": server_settings.runtime_profile,
+        "effective_runtime_profile": server_settings.runtime_profile,
+        "runtime_profile_source": "server_settings",
+        "remote_gpu_target": server_settings.remote_gpu_target,
+        "model_cache_dir": str(server_settings.model_cache_dir),
+        "weights_manifest_path": str(server_settings.weights_manifest_path),
+        "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
+        "server_bind_host": server_settings.server_bind_host,
+        "server_bind_port": server_settings.server_bind_port,
+    }
+    try:
+        tooling_runtime = build_tooling_runtime()
+    except Exception as exc:  # noqa: BLE001
+        payload.update(
+            {
+                "tooling_runtime_ready": False,
+                "tooling_error": str(exc),
+                "residency_mode": "unknown",
+                "resident_models": [],
+            }
+        )
+        return payload, HTTPStatus.SERVICE_UNAVAILABLE
+
+    payload.update(
+        {
+            "tooling_runtime_ready": True,
+            "tooling_error": None,
+            "residency_mode": tooling_runtime.residency_mode,
+            "resident_models": tooling_runtime.resident_client_names(),
+        }
+    )
+    return payload, HTTPStatus.OK
 
 
 def _analyze_with_pipeline(
@@ -246,7 +369,7 @@ def _analyze_with_pipeline(
         options=options,
         tooling_runtime=tooling_runtime,
     )
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_all()
     from v2a_inspect.runner import run_inspect
 
@@ -270,6 +393,13 @@ def _run_tool_first_pipeline(
         "recovery_actions": [],
         "recovery_attempts": [],
         "stage_history": [],
+        "effective_runtime_profile": tooling_runtime.runtime_profile,
+        "runtime_profile_source": "server_settings",
+        "runtime_residency_mode": tooling_runtime.residency_mode,
+        "resident_models_before_run": tooling_runtime.resident_client_names(),
+        "warm_start": set(("sam3", "embedding", "label")).issubset(
+            set(tooling_runtime.resident_client_names())
+        ),
     }
     started = stage_start()
     structural = registry["structural_overview"].handler(
@@ -284,7 +414,7 @@ def _run_tool_first_pipeline(
     artifact_run_dir = str(structural["artifact_root"])
     state["artifact_run_dir"] = artifact_run_dir
     state["storyboard_path"] = storyboard_path
-    state["frames_per_window"] = int(structural.get("frames_per_scene", 3))
+    state["frames_per_window"] = int(structural.get("frames_per_scene", 2))
     ensure_runtime_trace_path(state)
     record_stage(
         state,
@@ -310,7 +440,7 @@ def _run_tool_first_pipeline(
             "extraction_strategy": getattr(extraction, "strategy", None),
         },
     )
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("sam3")
     started = stage_start()
     track_crops = registry["crop_tracks"].handler(
@@ -353,7 +483,7 @@ def _run_tool_first_pipeline(
             "candidate_group_count": len(candidate_groups),
         },
     )
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("embedding")
     started = stage_start()
     track_label_candidates = (
@@ -373,7 +503,7 @@ def _run_tool_first_pipeline(
             "routing_track_count": len(routing_decisions),
         },
     )
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("label")
     started = stage_start()
     refined_structure = registry["refine_candidate_cuts"].handler(
@@ -453,6 +583,7 @@ def _run_tool_first_pipeline(
         state,
         description_writer=getattr(tooling_runtime, "description_writer", None),
     )
+    bundle.pipeline_metadata["resident_models_after_run"] = tooling_runtime.resident_client_names()
     _persist_runtime_bundle(bundle, state)
     grouped = bundle_to_grouped_analysis(bundle)
     state["scene_analysis"] = grouped.scene_analysis
@@ -522,6 +653,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser(
         "check", help="Validate NVIDIA GPU visibility and minimum VRAM"
     )
+    subparsers.add_parser("warmup", help="Load visual models and keep them resident")
     subparsers.add_parser("serve", help="Run the server runtime HTTP API")
 
     args = parser.parse_args(argv)
@@ -531,23 +663,21 @@ def main(argv: list[str] | None = None) -> int:
         return _run_bootstrap()
     if args.command == "serve":
         return _run_serve()
+    if args.command == "warmup":
+        return _run_warmup()
     return _run_check()
 
 
 def _run_runtime_info() -> int:
-    server_settings = get_server_runtime_settings()
-    payload = {
-        "runtime_mode": server_settings.runtime_mode,
-        "runtime_profile": server_settings.runtime_profile,
-        "remote_gpu_target": server_settings.remote_gpu_target,
-        "model_cache_dir": str(server_settings.model_cache_dir),
-        "weights_manifest_path": str(server_settings.weights_manifest_path),
-        "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
-        "server_bind_host": server_settings.server_bind_host,
-        "server_bind_port": server_settings.server_bind_port,
-    }
+    payload, _ = _runtime_info_payload()
     print(json.dumps(payload, indent=2))
     return 0
+
+
+def _run_warmup() -> int:
+    payload, status = _warmup_payload()
+    print(json.dumps(payload, indent=2))
+    return 0 if status == HTTPStatus.OK else 1
 
 
 def _run_bootstrap() -> int:
@@ -616,24 +746,23 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     "true",
                     "yes",
                 }
-                payload, status = _readyz_payload(
-                    include_model_load_check=include_model_load_check
-                )
+                if include_model_load_check:
+                    payload, status = _warmup_payload(source="readyz_alias")
+                else:
+                    payload, status = _readyz_payload(
+                        include_model_load_check=False
+                    )
                 self._write_json(payload, status_code=status)
                 return
             if parsed.path == "/runtime-info":
-                server_settings = get_server_runtime_settings()
-                payload = {
-                    "runtime_mode": server_settings.runtime_mode,
-                    "runtime_profile": server_settings.runtime_profile,
-                    "remote_gpu_target": server_settings.remote_gpu_target,
-                    "model_cache_dir": str(server_settings.model_cache_dir),
-                    "weights_manifest_path": str(server_settings.weights_manifest_path),
-                    "minimum_gpu_vram_gb": server_settings.minimum_gpu_vram_gb,
-                    "server_bind_host": server_settings.server_bind_host,
-                    "server_bind_port": server_settings.server_bind_port,
-                }
-                self._write_json(payload)
+                payload, status = _runtime_info_payload()
+                self._write_json(payload, status_code=status)
+                return
+            if parsed.path == "/warmup":
+                self.send_error(
+                    HTTPStatus.METHOD_NOT_ALLOWED,
+                    "Use POST /warmup for persistent model warmup.",
+                )
                 return
 
             self.send_error(HTTPStatus.NOT_FOUND, "Unknown endpoint")
@@ -687,6 +816,20 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                     )
                 return
+            if self.path == "/warmup":
+                try:
+                    payload, status = _warmup_payload()
+                    self._write_json(payload, status_code=status)
+                except Exception as exc:  # noqa: BLE001
+                    self._write_json(
+                        {
+                            "ok": False,
+                            "warmup_ok": False,
+                            "error": str(exc),
+                        },
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
+                return
             if self.path == "/analyze":
                 try:
                     payload = self._read_json()
@@ -731,10 +874,20 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
                         )
                         return
-                    server_options = options.model_copy(
-                        update={"runtime_mode": "in_process"}
-                    )
                     tooling_runtime = build_tooling_runtime()
+                    server_options = options.model_copy(
+                        update={
+                            "runtime_mode": "in_process",
+                            "runtime_profile": tooling_runtime.runtime_profile,
+                        }
+                    )
+                    runtime_profile_warning: str | None = None
+                    if options.runtime_profile != tooling_runtime.runtime_profile:
+                        runtime_profile_warning = (
+                            "Requested runtime_profile "
+                            f"{options.runtime_profile!r} was ignored; "
+                            f"server is using {tooling_runtime.runtime_profile!r}."
+                        )
                     state = _analyze_with_pipeline(
                         video_path=resolved_video_path,
                         options=server_options,
@@ -758,11 +911,30 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
                         bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
                     state["multitrack_bundle"] = bundle
+                    warnings = list(state.get("warnings", []))
+                    if runtime_profile_warning is not None:
+                        warnings.append(runtime_profile_warning)
+                    bundle.pipeline_metadata["effective_runtime_profile"] = tooling_runtime.runtime_profile
+                    bundle.pipeline_metadata["runtime_profile_source"] = "server_settings"
+                    bundle.pipeline_metadata["runtime_residency_mode"] = tooling_runtime.residency_mode
+                    bundle.pipeline_metadata["warm_start"] = state.get("warm_start", False)
+                    bundle.pipeline_metadata["resident_models_before_run"] = list(
+                        state.get("resident_models_before_run", [])
+                    )
+                    bundle.pipeline_metadata["resident_models_after_run"] = tooling_runtime.resident_client_names()
                     self._write_json(
                         {
                             "multitrack_bundle": bundle.model_dump(mode="json"),
-                            "warnings": state.get("warnings", []),
+                            "warnings": warnings,
                             "progress_messages": state.get("progress_messages", []),
+                            "effective_runtime_profile": tooling_runtime.runtime_profile,
+                            "runtime_profile_source": "server_settings",
+                            "residency_mode": tooling_runtime.residency_mode,
+                            "warm_start": state.get("warm_start", False),
+                            "resident_models_before_run": list(
+                                state.get("resident_models_before_run", [])
+                            ),
+                            "resident_models_after_run": tooling_runtime.resident_client_names(),
                         }
                     )
                 except Exception as exc:  # noqa: BLE001

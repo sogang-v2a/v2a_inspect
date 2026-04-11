@@ -54,7 +54,7 @@ class InspectOptions(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     poll_interval_seconds: float = Field(default=2.0, gt=0.0)
     runtime_mode: Literal["nvidia_docker", "in_process"] = "nvidia_docker"
-    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "mig10_safe"
+    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "full_gpu"
     remote_gpu_target: str = "sogang_gpu"
     minimum_gpu_vram_gb: int = Field(default=10, ge=1, le=80)
     server_base_url: str | None = None
@@ -112,3 +112,8 @@ class InspectState(TypedDict, total=False):
     recovery_attempts: list[dict[str, object]]
     terminal_resolution: str
     agent_review_decisions: list[dict[str, object]]
+    effective_runtime_profile: str
+    runtime_profile_source: str
+    runtime_residency_mode: str
+    warm_start: bool
+    resident_models_before_run: list[str]

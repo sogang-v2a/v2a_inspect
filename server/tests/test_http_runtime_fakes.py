@@ -32,7 +32,9 @@ class RuntimeHttpFakeSmokeTests(unittest.TestCase):
             minimum_vram_gb=10,
             message="ok",
         )
-        mock_build_tooling_runtime.return_value = build_fake_tooling_runtime()
+        mock_build_tooling_runtime.return_value = build_fake_tooling_runtime(
+            runtime_profile="full_gpu"
+        )
         mock_run_agent_review_pass.return_value = (
             SimpleNamespace(issues=[], tool_calls=[]),
             "/tmp/agent-trace.jsonl",

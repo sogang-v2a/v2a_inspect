@@ -23,15 +23,16 @@ a tool-first visual pipeline.
 
 ## GPU/runtime profile policy
 
-- Default runtime profile: **`mig10_safe`** for the university 10GB A100 MiG slice.
-- Use **`full_gpu`** only when the target host has enough VRAM to keep multiple models resident.
+- Default runtime profile: **`full_gpu`** for the university 10GB A100 MiG slice.
+- Treat the MiG server as an **always-on resident runtime** that keeps sequential visual models loaded between requests.
+- Use **`mig10_safe`** only as a fallback/debug profile when explicit stage-by-stage release behavior is required.
 - `cpu_dev` is for fake/unit-test execution only and must not power a real `/analyze` request.
 
 ## Agent-tool policy
 
 - Coarse domain tools should be the primary agent interface.
 - Mid-level CV tools may be used for recovery, debugging, or low-confidence splits.
-- Text-conditioned extraction is recovery-only; default extraction should be prompt-free and label-after-extraction.
+- Text-conditioned extraction is recovery-only; default extraction should be scene-prompt-narrowed and label-assisted before SAM3 extraction.
 - The current active runtime path should prefer the single-server execution layer over any generalized provider routing.
 
 ## Future architecture direction

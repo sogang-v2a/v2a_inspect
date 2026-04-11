@@ -338,7 +338,7 @@ def _rebuild_structural_state(
         prompts_by_scene=dict(inspect_state.get("scene_prompt_candidates", {})) or None,
     )
     inspect_state["sam3_track_set"] = extraction
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("sam3")
     return _rebuild_semantic_state(inspect_state, tooling_runtime=tooling_runtime, registry=registry)
 
@@ -377,7 +377,7 @@ def _rebuild_semantic_state(
     inspect_state["candidate_groups"] = list(
         getattr(candidate_group_result, "groups", [])
     )
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("embedding")
 
     track_label_candidates = (
@@ -389,7 +389,7 @@ def _rebuild_semantic_state(
     inspect_state["track_routing_decisions"] = (
         dict(registry["routing_priors"](tracks=tracks)) if tracks else {}
     )
-    if tooling_runtime.runtime_profile == "mig10_safe":
+    if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("label")
 
     refined_structure = registry["refine_candidate_cuts"](

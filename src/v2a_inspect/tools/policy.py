@@ -10,8 +10,8 @@ RuntimeProfile = Literal["mig10_safe", "full_gpu"]
 
 class RemoteGpuPolicy(BaseModel):
     target: str = "sogang_gpu"
-    preferred_profile: RuntimeProfile = "mig10_safe"
-    fallback_profile: RuntimeProfile = "full_gpu"
+    preferred_profile: RuntimeProfile = "full_gpu"
+    fallback_profile: RuntimeProfile = "mig10_safe"
     preferred_vram_gb: int = Field(default=10, ge=1, le=80)
     max_vram_gb: int = Field(default=80, ge=1, le=80)
 

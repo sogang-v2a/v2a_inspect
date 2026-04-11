@@ -64,6 +64,7 @@ The main bottleneck is:
 So the optimization target should be:
 - avoid repeated SAM3 cold loads
 - keep the server alive and reuse the loaded process when possible
+- warm the resident server explicitly via `POST /warmup`
 - benchmark later stages only after eliminating unnecessary reloads
 
 ## Operational rule

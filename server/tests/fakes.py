@@ -97,6 +97,17 @@ class FakeToolingRuntime:
     embedding_client: FakeEmbeddingClient = field(default_factory=FakeEmbeddingClient)
     label_client: FakeLabelClient = field(default_factory=FakeLabelClient)
 
+    @property
+    def should_release_clients(self) -> bool:
+        return self.runtime_profile == "mig10_safe"
 
-def build_fake_tooling_runtime() -> FakeToolingRuntime:
-    return FakeToolingRuntime()
+    @property
+    def residency_mode(self) -> str:
+        return "release_after_stage" if self.should_release_clients else "resident"
+
+    def resident_client_names(self) -> list[str]:
+        return ["sam3", "embedding", "label"]
+
+
+def build_fake_tooling_runtime(*, runtime_profile: str = "cpu_dev") -> FakeToolingRuntime:
+    return FakeToolingRuntime(runtime_profile=runtime_profile)

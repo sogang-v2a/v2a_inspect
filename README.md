@@ -6,7 +6,7 @@ Current target runtime is:
 - `v2a_inspect_server` server runtime
 - generic remote GPU deployment
 - university-hosted `sogang_gpu` is the default target
-- `runtime_profile=mig10_safe` is the default profile for the A100 10GB MiG slice
+- `runtime_profile=full_gpu` is the default research profile for the A100 10GB MiG slice
 - Hugging Face used only for weights bootstrap
 - Gemini stays in the pipeline and consumes server-side tool evidence
 
@@ -38,5 +38,5 @@ server can analyze the same real files.
 
 - Run the server on a remote GPU host
 - `sogang_gpu` is the primary deployment target today
-- Use `server/scripts/warmup_university_gpu.sh` for the university warmup path
+- Use `server/scripts/warmup_university_gpu.sh` or `POST /warmup` for the university warmup path
 - Use `POST /upload` followed by `POST /analyze` for remote client/server runs

@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     server_bind_port: int = Field(default=8080, ge=1, le=65535)
     server_base_url: str = "http://127.0.0.1:8080"
     shared_video_dir: Path | None = Path("/data/uploads")
-    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "mig10_safe"
+    runtime_profile: Literal["mig10_safe", "full_gpu", "cpu_dev"] = "full_gpu"
     remote_gpu_target: str = "sogang_gpu"
     minimum_gpu_vram_gb: int = Field(default=10, ge=1, le=80)
     model_cache_dir: Path = Path.home() / ".cache" / "v2a_inspect_server" / "models"

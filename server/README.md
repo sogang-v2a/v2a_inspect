@@ -6,7 +6,7 @@ This package exists so client-side installs do not need to absorb heavy runtime 
 Current target runtime:
 - a single remote GPU server runtime
 - university-hosted `sogang_gpu` is the default target
-- `runtime_profile=mig10_safe` is the default profile for the 10GB A100 MiG slice
+- `runtime_profile=full_gpu` is the default research profile for the 10GB A100 MiG slice
 - HF only for weights bootstrap
 - Gemini stays in the pipeline; server-side tools provide visual evidence
 
@@ -22,12 +22,14 @@ Current CLI:
 - `v2a-inspect-server check`
 - `v2a-inspect-server bootstrap`
 - `v2a-inspect-server runtime-info`
+- `v2a-inspect-server warmup`
 - `v2a-inspect-server serve`
 
 Current HTTP endpoints:
 - `GET /healthz`
 - `GET /readyz`
 - `GET /runtime-info`
+- `POST /warmup`
 - `POST /upload`
 - `POST /bootstrap`
 - `POST /analyze`

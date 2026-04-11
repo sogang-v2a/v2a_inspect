@@ -215,9 +215,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
                 per_scene_top_k=2,
                 score_threshold=0.12,
             )
-            if (
-                getattr(tooling_runtime, "runtime_profile", None) == "mig10_safe"
-                and callable(getattr(tooling_runtime, "release_client", None))
+            if getattr(tooling_runtime, "should_release_clients", False) and callable(
+                getattr(tooling_runtime, "release_client", None)
             ):
                 tooling_runtime.release_client("label")
         return tooling_runtime.sam3_client.extract_entities(
@@ -248,7 +247,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             per_scene_top_k=per_scene_top_k,
             score_threshold=score_threshold,
         )
-        if tooling_runtime.runtime_profile == "mig10_safe":
+        if tooling_runtime.should_release_clients:
             tooling_runtime.release_client("label")
         track_set = tooling_runtime.sam3_client.extract_entities(
             frame_batches,

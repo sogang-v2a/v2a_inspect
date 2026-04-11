@@ -19,7 +19,7 @@ class RuntimeHttpTests(unittest.TestCase):
     def test_healthz_endpoint_returns_lightweight_json(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
-            runtime_profile="mig10_safe",
+            runtime_profile="full_gpu",
             remote_gpu_target="sogang_gpu",
             minimum_gpu_vram_gb=10,
             model_cache_dir=Path('/tmp/models'),
@@ -51,7 +51,7 @@ class RuntimeHttpTests(unittest.TestCase):
         payload = json.loads(response.decode("utf-8"))
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["runtime_mode"], "nvidia_docker")
-        self.assertEqual(payload["runtime_profile"], "mig10_safe")
+        self.assertEqual(payload["runtime_profile"], "full_gpu")
         mock_build_tooling_runtime.assert_not_called()
         mock_check.assert_not_called()
 
@@ -61,7 +61,7 @@ class RuntimeHttpTests(unittest.TestCase):
     def test_readyz_endpoint_returns_runtime_readiness(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
-            runtime_profile="mig10_safe",
+            runtime_profile="full_gpu",
             remote_gpu_target="sogang_gpu",
             minimum_gpu_vram_gb=10,
             model_cache_dir=Path('/tmp/models'),
@@ -71,7 +71,11 @@ class RuntimeHttpTests(unittest.TestCase):
             shared_video_dir=Path('/tmp'),
             hf_token=None,
         )
-        mock_build_tooling_runtime.return_value = SimpleNamespace(artifacts_missing=lambda: [])
+        mock_build_tooling_runtime.return_value = SimpleNamespace(
+            artifacts_missing=lambda: [],
+            resident_client_names=lambda: [],
+            residency_mode="resident",
+        )
         mock_check.return_value = SimpleNamespace(
             available=True,
             devices=[],
@@ -93,7 +97,62 @@ class RuntimeHttpTests(unittest.TestCase):
         payload = json.loads(response.decode("utf-8"))
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["bootstrap_ready"])
-        self.assertEqual(payload["runtime_profile"], "mig10_safe")
+        self.assertEqual(payload["runtime_profile"], "full_gpu")
+        self.assertEqual(payload["residency_mode"], "resident")
+
+    @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
+    @patch("v2a_inspect_server.runtime.build_tooling_runtime")
+    @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
+    def test_warmup_endpoint_loads_models_and_keeps_them_resident(self, mock_check, mock_build_tooling_runtime, mock_server_settings) -> None:
+        mock_server_settings.return_value = SimpleNamespace(
+            runtime_mode="nvidia_docker",
+            runtime_profile="full_gpu",
+            remote_gpu_target="sogang_gpu",
+            minimum_gpu_vram_gb=10,
+            model_cache_dir=Path('/tmp/models'),
+            weights_manifest_path=Path('/tmp/model-manifest.json'),
+            server_bind_host='127.0.0.1',
+            server_bind_port=8080,
+            shared_video_dir=Path('/tmp'),
+            hf_token=None,
+        )
+        mock_build_tooling_runtime.return_value = SimpleNamespace(
+            artifacts_missing=lambda: [],
+            warmup_visual_clients=lambda: {
+                "model_load_status": {"sam3": "ready", "embedding": "ready", "label": "ready"},
+                "model_load_seconds": {"sam3": 1.0, "embedding": 0.5, "label": 0.25},
+                "resident_models": ["sam3", "embedding", "label"],
+            },
+            resident_client_names=lambda: ["sam3", "embedding", "label"],
+            residency_mode="resident",
+        )
+        mock_check.return_value = SimpleNamespace(
+            available=True,
+            devices=[],
+            minimum_vram_gb=10,
+            message="ok",
+        )
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _build_handler())
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            response = request.urlopen(
+                request.Request(
+                    f"http://127.0.0.1:{server.server_port}/warmup",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        finally:
+            server.server_close()
+            thread.join(timeout=1)
+
+        payload = json.loads(response.decode("utf-8"))
+        self.assertTrue(payload["warmup_ok"])
+        self.assertEqual(payload["resident_models"], ["sam3", "embedding", "label"])
+        self.assertEqual(payload["residency_mode"], "resident")
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
@@ -112,7 +171,7 @@ class RuntimeHttpTests(unittest.TestCase):
     ) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
-            runtime_profile="mig10_safe",
+            runtime_profile="full_gpu",
             remote_gpu_target="sogang_gpu",
             minimum_gpu_vram_gb=10,
             model_cache_dir=Path('.cache/models'),
@@ -122,7 +181,11 @@ class RuntimeHttpTests(unittest.TestCase):
             shared_video_dir=Path('/tmp'),
             hf_token=None,
         )
-        mock_build_tooling_runtime.return_value = SimpleNamespace()
+        mock_build_tooling_runtime.return_value = SimpleNamespace(
+            runtime_profile="full_gpu",
+            residency_mode="resident",
+            resident_client_names=lambda: ["sam3", "embedding", "label"],
+        )
         mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
             available=True,
             devices=[],
@@ -199,6 +262,9 @@ class RuntimeHttpTests(unittest.TestCase):
         self.assertEqual(payload["warnings"], ["warn"])
         self.assertEqual(payload["progress_messages"], ["done"])
         self.assertIn("multitrack_bundle", payload)
+        self.assertEqual(payload["effective_runtime_profile"], "full_gpu")
+        self.assertEqual(payload["runtime_profile_source"], "server_settings")
+        self.assertEqual(payload["residency_mode"], "resident")
 
     @patch("v2a_inspect_server.runtime.get_server_runtime_settings")
     @patch("v2a_inspect_server.runtime.inspect_nvidia_runtime")
@@ -217,7 +283,7 @@ class RuntimeHttpTests(unittest.TestCase):
     ) -> None:
         mock_server_settings.return_value = SimpleNamespace(
             runtime_mode="nvidia_docker",
-            runtime_profile="mig10_safe",
+            runtime_profile="full_gpu",
             remote_gpu_target="sogang_gpu",
             minimum_gpu_vram_gb=10,
             model_cache_dir=Path('.cache/models'),
@@ -227,7 +293,11 @@ class RuntimeHttpTests(unittest.TestCase):
             shared_video_dir=Path('/tmp'),
             hf_token=None,
         )
-        mock_build_tooling_runtime.return_value = SimpleNamespace()
+        mock_build_tooling_runtime.return_value = SimpleNamespace(
+            runtime_profile="full_gpu",
+            residency_mode="resident",
+            resident_client_names=lambda: ["sam3", "embedding", "label"],
+        )
         mock_inspect_nvidia_runtime.return_value = SimpleNamespace(
             available=True,
             devices=[],

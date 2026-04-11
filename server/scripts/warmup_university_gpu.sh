@@ -21,11 +21,12 @@ PY
 
 uv run --project server v2a-inspect-server bootstrap
 curl -fsS "${SERVER_URL}/healthz"
-curl -fsS "${SERVER_URL}/readyz?load_models=true"
+curl -fsS "${SERVER_URL}/readyz"
+curl -fsS -X POST "${SERVER_URL}/warmup"
 
 if [[ -n "${SMOKE_VIDEO_PATH}" ]]; then
   curl -fsS -X POST "${SERVER_URL}/analyze" \
     -H 'Content-Type: application/json' \
-    -d "{\"video_path\": \"${SMOKE_VIDEO_PATH}\", \"options\": {\"runtime_profile\": \"mig10_safe\"}}" \
+    -d "{\"video_path\": \"${SMOKE_VIDEO_PATH}\", \"options\": {}}" \
     | tee "${WARMUP_LOG}"
 fi

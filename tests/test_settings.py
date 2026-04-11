@@ -31,6 +31,8 @@ class SettingsTests(unittest.TestCase):
     def test_agentic_bundle_path_is_the_default_research_mode(self) -> None:
         self.assertEqual(Settings().visual_pipeline_mode, "agentic_tool_first")
         self.assertEqual(InspectOptions().pipeline_mode, "agentic_tool_first")
+        self.assertEqual(Settings().runtime_profile, "full_gpu")
+        self.assertEqual(InspectOptions().runtime_profile, "full_gpu")
 
     def test_resolve_manifest_path_falls_back_to_repo_style_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

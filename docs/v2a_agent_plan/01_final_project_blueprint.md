@@ -319,7 +319,7 @@ The agent should have a small, high-value tool surface. The tools below are the 
 
 | Tool | Purpose | Primary model |
 |---|---|---|
-| `extract_entities_prompt_free(evidence_windows)` | Default extraction path | SAM3 under an external prompt-free contract |
+| `extract_entities_scene_prompt_seeded(evidence_windows)` | Default extraction path | SAM3 under a label-assisted scene-prompt contract |
 | `recover_with_text_prompt(evidence_windows, text_prompt)` | Recovery-only extraction when needed | SAM3 recovery path |
 | `crop_tracks(frame_batches, track_set)` | Produce per-track crop evidence | deterministic geometry |
 | `embed_track_crops(track_crop_paths)` | Re-id / similarity features | DINOv2 |
@@ -372,7 +372,7 @@ SAM3 should be used for:
 - mask/box evidence generation
 - recovery when a target source was missed
 
-If the runtime needs prompts internally, hide that behind a prompt-free external contract and keep manual text prompting as recovery-only.
+Default extraction should be scene-prompt-narrowed from model-scored visual labels; keep manual text prompting as recovery-only.
 
 ### 9.3 DINOv2
 

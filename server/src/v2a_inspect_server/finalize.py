@@ -76,6 +76,13 @@ def build_final_bundle(
             "runtime_trace_path": _state_path(state.get("runtime_trace_path")),
             "terminal_resolution": state.get("terminal_resolution"),
             "agent_review_decisions": list(state.get("agent_review_decisions", [])),
+            "effective_runtime_profile": state.get("effective_runtime_profile"),
+            "runtime_profile_source": state.get("runtime_profile_source"),
+            "runtime_residency_mode": state.get("runtime_residency_mode"),
+            "warm_start": state.get("warm_start"),
+            "resident_models_before_run": list(
+                state.get("resident_models_before_run", [])
+            ),
         },
     )
     issues = validate_bundle(bundle)

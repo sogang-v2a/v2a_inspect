@@ -43,9 +43,9 @@ Today the repository computes much of its embedding and label evidence on full-s
 
 Implement `crop_tracks` as a first-class tool. Crops should be created from masks when possible and from boxes with padding when masks are missing. Store both the original frame reference and the crop artifact. Later stages must be able to inspect which visual evidence supported a source track.
 
-### 2. Define the external prompt-free contract
+### 2. Define the external scene-prompt contract
 
-The blueprint says default extraction should be prompt-free. If the chosen SAM runtime needs prompts internally, hide that detail behind an external contract that does not require the planner or reviewer to hand-author text prompts. Internal seed prompts may come from SigLIP2 label suggestions or a small default vocabulary, but manual text recovery must remain a separate tool path.
+The blueprint now treats default extraction as scene-prompt-narrowed, using SigLIP2 label suggestions or another model-scored visual vocabulary before SAM3 runs. Manual text recovery must remain a separate tool path.
 
 ### 3. Build re-identification as a graph, not a one-shot cluster
 
