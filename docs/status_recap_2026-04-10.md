@@ -1,31 +1,28 @@
 # V2A Inspect — Current Recap (2026-04-10)
 
 ## Current state
-The project is now a **silent-video, bundle-first, tool-first research prototype** centered on the server runtime.
+The project is now a **silent-video, bundle-first, tool-first research prototype** centered on the resident remote server runtime.
 
 The active system now:
-- keeps the resident `full_gpu` MiG server as the default research runtime
-- exposes only two public modes:
-  - `tool_first_foundation`
-  - `agentic_tool_first`
-- removes the public legacy Gemini/video-upload workflow
-- removes the server `tool_context` compatibility branch
-- builds a silent analysis copy before downstream video processing
-- proposes sources through a dynamic stack instead of tiny hardcoded prompt lists
+- exposes only `tool_first_foundation` and `agentic_tool_first`
+- removes legacy Gemini video upload and `tool_context`
+- creates a silent analysis copy before downstream media work
+- proposes sources from a merged stack of:
+  - SigLIP2 ontology scoring
+  - Gemini frame/storyboard hypotheses
+  - motion-region proposals
+- verifies those hypotheses explicitly before SAM3 extraction
+- groups output events through explicit acoustic recipe signatures
+- keeps agentic work focused on high-value ambiguity only
 
-## Active perception stack
-For each evidence window, the current pipeline now combines:
-- SigLIP2 ontology scoring over a larger visible-source vocabulary
-- Gemini scene/source hypotheses from sampled frames or storyboard evidence
-- motion-region proposals from frame differencing
-- scene-specific SAM3 extraction prompts derived from those merged proposals
+## Latest implemented improvements
+- Added explicit `verify_scene_hypotheses(...)` handling into the active proposal flow.
+- Added explicit acoustic recipe grouping and recipe-signature metadata.
+- Expanded the ontology substantially beyond the tiny hardcoded prompt regime.
+- Added Gemini failure short-circuiting so benchmarking does not stall on repeated scene-hypothesis / adjudication / description-writer failures.
+- Marked stale planning docs as historical where they still describe removed architecture.
 
-## Agentic posture
-- `tool_first_foundation` is the deterministic silent-video structural baseline.
-- `agentic_tool_first` is the selective ambiguity-repair layer on top of that baseline.
-- The agentic path still uses interim bundles during repair and one final writer-backed bundle build at the end.
-
-## What is verified
+## Verified local status
 Passed locally:
 - `ruff check src server tests docs scripts`
 - `unittest discover -s tests -v`
@@ -33,11 +30,26 @@ Passed locally:
 
 Most recent local result:
 - root tests: **40 passed**
-- server tests: **59 passed**
+- server tests: **62 passed**
+
+## Verified post-redesign hardware evidence
+Saved locally:
+- `data/live_test_table_tennis_foundation_redesign/`
+
+Completed on `sogang_gpu`:
+- clip: `playing_table_tennis_same_class_abab_5s`
+- mode: `tool_first_foundation`
+- total recorded stage time: about **480.3s**
+- physical sources: **27**
+- sound events: **51**
+- generation groups: **32**
+- verified windows: **6**
+- recipe signatures: **32**
+- validation: `pass_with_warnings`
+
+Partial saved redesign evidence also exists for an `agentic_tool_first` attempt on the same clip, but it is not yet a completed benchmark-quality comparison.
 
 ## Main blocker now
-The repo is no longer blocked by runtime survival or public legacy-path confusion.
-The main blocker is now **quality/latency tradeoff on real temporal clips**:
-- how much the new proposal stack improves structure,
-- how often agentic mode changes the bundle in a worthwhile way,
-- and whether the extra latency is justified on the temporal benchmark pack.
+The main blocker is now **cost/benefit evidence**, not architecture cleanup:
+- the redesigned stack clearly runs on the target hardware,
+- but the temporal benchmark pack is expensive enough that we still need broader saved results before concluding the redesign and selective agentic layer are worth their cost.

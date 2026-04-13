@@ -21,3 +21,5 @@
 - The newest cat-loop row captures the first run after making scene-prompt narrowing the default baseline and reducing initial sampling from 3 frames to 2.
 - The two newest cat-loop rows supersede the earlier interrupted cat runs as the current baseline comparison for the resident MiG server.
 - Future rows should prioritize truly temporal clips from the frozen gold-set categories over additional smoke/static controls.
+| `playing_table_tennis_same_class_abab_5s` | temporal contact-rhythm clip | `tool_first_foundation` | completed | 480.30 | 27 | 51 | 32 | First completed post-redesign temporal benchmark on the silent-video proposal stack. Saved locally under `data/live_test_table_tennis_foundation_redesign/`. Runtime trace shows explicit proposal verification and recipe grouping metadata. |
+| `playing_table_tennis_same_class_abab_5s` | temporal contact-rhythm clip | `agentic_tool_first` | interrupted | >237 | — | — | — | Post-redesign agentic attempt created partial runtime traces but did not yet complete cleanly into a saved side-by-side comparison. Partial local evidence saved under `data/live_test_table_tennis_agentic_redesign_partial/`. |

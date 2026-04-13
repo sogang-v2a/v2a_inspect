@@ -1,48 +1,38 @@
 # V2A Inspect — Current Problem (2026-04-11)
 
 ## Short version
-The repo is no longer blocked by:
-- MiG runtime survival
-- legacy agent crash bugs
-- missing foundation completion on temporal clips
-- public legacy Gemini/video-upload code paths
+The remaining blocker is no longer legacy cleanup or benchmark infrastructure.
 
 The current blocker is now:
 
-> **The silent-video dynamic proposal stack exists, but we still need to prove that it improves temporal benchmark quality enough to justify the extra hypothesis work and selective agentic repairs.**
-
-## What changed in this redesign
-- `legacy_gemini` is gone from the public product surface.
-- The old Gemini video-upload workflow is removed.
-- The old `tool_context` compatibility branch is removed.
-- The active pipeline now creates a silent analysis copy and uses that path everywhere downstream.
-- Source discovery is no longer based on tiny hardcoded prompt lists alone.
-- The active discovery stack is now:
-  - SigLIP2 ontology scoring
-  - Gemini frame/storyboard hypotheses
-  - motion-region proposals
+> **The redesigned silent-video proposal stack is running on real hardware, but the temporal benchmark loop is expensive enough that we still need broader saved evidence before we can claim the new stack and agentic mode are worth their cost.**
 
 ## What is confirmed now
-- Only two supported pipeline modes remain:
+- The public surface is reduced to `tool_first_foundation` and `agentic_tool_first`.
+- Legacy Gemini video-upload and `tool_context` paths are gone.
+- The active pipeline now includes:
+  - silent analysis video ingest
+  - ontology scoring
+  - Gemini frame/storyboard hypotheses
+  - explicit hypothesis verification
+  - acoustic recipe grouping
+- Local validation passes after the redesign and the follow-up Gemini failure short-circuiting.
+- A redesigned real-hardware foundation benchmark completed on the temporal sample:
+  - `playing_table_tennis_same_class_abab_5s`
   - `tool_first_foundation`
-  - `agentic_tool_first`
-- Public CLI/UI/server paths now route only through the tool-first server runtime.
-- ffmpeg frame/clip extraction now uses silent-video discipline.
-- Foundation and agentic still both complete on the saved sword-fighting temporal sample.
-- The previous agentic cut-payload crash remains fixed.
+  - about **480.3s** total stage time
+  - **27** physical sources / **51** sound events / **32** generation groups
+  - **6** verified windows / **32** recipe signatures
+  - saved locally under `data/live_test_table_tennis_foundation_redesign/`
 
-## Current research question
-The next question is no longer “can the system run?”
-It is:
-
-> **On the temporal benchmark pack, when does the new proposal stack improve source/event/group quality, and when does `agentic_tool_first` add enough value over `tool_first_foundation` to justify its extra latency?**
+## What is not done yet
+- The full temporal core benchmark pack has **not** been completed after the redesign.
+- A redesigned `agentic_tool_first` temporal run has been started, but the saved evidence is still partial rather than a clean completed side-by-side comparison.
+- We therefore still do **not** have enough post-redesign evidence to answer the main research question:
+  - whether the new proposal stack improves bundle quality enough to justify its extra latency
+  - and whether `agentic_tool_first` adds value on temporal clips beyond the deterministic foundation path
 
 ## Immediate next evidence to gather
-- Re-run the temporal core clips with the redesigned silent-video proposal stack.
-- Compare foundation vs agentic on:
-  - source count correctness
-  - event segmentation quality
-  - grouping quality
-  - routing plausibility
-  - final description grounding
-- Use the local `data/` benchmark workflow and persist outputs under `data/benchmarks/...`.
+- Finish the post-redesign temporal core pack on `sogang_gpu` using the local forwarded workflow.
+- Save completed foundation + agentic results for at least the key temporal clips.
+- Update the ledger from those saved local artifacts before making architecture claims about agentic ROI.
