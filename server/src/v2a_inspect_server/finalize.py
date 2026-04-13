@@ -132,8 +132,14 @@ def _build_bundle(
             "scene_hypotheses_by_window": dict(
                 state.get("scene_hypotheses_by_window", {})
             ),
+            "verified_hypotheses_by_window": dict(
+                state.get("verified_hypotheses_by_window", {})
+            ),
             "proposal_provenance_by_window": dict(
                 state.get("proposal_provenance_by_window", {})
+            ),
+            "recipe_signatures_by_group": dict(
+                state.get("recipe_signatures_by_group", {})
             ),
             "terminal_resolution": state.get("terminal_resolution"),
             "agent_review_decisions": list(state.get("agent_review_decisions", [])),

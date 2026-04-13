@@ -1,3 +1,5 @@
+# [Historical note] This planning document predates the silent-video proposal-stack redesign. References to legacy Gemini upload or tool_context are superseded by the active runtime in README and docs/tooling_constraints.md.
+
 # Current-to-Target Mapping
 
 This short note exists to keep the migration concrete.
@@ -9,7 +11,7 @@ This short note exists to keep the migration concrete.
 - `RawTrack`
 - `TrackGroup`
 - `tool_*_hints` text blocks
-- `tool_context` as a bundled precomputation step
+- `tool_context` as a bundled precomputation step (historical; removed from the active runtime)
 
 ## Target concepts
 

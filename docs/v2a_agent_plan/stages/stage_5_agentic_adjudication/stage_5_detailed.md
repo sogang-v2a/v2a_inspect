@@ -1,3 +1,5 @@
+# [Historical note] This planning document predates the silent-video proposal-stack redesign. References to legacy Gemini upload or tool_context are superseded by the active runtime in README and docs/tooling_constraints.md.
+
 # Stage 5 Detailed Plan: Direct Agentic Tool Use, Planner/Executor, and Bounded Repair Loops
 
 [Back to stage main](stage_5_main.md) · [Go to checklist](stage_5_checklist.md)

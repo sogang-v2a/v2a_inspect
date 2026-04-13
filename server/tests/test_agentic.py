@@ -74,7 +74,7 @@ class AgenticIntegrationTests(unittest.TestCase):
             inspect_state = {
                 "video_path": str(root / "video.mp4"),
                 "video_probe": SimpleNamespace(
-                    duration_seconds=1.0,
+                    duration_seconds=2.0,
                     fps=2.0,
                     width=64,
                     height=64,
@@ -84,7 +84,7 @@ class AgenticIntegrationTests(unittest.TestCase):
                     EvidenceWindow(
                         window_id="window-0000",
                         start_time=0.0,
-                        end_time=1.0,
+                        end_time=2.0,
                         sampled_frame_ids=[str(frame_path)],
                         artifact_refs=[str(root / "storyboard.jpg")],
                     )
@@ -95,11 +95,11 @@ class AgenticIntegrationTests(unittest.TestCase):
                         frames=[
                             SampledFrame(
                                 scene_index=0,
-                                timestamp_seconds=0.0,
-                                image_path=str(frame_path),
-                            )
-                        ],
-                    )
+                            timestamp_seconds=0.0,
+                            image_path=str(frame_path),
+                        )
+                    ],
+                )
                 ],
                 "storyboard_path": str(root / "storyboard.jpg"),
                 "sam3_track_set": Sam3TrackSet(
@@ -173,7 +173,7 @@ class AgenticIntegrationTests(unittest.TestCase):
             inspect_state = {
                 "video_path": str(root / "video.mp4"),
                 "video_probe": SimpleNamespace(
-                    duration_seconds=1.0,
+                    duration_seconds=2.0,
                     fps=2.0,
                     width=64,
                     height=64,
@@ -183,7 +183,7 @@ class AgenticIntegrationTests(unittest.TestCase):
                     EvidenceWindow(
                         window_id="window-0000",
                         start_time=0.0,
-                        end_time=1.0,
+                        end_time=2.0,
                         sampled_frame_ids=[str(frame_path)],
                         artifact_refs=[str(root / "storyboard.jpg")],
                     )
@@ -249,7 +249,7 @@ class AgenticIntegrationTests(unittest.TestCase):
                 updated_state["multitrack_bundle"].pipeline_metadata["final_description_writer_call_count"],
             )
 
-    def test_build_issues_emits_cut_and_description_repair_signals(self) -> None:
+    def test_build_issues_emits_hypothesis_and_description_repair_signals(self) -> None:
         bundle = MultitrackDescriptionBundle(
             video_id="video",
             video_meta=VideoMeta(duration_seconds=10.0, fps=2.0, width=320, height=240),
@@ -278,11 +278,18 @@ class AgenticIntegrationTests(unittest.TestCase):
             "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
             "track_label_candidates": {},
             "storyboard_path": "/tmp/run/storyboard.jpg",
+            "verified_hypotheses_by_window": {
+                0: {"uncertain_hypotheses": ["sword", "fighter"]}
+            },
+            "scene_hypotheses_by_window": {
+                0: {"foreground_entities": ["fighter"], "candidate_sound_sources": ["sword"]}
+            },
+            "proposal_provenance_by_window": {0: {"ontology_extraction": ["fighter"]}},
         }
 
         issues = _build_issues(bundle=bundle, inspect_state=inspect_state)
         issue_types = {issue.issue_type for issue in issues}
-        self.assertIn("cut_ambiguity", issue_types)
+        self.assertIn("hypothesis_conflict", issue_types)
         self.assertIn("description_stale", issue_types)
 
     def test_build_issues_promotes_missing_sources_into_foreground_repair(self) -> None:
@@ -342,6 +349,7 @@ class AgenticIntegrationTests(unittest.TestCase):
         issue_types = {issue.issue_type for issue in _build_issues(bundle=bundle, inspect_state=inspect_state)}
         self.assertIn("foreground_collapse", issue_types)
         self.assertNotIn("missing_crops", issue_types)
+        self.assertNotIn("missing_labels", issue_types)
 
     def test_adjudicator_receives_recovery_history_for_foreground_collapse(self) -> None:
         bundle = MultitrackDescriptionBundle(

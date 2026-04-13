@@ -62,6 +62,12 @@ def main() -> int:
         help="Skip POST /warmup before running the sample pack.",
     )
     parser.add_argument(
+        "--remote-timeout-seconds",
+        type=int,
+        default=900,
+        help="HTTP timeout used for upload/analyze requests during long real-hardware runs.",
+    )
+    parser.add_argument(
         "--clip-id",
         action="append",
         default=[],
@@ -117,6 +123,7 @@ def main() -> int:
                 clip_id=sample.clip_id,
                 output_dir=output_dir,
                 ssh_host=None if args.no_copy_remote_artifacts else args.ssh_host,
+                remote_timeout_seconds=args.remote_timeout_seconds,
             )
             summary["filename"] = sample.filename
             summary["category"] = sample.category

@@ -239,6 +239,9 @@ def _apply_action_result(
         updated["proposal_provenance_by_window"] = dict(
             result.get("proposal_provenance_by_window", {})
         )
+        updated["verified_hypotheses_by_window"] = dict(
+            result.get("verified_hypotheses_by_window", {})
+        )
         updated.setdefault("recovery_actions", []).append(tool_name)
         record_recovery_attempt(
             updated,
@@ -258,6 +261,20 @@ def _apply_action_result(
         )
         return rebuilt
 
+    if tool_name == "verify_scene_hypotheses" and isinstance(result, dict):
+        updated["verified_hypotheses_by_window"] = dict(
+            result.get("verified_hypotheses_by_window", {})
+        )
+        updated["scene_prompt_candidates"] = dict(result.get("prompts_by_scene", {}))
+        updated["proposal_provenance_by_window"] = dict(
+            result.get("proposal_provenance_by_window", {})
+        )
+        return _rebuild_structural_state(
+            updated,
+            tooling_runtime=tooling_runtime,
+            registry=registry,
+        )
+
     if tool_name == "crop_tracks":
         updated["track_crops"] = list(result)
         return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
@@ -273,6 +290,14 @@ def _apply_action_result(
     if tool_name == "routing_priors":
         updated["track_routing_decisions"] = dict(result)
         return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+
+    if tool_name == "group_acoustic_recipes" and isinstance(result, dict):
+        updated["generation_groups"] = list(result.get("generation_groups", []))
+        updated["recipe_signatures_by_group"] = {
+            key: value.model_dump(mode="json") if hasattr(value, "model_dump") else dict(value)
+            for key, value in dict(result.get("recipe_signatures", {})).items()
+        }
+        return updated
 
     if tool_name == "refine_candidate_cuts" and isinstance(result, dict):
         updated["candidate_cuts"] = list(result["candidate_cuts"])
@@ -297,6 +322,10 @@ def _apply_action_result(
         updated["sound_event_segments"] = list(semantics["sound_events"])
         updated["ambience_beds"] = list(semantics["ambience_beds"])
         updated["generation_groups"] = list(semantics["generation_groups"])
+        updated["recipe_signatures_by_group"] = {
+            key: value.model_dump(mode="json")
+            for key, value in semantics.get("recipe_signatures", {}).items()
+        }
         return updated
 
     if tool_name == "densify_window_sampling" and isinstance(result, dict):
@@ -342,17 +371,27 @@ def _rebuild_structural_state(
     tooling_runtime: "ToolingRuntime",
     registry: dict[str, Any],
 ) -> InspectState:
-    proposals = registry["propose_source_hypotheses"](
+    raw_proposals = registry["propose_source_hypotheses"](
         frame_batches=list(inspect_state.get("frame_batches", [])),
         storyboard_path=str(inspect_state.get("storyboard_path", "")),
         output_root=str(inspect_state.get("artifact_run_dir", "")),
     )
-    inspect_state["scene_prompt_candidates"] = dict(proposals["prompts_by_scene"])
+    verified = registry["verify_scene_hypotheses"](
+        frame_batches=list(inspect_state.get("frame_batches", [])),
+        ontology_scores_by_window=raw_proposals["ontology_scores_by_window"],
+        scene_hypotheses_by_window=raw_proposals["scene_hypotheses_by_window"],
+        moving_region_labels_by_window=raw_proposals["moving_region_labels_by_window"],
+        expanded_candidates_by_window=raw_proposals["expanded_candidates_by_window"],
+    )
+    inspect_state["scene_prompt_candidates"] = dict(verified["prompts_by_scene"])
     inspect_state["scene_hypotheses_by_window"] = dict(
-        proposals["scene_hypotheses_by_window"]
+        raw_proposals["scene_hypotheses_by_window"]
     )
     inspect_state["proposal_provenance_by_window"] = dict(
-        proposals["proposal_provenance_by_window"]
+        verified["proposal_provenance_by_window"]
+    )
+    inspect_state["verified_hypotheses_by_window"] = dict(
+        verified["verified_hypotheses_by_window"]
     )
     extraction = registry["extract_entities"](
         frame_batches=list(inspect_state.get("frame_batches", [])),
@@ -446,6 +485,10 @@ def _rebuild_semantic_state(
     inspect_state["sound_event_segments"] = list(semantics["sound_events"])
     inspect_state["ambience_beds"] = list(semantics["ambience_beds"])
     inspect_state["generation_groups"] = list(semantics["generation_groups"])
+    inspect_state["recipe_signatures_by_group"] = {
+        key: value.model_dump(mode="json")
+        for key, value in semantics.get("recipe_signatures", {}).items()
+    }
     return inspect_state
 
 
@@ -566,64 +609,35 @@ def _build_issues(
                 },
             )
         )
-    if current_tracks and not inspect_state.get("track_crops"):
-        issues.append(
-            AgentIssue(
-                issue_id="missing-crops",
-                issue_type="missing_crops",
-                description="Tracks exist but crop artifacts are missing",
-                priority=10,
-                payload={
-                    "frame_batches": list(inspect_state.get("frame_batches", [])),
-                    "tracks": list(
-                        getattr(inspect_state.get("sam3_track_set"), "tracks", [])
-                    ),
-                    "output_dir": str(_trace_path(bundle).parent / "crops"),
-                },
-            )
-        )
-    if inspect_state.get("track_crops") and not inspect_state.get("track_label_candidates"):
-        issues.append(
-            AgentIssue(
-                issue_id="missing-labels",
-                issue_type="missing_labels",
-                description="Crop evidence exists but labels are missing",
-                priority=15,
-                payload={
-                    "track_image_paths": group_crop_paths_by_track(
-                        list(inspect_state.get("track_crops", []))
-                    )
-                },
-            )
-        )
-    low_confidence_cuts = [
-        cut
-        for cut in bundle.candidate_cuts
-        if cut.confidence < 0.6
+    verified_hypotheses_by_window = dict(
+        inspect_state.get("verified_hypotheses_by_window", {})
+    )
+    uncertain_windows = [
+        str(scene_index)
+        for scene_index, payload in verified_hypotheses_by_window.items()
+        if payload.get("uncertain_hypotheses")
     ]
-    overly_broad_windows = [
-        window
-        for window in bundle.evidence_windows
-        if (window.end_time - window.start_time) > 8.0
-    ]
-    if (low_confidence_cuts or overly_broad_windows) and (
+    if uncertain_windows and (
         len(current_sources) <= 2 or len(current_events) <= 2
     ):
         issues.append(
             AgentIssue(
-                issue_id="cut-ambiguity",
-                issue_type="cut_ambiguity",
-                description="Structural windows have low-confidence or over-broad cut boundaries",
+                issue_id="hypothesis-conflict",
+                issue_type="hypothesis_conflict",
+                description="Window-level source hypotheses remain uncertain in a weakly structured clip.",
                 priority=12,
                 payload={
-                    "probe": inspect_state.get("video_probe"),
-                    "candidate_cuts": list(inspect_state.get("candidate_cuts", [])),
                     "frame_batches": list(inspect_state.get("frame_batches", [])),
-                    "tracks": list(getattr(inspect_state.get("sam3_track_set"), "tracks", [])),
-                    "label_candidates_by_track": dict(inspect_state.get("track_label_candidates", {})),
                     "storyboard_path": inspect_state.get("storyboard_path"),
-                    "low_confidence_cut_ids": [cut.cut_id for cut in low_confidence_cuts],
-                    "broad_window_ids": [window.window_id for window in overly_broad_windows],
+                    "output_root": bundle.artifacts.run_dir,
+                    "uncertain_window_ids": uncertain_windows,
+                    "verified_hypotheses_by_window": verified_hypotheses_by_window,
+                    "scene_hypotheses_by_window": dict(
+                        inspect_state.get("scene_hypotheses_by_window", {})
+                    ),
+                    "proposal_provenance_by_window": dict(
+                        inspect_state.get("proposal_provenance_by_window", {})
+                    ),
                 },
             )
         )
@@ -658,8 +672,7 @@ def _build_issues(
             }
             issue_type = "ambiguous_source"
         else:
-            payload = {"bundle": bundle}
-            issue_type = "validation_issue"
+            continue
         issues.append(
             AgentIssue(
                 issue_id=issue_id,
@@ -729,8 +742,8 @@ def _adjudicate_issue(
     tooling_runtime: "ToolingRuntime",
 ) -> dict[str, object] | None:
     if issue is None or issue.issue_type not in {
-        "cut_ambiguity",
         "foreground_collapse",
+        "hypothesis_conflict",
         "missing_sources",
         "grouping_ambiguity",
         "routing_ambiguity",

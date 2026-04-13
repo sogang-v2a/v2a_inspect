@@ -1,3 +1,5 @@
+# [Historical note] This planning document predates the silent-video proposal-stack redesign. References to legacy Gemini upload or tool_context are superseded by the active runtime in README and docs/tooling_constraints.md.
+
 # Stage 1 Detailed Plan: Repository Stabilization and Testable Foundations
 
 [Back to stage main](stage_1_main.md) · [Go to checklist](stage_1_checklist.md)

@@ -44,6 +44,15 @@ class WindowOntologyExpansion(BaseModel):
     provenance: dict[str, object] = Field(default_factory=dict)
 
 
+class VerifiedSceneHypothesis(BaseModel):
+    verified_extraction_prompts: list[str] = Field(default_factory=list)
+    verified_semantic_hints: list[str] = Field(default_factory=list)
+    rejected_hypotheses: list[str] = Field(default_factory=list)
+    uncertain_hypotheses: list[str] = Field(default_factory=list)
+    support_counts: dict[str, int] = Field(default_factory=dict)
+    verification_rationale: str = ""
+
+
 class _SceneHypothesisPayload(BaseModel):
     foreground_entities: list[str] = Field(default_factory=list)
     background_environment: list[str] = Field(default_factory=list)
@@ -79,7 +88,7 @@ class GeminiSceneHypothesisProposer:
             method="json_schema",
         )
         results: dict[int, SceneHypothesis] = {}
-        ontology_preview = list(ontology_terms)[:64]
+        ontology_preview = list(ontology_terms)[:96]
         for batch in frame_batches:
             if not batch.frames:
                 continue
@@ -188,7 +197,7 @@ def expand_scene_ontology(
     ontology_scores: Mapping[int, Mapping[str, Sequence[Mapping[str, float]]]],
     scene_hypotheses: Mapping[int, SceneHypothesis],
     moving_region_labels: Mapping[int, Sequence[str]],
-    top_prompt_count: int = 6,
+    top_prompt_count: int = 8,
 ) -> dict[int, WindowOntologyExpansion]:
     expansions: dict[int, WindowOntologyExpansion] = {}
     for batch in frame_batches:
@@ -211,10 +220,6 @@ def expand_scene_ontology(
                 *list(moving_region_labels.get(scene_index, [])),
             ]
         )[:top_prompt_count]
-        if "object" not in merged_prompts:
-            merged_prompts.append("object")
-        if not merged_prompts:
-            merged_prompts = list(EMERGENCY_FALLBACK_PROMPTS)
         semantic_hints = _dedupe(
             [
                 *top_hints,
@@ -222,7 +227,7 @@ def expand_scene_ontology(
                 *(hypothesis.interactions if hypothesis else []),
                 *(hypothesis.material_cues if hypothesis else []),
             ]
-        )[: top_prompt_count * 2]
+        )[: top_prompt_count * 3]
         expansions[scene_index] = WindowOntologyExpansion(
             extraction_prompts=merged_prompts,
             semantic_hints=semantic_hints,
@@ -236,10 +241,80 @@ def expand_scene_ontology(
     return expansions
 
 
+def verify_scene_hypotheses(
+    *,
+    frame_batches: Sequence[FrameBatch],
+    ontology_scores: Mapping[int, Mapping[str, Sequence[Mapping[str, float]]]],
+    scene_hypotheses: Mapping[int, SceneHypothesis],
+    moving_region_labels: Mapping[int, Sequence[str]],
+    expanded_candidates: Mapping[int, WindowOntologyExpansion],
+    crop_label_hints_by_window: Mapping[int, Sequence[str]] | None = None,
+    top_prompt_count: int = 8,
+    strong_single_source_threshold: float = 0.08,
+) -> dict[int, VerifiedSceneHypothesis]:
+    verified: dict[int, VerifiedSceneHypothesis] = {}
+    crop_label_hints_by_window = crop_label_hints_by_window or {}
+    for batch in frame_batches:
+        scene_index = batch.scene_index
+        expansion = expanded_candidates.get(scene_index, WindowOntologyExpansion())
+        score_payload = ontology_scores.get(scene_index, {})
+        ontology_scores_by_label = {
+            str(item["label"]): float(item["score"])
+            for item in score_payload.get("extraction_entities", [])
+        }
+        support_sources = _support_sources(
+            ontology_scores_by_label=ontology_scores_by_label,
+            scene_hypothesis=scene_hypotheses.get(scene_index),
+            moving_region_labels=moving_region_labels.get(scene_index, []),
+            crop_label_hints=crop_label_hints_by_window.get(scene_index, []),
+        )
+        support_counts = {label: len(sources) for label, sources in support_sources.items()}
+        verified_prompts: list[str] = []
+        uncertain: list[str] = []
+        rejected: list[str] = []
+        for label in expansion.extraction_prompts:
+            support_count = support_counts.get(label, 0)
+            ontology_score = ontology_scores_by_label.get(label, 0.0)
+            if support_count >= 2 or ontology_score >= strong_single_source_threshold:
+                verified_prompts.append(label)
+            elif support_count == 1:
+                uncertain.append(label)
+            else:
+                rejected.append(label)
+        verified_prompts = _dedupe(verified_prompts)[:top_prompt_count]
+        if not verified_prompts:
+            fallback = uncertain[:1] or list(EMERGENCY_FALLBACK_PROMPTS[:1])
+            verified_prompts = _dedupe([*fallback, "object"])[:top_prompt_count]
+        elif "object" not in verified_prompts:
+            verified_prompts.append("object")
+        semantic_hints = _dedupe(
+            [
+                *expansion.semantic_hints,
+                *uncertain,
+                *list(crop_label_hints_by_window.get(scene_index, [])),
+            ]
+        )[: top_prompt_count * 3]
+        verified[scene_index] = VerifiedSceneHypothesis(
+            verified_extraction_prompts=verified_prompts,
+            verified_semantic_hints=semantic_hints,
+            rejected_hypotheses=_dedupe(rejected),
+            uncertain_hypotheses=_dedupe(uncertain),
+            support_counts={key: int(value) for key, value in support_counts.items()},
+            verification_rationale=_verification_rationale(
+                verified_prompts=verified_prompts,
+                uncertain_hypotheses=uncertain,
+                rejected_hypotheses=rejected,
+                support_sources=support_sources,
+            ),
+        )
+    return verified
+
+
 def label_moving_region_crops(
     *,
     proposals_by_scene: Mapping[int, Sequence[RegionProposal]],
     label_client: object,
+    label_vocabulary: Sequence[str],
     top_k: int = 2,
 ) -> dict[int, list[str]]:
     labels_by_scene: dict[int, list[str]] = {}
@@ -250,12 +325,59 @@ def label_moving_region_crops(
                 continue
             scored = label_client.score_image_labels(
                 image_paths=[proposal.crop_path],
-                labels=list(EMERGENCY_FALLBACK_PROMPTS),
+                labels=list(label_vocabulary),
             )[:top_k]
             for item in scored:
                 scene_labels.append(item.label)
         labels_by_scene[scene_index] = _dedupe(scene_labels)
     return labels_by_scene
+
+
+def _support_sources(
+    *,
+    ontology_scores_by_label: Mapping[str, float],
+    scene_hypothesis: SceneHypothesis | None,
+    moving_region_labels: Sequence[str],
+    crop_label_hints: Sequence[str],
+) -> dict[str, set[str]]:
+    sources: dict[str, set[str]] = {}
+    for label, score in ontology_scores_by_label.items():
+        if score >= 0.08:
+            sources.setdefault(label, set()).add("ontology")
+    if scene_hypothesis is not None:
+        gemini_terms = [
+            *scene_hypothesis.foreground_entities,
+            *scene_hypothesis.candidate_sound_sources,
+        ]
+        for label in gemini_terms:
+            sources.setdefault(label, set()).add("gemini")
+    for label in moving_region_labels:
+        sources.setdefault(label, set()).add("motion")
+    for label in crop_label_hints:
+        sources.setdefault(label, set()).add("crop")
+    return sources
+
+
+def _verification_rationale(
+    *,
+    verified_prompts: Sequence[str],
+    uncertain_hypotheses: Sequence[str],
+    rejected_hypotheses: Sequence[str],
+    support_sources: Mapping[str, set[str]],
+) -> str:
+    parts: list[str] = []
+    if verified_prompts:
+        parts.append(
+            "verified=" + ", ".join(
+                f"{label}<{'+'.join(sorted(support_sources.get(label, set())))}>"
+                for label in verified_prompts
+            )
+        )
+    if uncertain_hypotheses:
+        parts.append("uncertain=" + ", ".join(sorted(set(uncertain_hypotheses))))
+    if rejected_hypotheses:
+        parts.append("rejected=" + ", ".join(sorted(set(rejected_hypotheses))))
+    return " | ".join(parts) if parts else "no strong hypothesis evidence"
 
 
 def _proposal_from_frame_pair(

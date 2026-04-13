@@ -1,3 +1,5 @@
+# [Historical note] This planning document predates the silent-video proposal-stack redesign. References to legacy Gemini upload or tool_context are superseded by the active runtime in README and docs/tooling_constraints.md.
+
 # Stage 3 Detailed Plan: Crop-Based Source Extraction, Re-Identification, and Identity Confidence
 
 [Back to stage main](stage_3_main.md) · [Go to checklist](stage_3_checklist.md)

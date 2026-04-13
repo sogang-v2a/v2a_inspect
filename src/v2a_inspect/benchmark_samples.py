@@ -156,6 +156,7 @@ def run_video_sample_benchmark(
     clip_id: str,
     output_dir: str | Path,
     ssh_host: str | None = None,
+    remote_timeout_seconds: int = 900,
 ) -> dict[str, Any]:
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -171,6 +172,7 @@ def run_video_sample_benchmark(
         runtime_mode="nvidia_docker",
         server_base_url=server_base_url,
         pipeline_mode=mode,  # type: ignore[arg-type]
+        remote_timeout_seconds=remote_timeout_seconds,
     )
     started = perf_counter()
     try:
@@ -218,6 +220,18 @@ def run_video_sample_benchmark(
         "sound_event_count": len(bundle.get("sound_events", [])),
         "generation_group_count": len(bundle.get("generation_groups", [])),
         "validation_status": bundle.get("validation", {}).get("status"),
+        "verified_window_count": len(
+            bundle.get("pipeline_metadata", {}).get("verified_hypotheses_by_window", {})
+        ),
+        "recipe_signature_count": len(
+            bundle.get("pipeline_metadata", {}).get("recipe_signatures_by_group", {})
+        ),
+        "description_writer_call_count": bundle.get("pipeline_metadata", {}).get(
+            "description_writer_call_count"
+        ),
+        "adjudicator_call_count": bundle.get("pipeline_metadata", {}).get(
+            "adjudicator_call_count"
+        ),
         "warnings": list(response_payload.get("warnings", [])),
         "progress_messages": list(response_payload.get("progress_messages", [])),
         "effective_runtime_profile": response_payload.get("effective_runtime_profile"),

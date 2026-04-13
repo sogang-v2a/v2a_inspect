@@ -24,8 +24,8 @@ class PlannerExecutorTests(unittest.TestCase):
             issues=[
                 AgentIssue(
                     issue_id="issue-1",
-                    issue_type="validation_issue",
-                    description="late",
+                    issue_type="grouping_ambiguity",
+                    description="late grouping",
                     priority=50,
                 ),
                 AgentIssue(
@@ -160,8 +160,8 @@ class PlannerExecutorTests(unittest.TestCase):
                 ),
                 AgentIssue(
                     issue_id="issue-cut",
-                    issue_type="cut_ambiguity",
-                    description="cut ambiguity",
+                    issue_type="hypothesis_conflict",
+                    description="uncertain source hypotheses",
                     priority=1,
                 ),
                 AgentIssue(
@@ -176,6 +176,10 @@ class PlannerExecutorTests(unittest.TestCase):
         self.assertIsNotNone(action)
         action = cast(PlannedAction, action)
         self.assertEqual(action.tool_name, "densify_window_sampling")
+
+        state.issues[0].status = "resolved"
+        action = cast(PlannedAction, plan_next_action(state))
+        self.assertEqual(action.tool_name, "recover_foreground_sources")
 
     def test_planner_escalates_foreground_collapse_recovery_ladder(self) -> None:
         state = PlannerState(

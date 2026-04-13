@@ -81,6 +81,7 @@ class InspectState(TypedDict, total=False):
     scene_prompt_candidates: dict[int, list[str]]
     scene_hypotheses_by_window: dict[int, dict[str, object]]
     proposal_provenance_by_window: dict[int, dict[str, object]]
+    verified_hypotheses_by_window: dict[int, dict[str, object]]
     track_crops: list[TrackCrop]
     entity_embeddings: list[EntityEmbedding]
     track_label_candidates: dict[str, list[LabelCandidate]]
@@ -91,6 +92,7 @@ class InspectState(TypedDict, total=False):
     physical_sources: list[PhysicalSourceTrack]
     sound_event_segments: list[SoundEventSegment]
     ambience_beds: list[AmbienceBed]
+    recipe_signatures_by_group: dict[str, dict[str, object]]
     recovery_actions: list[str]
     recovery_attempts: list[dict[str, object]]
     terminal_resolution: str

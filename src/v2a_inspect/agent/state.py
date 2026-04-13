@@ -18,16 +18,13 @@ class AgentIssue(BaseModel):
     issue_id: str
     issue_type: Literal[
         "structural_gap",
-        "cut_ambiguity",
         "ambiguous_source",
         "foreground_collapse",
+        "hypothesis_conflict",
         "missing_sources",
-        "missing_crops",
-        "missing_labels",
         "grouping_ambiguity",
         "routing_ambiguity",
         "description_stale",
-        "validation_issue",
     ]
     description: str
     priority: int = Field(default=100, ge=0)

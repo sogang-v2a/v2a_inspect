@@ -13,6 +13,18 @@ from v2a_inspect.contracts import (
 )
 from v2a_inspect.tools import aggregate_group_routes
 from v2a_inspect.tools.types import CandidateGroup, Sam3EntityTrack, TrackRoutingDecision
+from pydantic import BaseModel
+
+
+class RecipeSignature(BaseModel):
+    source_label: str
+    event_type: str
+    material_or_surface: str
+    motion_profile: str
+    texture: str
+    interaction_signature: str
+    scene_hint: str
+    route_prior: str
 
 
 def build_sound_event_segments(
@@ -125,6 +137,28 @@ def build_generation_groups(
     scene_hypotheses_by_window: dict[int, dict[str, object]] | None = None,
     proposal_provenance_by_window: dict[int, dict[str, object]] | None = None,
 ) -> list[GenerationGroup]:
+    groups, _ = group_acoustic_recipes(
+        sound_events,
+        ambience_beds,
+        physical_sources=physical_sources,
+        candidate_groups=candidate_groups,
+        routing_decisions_by_track=routing_decisions_by_track,
+        scene_hypotheses_by_window=scene_hypotheses_by_window,
+        proposal_provenance_by_window=proposal_provenance_by_window,
+    )
+    return groups
+
+
+def group_acoustic_recipes(
+    sound_events: list[SoundEventSegment],
+    ambience_beds: list[AmbienceBed],
+    *,
+    physical_sources: list[PhysicalSourceTrack],
+    candidate_groups: list[CandidateGroup] | None = None,
+    routing_decisions_by_track: dict[str, TrackRoutingDecision] | None = None,
+    scene_hypotheses_by_window: dict[int, dict[str, object]] | None = None,
+    proposal_provenance_by_window: dict[int, dict[str, object]] | None = None,
+) -> tuple[list[GenerationGroup], dict[str, RecipeSignature]]:
     labels_by_source = {
         source.source_id: source.label_candidates[0].label
         for source in physical_sources
@@ -139,14 +173,19 @@ def build_generation_groups(
         for track_id in candidate_group.member_track_ids:
             candidate_groups_by_track[track_id] = candidate_group
     grouped_events: dict[str, list[SoundEventSegment]] = defaultdict(list)
+    recipe_signatures: dict[str, RecipeSignature] = {}
     for event in sound_events:
-        grouped_events[_event_group_key(
+        recipe_signature = _build_recipe_signature(
             event,
             labels_by_source.get(event.source_id),
             scene_hypotheses_by_window=scene_hypotheses_by_window,
             proposal_provenance_by_window=proposal_provenance_by_window,
             track_ids_by_source=track_ids_by_source,
-        )].append(event)
+            routing_decisions_by_track=routing_decisions_by_track,
+        )
+        group_key = _recipe_group_key(recipe_signature)
+        grouped_events[group_key].append(event)
+        recipe_signatures[group_key] = recipe_signature
 
     groups: list[GenerationGroup] = []
     for index, (group_key, events) in enumerate(grouped_events.items()):
@@ -195,7 +234,7 @@ def build_generation_groups(
                 reasoning_summary=(
                     "heuristic acoustic-equivalence grouping informed by candidate embedding groups"
                     if candidate_group_ids
-                    else "acoustic recipe grouping from source identity, interaction texture, materials, and scene hypotheses"
+                    else "grouped by acoustic recipe signature derived from source identity, motion, material, scene hint, and routing prior"
                 ),
                 routing_candidates=routing_candidates,
                 temporary_adapter_from=(
@@ -218,7 +257,31 @@ def build_generation_groups(
                 reasoning_summary="ambience beds are grouped by environment profile rather than source identity",
             )
         )
-    return groups
+        recipe_signatures[f"gen-{offset + index:04d}"] = RecipeSignature(
+            source_label=f"ambience:{ambience.environment_type}",
+            event_type=ambience.environment_type,
+            material_or_surface="generic",
+            motion_profile="ambient",
+            texture="continuous",
+            interaction_signature="none",
+            scene_hint=ambience.environment_type,
+            route_prior="tta",
+        )
+    remapped_signatures: dict[str, RecipeSignature] = {}
+    for index, (group_key, _) in enumerate(grouped_events.items()):
+        remapped_signatures[f"gen-{index:04d}"] = recipe_signatures[group_key]
+    for index, ambience in enumerate(ambience_beds):
+        remapped_signatures[f"gen-{offset + index:04d}"] = RecipeSignature(
+            source_label=f"ambience:{ambience.environment_type}",
+            event_type=ambience.environment_type,
+            material_or_surface="generic",
+            motion_profile="ambient",
+            texture="continuous",
+            interaction_signature="none",
+            scene_hint=ambience.environment_type,
+            route_prior="tta",
+        )
+    return groups, remapped_signatures
 
 
 def _event_type_from_track(track: Sam3EntityTrack) -> str:
@@ -248,17 +311,18 @@ def _material_hint(label_candidates: list[LabelCandidate]) -> str | None:
     return None
 
 
-def _event_group_key(
+def _build_recipe_signature(
     event: SoundEventSegment,
     source_label: str | None,
     *,
     scene_hypotheses_by_window: dict[int, dict[str, object]] | None,
     proposal_provenance_by_window: dict[int, dict[str, object]] | None,
     track_ids_by_source: dict[str, list[str]],
-) -> str:
+    routing_decisions_by_track: dict[str, TrackRoutingDecision] | None,
+) -> RecipeSignature:
     label = source_label or "unknown"
     material = event.material_or_surface or "generic"
-    interaction = sorted(event.interaction_flags or [])
+    interaction = "+".join(sorted(event.interaction_flags or [])) or "none"
     motion = event.motion_profile or "unknown"
     texture = event.texture or "generic"
     scene_key = _scene_recipe_hint(
@@ -267,7 +331,34 @@ def _event_group_key(
         scene_hypotheses_by_window=scene_hypotheses_by_window,
         proposal_provenance_by_window=proposal_provenance_by_window,
     )
-    return f"{label}:{event.event_type}:{material}:{motion}:{texture}:{'+'.join(interaction) or 'none'}:{scene_key}"
+    route_prior = _route_prior_for_source(
+        event.source_id,
+        track_ids_by_source=track_ids_by_source,
+        routing_decisions_by_track=routing_decisions_by_track,
+    )
+    return RecipeSignature(
+        source_label=label,
+        event_type=event.event_type,
+        material_or_surface=material,
+        motion_profile=motion,
+        texture=texture,
+        interaction_signature=interaction,
+        scene_hint=scene_key,
+        route_prior=route_prior,
+    )
+
+
+def _recipe_group_key(recipe_signature: RecipeSignature) -> str:
+    return (
+        f"{recipe_signature.source_label}:"
+        f"{recipe_signature.event_type}:"
+        f"{recipe_signature.material_or_surface}:"
+        f"{recipe_signature.motion_profile}:"
+        f"{recipe_signature.texture}:"
+        f"{recipe_signature.interaction_signature}:"
+        f"{recipe_signature.scene_hint}:"
+        f"{recipe_signature.route_prior}"
+    )
 
 
 def _scene_recipe_hint(
@@ -300,6 +391,22 @@ def _scene_recipe_hint(
         if ontology_hints:
             return "|".join(str(item) for item in ontology_hints)
     return "generic_scene"
+
+
+def _route_prior_for_source(
+    source_id: str,
+    *,
+    track_ids_by_source: dict[str, list[str]],
+    routing_decisions_by_track: dict[str, TrackRoutingDecision] | None,
+) -> str:
+    if not routing_decisions_by_track:
+        return "unknown"
+    track_ids = track_ids_by_source.get(source_id, [])
+    for track_id in track_ids:
+        decision = routing_decisions_by_track.get(track_id)
+        if decision is not None:
+            return decision.model_type.lower()
+    return "unknown"
 
 
 def _provisional_route(*, event_type: str, ambience: bool) -> RoutingDecision:

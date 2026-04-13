@@ -6,15 +6,12 @@ from v2a_inspect.agent.state import AgentIssue, PlannedAction, PlannerState
 
 _TOOL_BY_ISSUE = {
     "structural_gap": "structural_overview",
-    "cut_ambiguity": "refine_candidate_cuts",
     "ambiguous_source": "recover_with_text_prompt",
+    "hypothesis_conflict": "recover_foreground_sources",
     "missing_sources": "recover_foreground_sources",
-    "missing_crops": "crop_tracks",
-    "missing_labels": "score_track_labels",
-    "grouping_ambiguity": "group_embeddings",
+    "grouping_ambiguity": "group_acoustic_recipes",
     "routing_ambiguity": "routing_priors",
     "description_stale": "rerun_description_writer",
-    "validation_issue": "validate_bundle",
 }
 
 
@@ -65,4 +62,6 @@ def _tool_for_issue(issue: AgentIssue) -> str:
         if not bool(issue.payload.get("scene_prompt_recovery_attempted")):
             return "recover_foreground_sources"
         return "recover_with_text_prompt"
+    if issue.issue_type == "hypothesis_conflict":
+        return "recover_foreground_sources"
     return _TOOL_BY_ISSUE[issue.issue_type]

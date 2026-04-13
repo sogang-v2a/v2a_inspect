@@ -441,7 +441,6 @@ def _run_tool_first_pipeline(
         storyboard_path=storyboard_path,
         output_root=artifact_run_dir,
     )
-    state["scene_prompt_candidates"] = dict(source_hypotheses["prompts_by_scene"])
     state["scene_hypotheses_by_window"] = dict(
         source_hypotheses["scene_hypotheses_by_window"]
     )
@@ -454,11 +453,43 @@ def _run_tool_first_pipeline(
         started_at=started,
         metrics={
             "window_count": len(frame_batches),
-            "window_prompt_count": sum(
+            "window_candidate_count": sum(
+                len(payload.get("extraction_prompts", []))
+                for payload in source_hypotheses["expanded_candidates_by_window"].values()
+            ),
+            "window_hypothesis_count": len(state["scene_hypotheses_by_window"]),
+        },
+    )
+
+    started = stage_start()
+    verified_hypotheses = registry["verify_scene_hypotheses"].handler(
+        frame_batches=frame_batches,
+        ontology_scores_by_window=source_hypotheses["ontology_scores_by_window"],
+        scene_hypotheses_by_window=source_hypotheses["scene_hypotheses_by_window"],
+        moving_region_labels_by_window=source_hypotheses["moving_region_labels_by_window"],
+        expanded_candidates_by_window=source_hypotheses["expanded_candidates_by_window"],
+    )
+    state["verified_hypotheses_by_window"] = dict(
+        verified_hypotheses["verified_hypotheses_by_window"]
+    )
+    state["scene_prompt_candidates"] = dict(verified_hypotheses["prompts_by_scene"])
+    state["proposal_provenance_by_window"] = dict(
+        verified_hypotheses["proposal_provenance_by_window"]
+    )
+    record_stage(
+        state,
+        stage="verify_scene_hypotheses",
+        started_at=started,
+        metrics={
+            "verified_window_count": len(state["verified_hypotheses_by_window"]),
+            "verified_prompt_count": sum(
                 len(prompts)
                 for prompts in state["scene_prompt_candidates"].values()
             ),
-            "window_hypothesis_count": len(state["scene_hypotheses_by_window"]),
+            "uncertain_hypothesis_count": sum(
+                len(payload.get("uncertain_hypotheses", []))
+                for payload in state["verified_hypotheses_by_window"].values()
+            ),
         },
     )
 
@@ -586,6 +617,8 @@ def _run_tool_first_pipeline(
             "sound_event_count": len(semantics["sound_events"]),
             "ambience_bed_count": len(semantics["ambience_beds"]),
             "generation_group_count": len(semantics["generation_groups"]),
+            "recipe_signature_count": len(semantics.get("recipe_signatures", {})),
+            "recipe_grouping_seconds": semantics.get("recipe_grouping_seconds"),
         },
     )
 
@@ -601,6 +634,7 @@ def _run_tool_first_pipeline(
         "scene_prompt_candidates": dict(state.get("scene_prompt_candidates", {})),
         "scene_hypotheses_by_window": dict(state.get("scene_hypotheses_by_window", {})),
         "proposal_provenance_by_window": dict(state.get("proposal_provenance_by_window", {})),
+        "verified_hypotheses_by_window": dict(state.get("verified_hypotheses_by_window", {})),
         "track_crops": track_crops,
         "entity_embeddings": embeddings,
         "candidate_groups": candidate_groups,
@@ -610,6 +644,10 @@ def _run_tool_first_pipeline(
         "sound_event_segments": list(semantics["sound_events"]),
         "ambience_beds": list(semantics["ambience_beds"]),
         "generation_groups": list(semantics["generation_groups"]),
+        "recipe_signatures_by_group": {
+            key: value.model_dump(mode="json")
+            for key, value in semantics.get("recipe_signatures", {}).items()
+        },
         "identity_edges": list(semantics["identity_edges"]),
         "warnings": [],
         "errors": [],

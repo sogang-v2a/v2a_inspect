@@ -32,10 +32,13 @@ class ToolRegistryTests(unittest.TestCase):
         )
         registry = build_tool_registry(fake_runtime)
         self.assertIn("structural_overview", registry)
+        self.assertIn("propose_source_hypotheses", registry)
+        self.assertIn("verify_scene_hypotheses", registry)
         self.assertIn("densify_window_sampling", registry)
         self.assertIn("refine_candidate_cuts", registry)
         self.assertIn("recover_foreground_sources", registry)
         self.assertIn("recover_with_text_prompt", registry)
+        self.assertIn("group_acoustic_recipes", registry)
         self.assertIn("validate_bundle", registry)
 
     def test_crop_and_embedding_tools_are_callable(self) -> None:
