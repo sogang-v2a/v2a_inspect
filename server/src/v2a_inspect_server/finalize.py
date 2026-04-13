@@ -200,38 +200,16 @@ def finalize_route_decision(group: object) -> RoutingDecision:
             reasoning=routing_candidate.reasoning,
             rule_based=True,
         )
-    member_event_ids = list(getattr(group, "member_event_ids", []))
-    member_ambience_ids = list(getattr(group, "member_ambience_ids", []))
-    if member_ambience_ids:
-        return RoutingDecision(
-            model_type="TTA",
-            confidence=0.9,
-            factors=["ambience_bed", "deterministic_prior"],
-            reasoning="background ambience defaults to TTA in Stage 6 final routing",
-            rule_based=True,
-        )
+    if isinstance(existing, RoutingDecision):
+        return existing
     if existing is not None:
-        model_type = getattr(existing, "model_type", "TTA")
-        confidence = float(getattr(existing, "confidence", 0.5))
-        factors = list(getattr(existing, "factors", [])) or ["existing_route"]
-    else:
-        model_type = "VTA" if len(member_event_ids) <= 1 else "TTA"
-        confidence = 0.6 if len(member_event_ids) <= 1 else 0.7
-        factors = ["event_cardinality"]
-    if len(member_event_ids) > 3:
-        model_type = "TTA"
-        confidence = max(confidence, 0.75)
-        factors = [*factors, "crowded_group"]
-    elif len(member_event_ids) == 1:
-        model_type = "VTA"
-        confidence = max(confidence, 0.75)
-        factors = [*factors, "single_dominant_event"]
+        return RoutingDecision.model_validate(existing)
     return RoutingDecision(
-        model_type=model_type,
-        confidence=round(min(max(confidence, 0.0), 1.0), 4),
-        factors=factors,
-        reasoning="deterministic prior with final adjudicated normalization",
-        rule_based=True,
+        model_type="TTA",
+        confidence=0.0,
+        factors=[],
+        reasoning="route left unresolved after heuristic routing removal",
+        rule_based=False,
     )
 
 

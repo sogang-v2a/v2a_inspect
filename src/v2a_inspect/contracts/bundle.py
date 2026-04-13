@@ -118,7 +118,7 @@ class GenerationGroup(BaseModel):
     member_ambience_ids: list[str] = Field(default_factory=list)
     canonical_label: str
     canonical_description: str
-    description_origin: Literal["heuristic", "writer", "manual"] = "heuristic"
+    description_origin: Literal["writer", "manual"] = "manual"
     description_stale: bool = False
     description_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     description_rationale: str | None = None

@@ -15,11 +15,7 @@ from v2a_inspect.tools.types import (
 
 from .image_features import frame_motion_score, summarize_image_paths
 from .model_runtime import inference_device, inference_dtype, load_rgb_images, move_inputs_to_device
-from .source_ontology import EMERGENCY_FALLBACK_PROMPTS
 from .tracking import FrameDetection, link_frame_detections
-
-DEFAULT_SAM3_PROMPTS = list(EMERGENCY_FALLBACK_PROMPTS)
-
 
 class Sam3Client:
     def __init__(self, *, model_dir: str | Path) -> None:
@@ -48,9 +44,9 @@ class Sam3Client:
         match_threshold: float = 0.45,
     ) -> Sam3TrackSet:
         tracks: list[Sam3EntityTrack] = []
-        strategy = (
-            "scene_prompt_seeded" if prompts_by_scene else "default_prompt_seeded"
-        )
+        if prompts_by_scene is None:
+            return Sam3TrackSet(provider="sam3", strategy="prompt_free", tracks=[])
+        strategy = "scene_prompt_seeded"
         for batch in frame_batches:
             batch_tracks = self._extract_scene_tracks(
                 batch,
@@ -70,7 +66,9 @@ class Sam3Client:
         text_prompt: str,
         score_threshold: float = 0.2,
     ) -> Sam3TrackSet:
-        prompt = text_prompt.strip() or "object"
+        prompt = text_prompt.strip()
+        if not prompt:
+            return Sam3TrackSet(provider="sam3", strategy="text_recovery", tracks=[])
         prompts_by_scene = {
             batch.scene_index: [prompt]
             for batch in frame_batches
@@ -98,9 +96,11 @@ class Sam3Client:
     ) -> list[Sam3EntityTrack]:
         if not batch.frames:
             return []
-        prompt_list = [prompt.strip().lower() for prompt in (prompts or DEFAULT_SAM3_PROMPTS) if prompt.strip()]
+        if prompts is None:
+            return []
+        prompt_list = [prompt.strip().lower() for prompt in prompts if prompt.strip()]
         if not prompt_list:
-            prompt_list = list(DEFAULT_SAM3_PROMPTS)
+            return []
         detections_by_frame: list[list[FrameDetection]] = []
         stats = summarize_image_paths([frame.image_path for frame in batch.frames])
         motion_score = frame_motion_score([frame.image_path for frame in batch.frames])

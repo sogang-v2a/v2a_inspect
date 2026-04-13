@@ -23,7 +23,6 @@ from .media import (
     sample_frames,
 )
 from .policy import RemoteGpuPolicy, RemoteGpuSelection, choose_remote_gpu
-from .routing import aggregate_group_routes, route_track
 from .types import (
     CandidateGroup,
     CandidateGroupSet,
@@ -66,8 +65,6 @@ __all__ = [
     "export_window_clips",
     "cosine_similarity",
     "group_entity_embeddings",
-    "route_track",
-    "aggregate_group_routes",
     "VideoProbe",
     "SceneBoundary",
     "SampledFrame",

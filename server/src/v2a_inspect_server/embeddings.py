@@ -82,6 +82,8 @@ class LabelClient:
         labels: list[str],
     ) -> list[LabelScore]:
         normalized_labels = _normalize_labels(labels)
+        if not normalized_labels:
+            return []
         images = load_rgb_images(image_paths)
         texts = [f"This is a photo of {label}." for label in normalized_labels]
         inputs = self.processor(
@@ -117,5 +119,4 @@ class LabelClient:
 
 
 def _normalize_labels(labels: Sequence[str]) -> list[str]:
-    normalized = [label.strip().lower() for label in labels if label.strip()]
-    return normalized or ["object"]
+    return [label.strip().lower() for label in labels if label.strip()]

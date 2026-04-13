@@ -102,66 +102,16 @@ def build_candidate_cuts(
     soft_cut_threshold: float = _DEFAULT_SOFT_CUT_THRESHOLD,
     minimum_spacing_seconds: float = _DEFAULT_MINIMUM_CUT_SPACING,
 ) -> list[CandidateCut]:
-    resolved_probe = probe or probe_video(video_path)
-    if resolved_probe.duration_seconds <= 0.0:
-        return []
-
-    proposals: list[CandidateCut] = []
-    previous_difference: float | None = None
-    with tempfile.TemporaryDirectory(prefix=f"{Path(video_path).stem}_analysis_") as tmp_dir:
-        analysis_frames = _extract_analysis_frames(
-            video_path,
-            probe=resolved_probe,
-            output_dir=Path(tmp_dir),
-            analysis_fps=analysis_fps,
-        )
-        for previous_frame, current_frame in zip(
-            analysis_frames, analysis_frames[1:], strict=False
-        ):
-            difference = _frame_difference(
-                previous_frame.image_path,
-                current_frame.image_path,
-            )
-            reason_kind: str | None = None
-            if difference >= hard_cut_threshold:
-                reason_kind = "shot_boundary"
-            elif difference >= soft_cut_threshold:
-                reason_kind = "composition_change"
-            elif (
-                previous_difference is not None
-                and abs(difference - previous_difference)
-                >= _DEFAULT_MOTION_DELTA_THRESHOLD
-                and difference >= (soft_cut_threshold * 0.75)
-            ):
-                reason_kind = "motion_regime_change"
-
-            if reason_kind is not None:
-                proposals.append(
-                    CandidateCut(
-                        cut_id=f"proposal-{len(proposals)}",
-                        timestamp_seconds=round(current_frame.timestamp_seconds, 3),
-                        confidence=round(min(max(difference, 0.0), 1.0), 3),
-                        reasons=[
-                            CutReason(
-                                kind=reason_kind,
-                                confidence=round(min(max(difference, 0.0), 1.0), 3),
-                                rationale=f"frame_difference={difference:.3f}",
-                            )
-                        ],
-                    )
-                )
-            previous_difference = difference
-
-    proposals.extend(
-        _fallback_candidate_cuts(
-            duration_seconds=resolved_probe.duration_seconds,
-            target_scene_seconds=target_scene_seconds,
-        )
+    del (
+        video_path,
+        probe,
+        target_scene_seconds,
+        analysis_fps,
+        hard_cut_threshold,
+        soft_cut_threshold,
+        minimum_spacing_seconds,
     )
-    return merge_candidate_cuts(
-        proposals,
-        minimum_spacing_seconds=minimum_spacing_seconds,
-    )
+    return []
 
 
 def merge_candidate_cuts(
@@ -227,7 +177,7 @@ def build_evidence_windows(
         rationale = (
             f"window created from {', '.join(reason_labels)}"
             if reason_labels
-            else "window created from fallback coverage"
+            else "window created from explicit boundaries"
         )
         windows.append(
             EvidenceWindow(
@@ -313,23 +263,11 @@ def build_context_candidate_cuts(
     label_candidates_by_track: dict[str, list[LabelCandidate]],
     storyboard_path: str | None = None,
 ) -> tuple[list[CandidateCut], list[EvidenceWindow]]:
-    merged_candidate_cuts = merge_candidate_cuts(
-        [
-            *candidate_cuts,
-            *_source_lifecycle_cuts(probe=probe, tracks=tracks),
-            *_label_context_cuts(
-                frame_batches=frame_batches,
-                tracks=tracks,
-                label_candidates_by_track=label_candidates_by_track,
-            ),
-            *_interaction_onset_cuts(probe=probe, tracks=tracks),
-        ]
-    )
     evidence_windows = build_evidence_windows(
         probe=probe,
-        candidate_cuts=merged_candidate_cuts,
+        candidate_cuts=candidate_cuts,
     )
-    return merged_candidate_cuts, hydrate_evidence_windows(
+    return list(candidate_cuts), hydrate_evidence_windows(
         evidence_windows,
         frame_batches,
         storyboard_path=storyboard_path,
@@ -343,21 +281,13 @@ def detect_scenes(
     target_scene_seconds: float = 5.0,
 ) -> list[SceneBoundary]:
     resolved_probe = probe or probe_video(video_path)
-    if resolved_probe.duration_seconds <= 0.0:
-        return [SceneBoundary(scene_index=0, start_seconds=0.0, end_seconds=0.0)]
-
-    candidate_cuts = build_candidate_cuts(
-        video_path,
-        probe=resolved_probe,
-        target_scene_seconds=target_scene_seconds,
-    )
     evidence_windows = build_evidence_windows(
         probe=resolved_probe,
-        candidate_cuts=candidate_cuts,
+        candidate_cuts=[],
     )
     return evidence_windows_to_scene_boundaries(
         evidence_windows,
-        candidate_cuts=candidate_cuts,
+        candidate_cuts=[],
     )
 
 
@@ -705,27 +635,8 @@ def _fallback_candidate_cuts(
     duration_seconds: float,
     target_scene_seconds: float,
 ) -> list[CandidateCut]:
-    if target_scene_seconds <= 0:
-        return []
-    cuts: list[CandidateCut] = []
-    timestamp = target_scene_seconds
-    while timestamp < duration_seconds:
-        cuts.append(
-            CandidateCut(
-                cut_id=f"fallback-{len(cuts)}",
-                timestamp_seconds=round(timestamp, 3),
-                confidence=0.2,
-                reasons=[
-                    CutReason(
-                        kind="fallback_window",
-                        confidence=0.2,
-                        rationale=f"target_scene_seconds={target_scene_seconds}",
-                    )
-                ],
-            )
-        )
-        timestamp += target_scene_seconds
-    return cuts
+    del duration_seconds, target_scene_seconds
+    return []
 
 
 def _source_lifecycle_cuts(

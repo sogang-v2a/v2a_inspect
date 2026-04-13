@@ -25,7 +25,6 @@ from v2a_inspect.tools import (
     group_entity_embeddings,
     hydrate_evidence_windows,
     probe_video,
-    route_track,
     sample_frames,
 )
 from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack, SceneBoundary
@@ -47,7 +46,7 @@ from .semantics import (
     group_acoustic_recipes,
 )
 from .descriptions import synthesize_canonical_descriptions
-from .source_ontology import EXTRACTION_ENTITY_TERMS, SEMANTIC_HINT_TERMS
+from .source_ontology import load_source_ontology
 from .validators import validate_bundle
 
 
@@ -88,19 +87,20 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         output_root: str,
         extraction_terms: list[str] | None = None,
     ) -> dict[str, object]:
-        resolved_terms = extraction_terms or list(EXTRACTION_ENTITY_TERMS)
+        ontology = load_source_ontology()
+        resolved_terms = extraction_terms or list(ontology.extraction_entities)
         ontology_scores = score_scene_ontology(
             frame_batches,
             tooling_runtime.label_client,
             extraction_terms=resolved_terms,
-            semantic_terms=list(SEMANTIC_HINT_TERMS),
+            semantic_terms=list(ontology.semantic_hints),
             top_k=8,
         )
         proposer = getattr(tooling_runtime, "scene_hypothesis_proposer", None)
         scene_hypotheses = (
             proposer.propose(
                 frame_batches=frame_batches,
-                ontology_terms=[*EXTRACTION_ENTITY_TERMS, *SEMANTIC_HINT_TERMS],
+                ontology_terms=[*ontology.extraction_entities, *ontology.semantic_hints],
             )
             if proposer is not None
             else {}
@@ -427,7 +427,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
     def score_track_labels(
         *, track_image_paths: dict[str, list[str]], labels: list[str] | None = None
     ) -> dict[str, list[LabelCandidate]]:
-        label_set = labels or list(EXTRACTION_ENTITY_TERMS)
+        ontology = load_source_ontology()
+        label_set = labels or list(ontology.extraction_entities)
         return {
             track_id: [
                 LabelCandidate(label=score.label, score=round(score.score, 4))
@@ -446,7 +447,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         return group_entity_embeddings(embeddings, tracks_by_id=tracks_by_id)
 
     def routing_priors(*, tracks: list[Sam3EntityTrack]) -> dict[str, object]:
-        return {track.track_id: route_track(track) for track in tracks}
+        del tracks
+        return {}
 
     def build_source_semantics(
         *,
