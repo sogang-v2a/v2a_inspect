@@ -30,17 +30,26 @@ class GeminiDescriptionWriter:
         *,
         model: str = DEFAULT_GEMINI_MODEL,
         api_key: str,
+        max_retries: int = 1,
+        timeout_seconds: float = 45.0,
     ) -> None:
         self._llm: BaseChatModel | None = None
         self._model = model
         self._api_key = api_key
+        self._max_retries = max_retries
+        self._timeout_seconds = timeout_seconds
 
     @property
     def llm(self) -> BaseChatModel:
         if self._llm is None:
             from v2a_inspect.runtime import build_llm
 
-            self._llm = build_llm(model=self._model, api_key=self._api_key)
+            self._llm = build_llm(
+                model=self._model,
+                api_key=self._api_key,
+                max_retries=self._max_retries,
+                timeout_seconds=self._timeout_seconds,
+            )
         return self._llm
 
     def write_group_description(

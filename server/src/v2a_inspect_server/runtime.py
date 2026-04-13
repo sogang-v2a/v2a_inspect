@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Mapping
 from functools import lru_cache
 from http import HTTPStatus
@@ -93,6 +94,13 @@ class ToolingRuntime:
     @property
     def description_writer(self) -> "GeminiDescriptionWriter | None":
         if self._description_writer is None:
+            if os.getenv("V2A_DISABLE_DESCRIPTION_WRITER", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
+                return None
             server_settings = get_server_runtime_settings()
             if server_settings.gemini_api_key is None:
                 return None
@@ -106,6 +114,13 @@ class ToolingRuntime:
     @property
     def adjudication_judge(self) -> "GeminiIssueJudge | None":
         if self._adjudication_judge is None:
+            if os.getenv("V2A_DISABLE_ADJUDICATION_JUDGE", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
+                return None
             server_settings = get_server_runtime_settings()
             if server_settings.gemini_api_key is None:
                 return None

@@ -741,6 +741,8 @@ def _adjudicate_issue(
     planned_tool_name: str,
     tooling_runtime: "ToolingRuntime",
 ) -> dict[str, object] | None:
+    if inspect_state.get("adjudicator_disabled_after_failure"):
+        return None
     if issue is None or issue.issue_type not in {
         "foreground_collapse",
         "hypothesis_conflict",
@@ -780,6 +782,7 @@ def _adjudicate_issue(
         )
     except Exception:  # noqa: BLE001
         decision = None
+        inspect_state["adjudicator_disabled_after_failure"] = True
     inspect_state["adjudicator_call_count"] = int(
         inspect_state.get("adjudicator_call_count", 0)
     ) + 1

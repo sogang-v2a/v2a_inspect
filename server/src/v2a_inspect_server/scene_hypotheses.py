@@ -64,15 +64,29 @@ class _SceneHypothesisPayload(BaseModel):
 
 
 class GeminiSceneHypothesisProposer:
-    def __init__(self, *, model: str, api_key: str) -> None:
+    def __init__(
+        self,
+        *,
+        model: str,
+        api_key: str,
+        max_retries: int = 1,
+        timeout_seconds: float = 30.0,
+    ) -> None:
         self._model = model
         self._api_key = api_key
         self._llm: BaseChatModel | None = None
+        self._max_retries = max_retries
+        self._timeout_seconds = timeout_seconds
 
     @property
     def llm(self) -> BaseChatModel:
         if self._llm is None:
-            self._llm = build_llm(model=self._model, api_key=self._api_key)
+            self._llm = build_llm(
+                model=self._model,
+                api_key=self._api_key,
+                max_retries=self._max_retries,
+                timeout_seconds=self._timeout_seconds,
+            )
         return self._llm
 
     def propose(
@@ -89,9 +103,12 @@ class GeminiSceneHypothesisProposer:
         )
         results: dict[int, SceneHypothesis] = {}
         ontology_preview = list(ontology_terms)[:96]
+        proposal_failed = False
         for batch in frame_batches:
             if not batch.frames:
                 continue
+            if proposal_failed:
+                break
             content: list[object] = [
                 {
                     "type": "text",
@@ -123,6 +140,7 @@ class GeminiSceneHypothesisProposer:
             try:
                 payload = structured_llm.invoke(prompt)
             except Exception:  # noqa: BLE001
+                proposal_failed = True
                 continue
             if not isinstance(payload, _SceneHypothesisPayload):
                 payload = _SceneHypothesisPayload.model_validate(payload)

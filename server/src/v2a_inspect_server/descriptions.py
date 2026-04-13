@@ -28,6 +28,9 @@ def synthesize_canonical_descriptions(
     if stats is not None:
         stats.setdefault("description_writer_calls", 0)
         stats.setdefault("preserved_description_count", 0)
+        stats.setdefault("description_writer_failures", 0)
+
+    writer_available = description_writer
 
     for group in generation_groups:
         if (
@@ -69,11 +72,11 @@ def synthesize_canonical_descriptions(
                     "description_rationale": "structured synthesis from source labels, event types, materials, and patterns",
                 }
             )
-            if description_writer is not None:
+            if writer_available is not None:
                 if stats is not None:
                     stats["description_writer_calls"] += 1
                 try:
-                    draft = description_writer.write_group_description(
+                    draft = writer_available.write_group_description(
                         _event_group_context(
                             group=updated_group,
                             member_events=member_events,
@@ -82,6 +85,9 @@ def synthesize_canonical_descriptions(
                     )
                 except Exception:  # noqa: BLE001
                     draft = None
+                    writer_available = None
+                    if stats is not None:
+                        stats["description_writer_failures"] += 1
                 if draft is not None:
                     updated_group = updated_group.model_copy(
                         update={
@@ -109,11 +115,11 @@ def synthesize_canonical_descriptions(
                 "description_rationale": "structured ambience synthesis from environment type and acoustic profile",
             }
         )
-        if description_writer is not None:
+        if writer_available is not None:
             if stats is not None:
                 stats["description_writer_calls"] += 1
             try:
-                draft = description_writer.write_group_description(
+                draft = writer_available.write_group_description(
                     _ambience_group_context(
                         group=updated_group,
                         member_ambience=member_ambience,
@@ -121,6 +127,9 @@ def synthesize_canonical_descriptions(
                 )
             except Exception:  # noqa: BLE001
                 draft = None
+                writer_available = None
+                if stats is not None:
+                    stats["description_writer_failures"] += 1
             if draft is not None:
                 updated_group = updated_group.model_copy(
                     update={
