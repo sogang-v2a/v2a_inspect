@@ -11,7 +11,6 @@ from pathlib import Path
 import tempfile
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal
-from urllib import request as urllib_request
 from urllib.parse import parse_qs, urlparse
 
 from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
@@ -946,14 +945,11 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                     payload = self._read_json()
                     video_path = payload.get("video_path")
                     video_filename = payload.get("video_filename")
-                    video_url = payload.get("video_url")
                     options_payload = payload.get("options", {})
-                    if not isinstance(video_path, str) and not isinstance(
-                        video_url, str
-                    ):
+                    if not isinstance(video_path, str):
                         self.send_error(
                             HTTPStatus.BAD_REQUEST,
-                            "video_path or video_url is required",
+                            "video_path is required",
                         )
                         return
                     if not isinstance(options_payload, dict):
@@ -968,7 +964,6 @@ def _build_handler() -> type[BaseHTTPRequestHandler]:
                         video_filename=video_filename
                         if isinstance(video_filename, str)
                         else "video.mp4",
-                        video_url=video_url if isinstance(video_url, str) else None,
                     )
                     gpu_check = inspect_nvidia_runtime(
                         minimum_vram_gb=get_server_runtime_settings().minimum_gpu_vram_gb
@@ -1080,16 +1075,25 @@ def _resolve_request_video_path(
     *,
     video_path: str,
     video_filename: str,
-    video_url: str | None,
 ) -> str:
-    if video_path and Path(video_path).exists():
-        return video_path
-    if video_url:
-        target_dir = _prepare_upload_dir()
-        target_path = target_dir / _sanitize_filename(video_filename)
-        urllib_request.urlretrieve(video_url, target_path)  # noqa: S310
-        return str(target_path)
-    raise ValueError("video_url is required when video_path is not accessible.")
+    del video_filename
+    if not video_path:
+        raise ValueError("video_path is required.")
+    candidate = Path(video_path)
+    if not candidate.exists():
+        raise ValueError("video_path must reference an existing uploaded file.")
+    allowed_root = (
+        get_server_runtime_settings().shared_video_dir or Path(tempfile.gettempdir())
+    )
+    resolved_candidate = candidate.resolve()
+    resolved_root = Path(allowed_root).resolve()
+    try:
+        resolved_candidate.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError(
+            "video_path must point to a file created by POST /upload inside the managed upload directory."
+        ) from exc
+    return str(resolved_candidate)
 
 
 def _write_uploaded_video(*, filename: str, raw_bytes: bytes) -> str:
