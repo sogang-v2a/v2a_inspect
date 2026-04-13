@@ -10,10 +10,6 @@ class CutReason(BaseModel):
         "shot_boundary",
         "composition_change",
         "motion_regime_change",
-        "source_lifecycle_change",
-        "label_context_change",
-        "interaction_onset",
-        "fallback_window",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str = ""
@@ -109,7 +105,7 @@ class RoutingDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     factors: list[str] = Field(default_factory=list)
     reasoning: str
-    rule_based: bool = False
+    decision_origin: Literal["gemini", "manual"] = "gemini"
 
 
 class GenerationGroup(BaseModel):
@@ -117,13 +113,13 @@ class GenerationGroup(BaseModel):
     member_event_ids: list[str] = Field(default_factory=list)
     member_ambience_ids: list[str] = Field(default_factory=list)
     canonical_label: str
-    canonical_description: str
-    description_origin: Literal["writer", "manual"] = "manual"
+    canonical_description: str | None = None
+    description_origin: Literal["writer", "manual"] | None = None
     description_stale: bool = False
     description_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     description_rationale: str | None = None
     group_confidence: float = Field(ge=0.0, le=1.0)
-    route_decision: RoutingDecision
+    route_decision: RoutingDecision | None = None
     reasoning_summary: str = ""
     routing_candidates: list[dict[str, object]] = Field(default_factory=list)
     temporary_adapter_from: str | None = None
@@ -139,6 +135,9 @@ class ValidationIssue(BaseModel):
         "accepted_ambience_only",
         "overlapping_contradictory_assignments",
         "route_inconsistency",
+        "unresolved_route_decision",
+        "unresolved_description",
+        "empty_generation_groups",
         "overly_vague_description",
         "unreviewed_low_confidence_output",
     ]

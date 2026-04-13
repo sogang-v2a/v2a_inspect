@@ -45,7 +45,9 @@ def synthesize_canonical_descriptions(
                 "canonical_label": group.canonical_label,
                 "member_event_ids": list(group.member_event_ids),
                 "member_ambience_ids": list(group.member_ambience_ids),
-                "route_prior": group.route_decision.model_type,
+                "route_prior": None
+                if group.route_decision is None
+                else group.route_decision.model_type,
             }
         )
         if draft is None:

@@ -30,24 +30,18 @@ from v2a_inspect.tools import (
 from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack, SceneBoundary
 
 from .crops import crop_tracks
-from .reid import build_identity_edges, build_provisional_source_tracks
-from .scene_hypotheses import (
-    SceneHypothesis,
-    WindowOntologyExpansion,
-    expand_scene_ontology,
-    label_moving_region_crops,
-    propose_moving_regions,
-    score_scene_ontology,
-    verify_scene_hypotheses,
-)
-from .semantics import (
-    build_ambience_beds,
-    build_sound_event_segments,
-    group_acoustic_recipes,
-)
 from .descriptions import synthesize_canonical_descriptions
-from .source_ontology import load_source_ontology
+from .gemini_grouping import group_generation_groups
+from .gemini_proposal_grounding import GroundedWindowProposal
+from .gemini_routing import route_generation_groups
+from .gemini_source_proposal import WindowSourceProposal
+from .gemini_source_semantics import build_source_and_event_semantics
+from .reid import build_identity_edges, build_provisional_source_tracks
+from .scene_hypotheses import RegionProposal, propose_moving_regions
 from .validators import validate_bundle
+
+if TYPE_CHECKING:
+    from .runtime import ToolingRuntime
 
 
 @dataclass(frozen=True)
@@ -55,10 +49,6 @@ class ToolDefinition:
     name: str
     handler: Callable[..., object]
     description: str
-
-
-if TYPE_CHECKING:
-    from .runtime import ToolingRuntime
 
 
 def _artifact_root(video_path: str) -> Path:
@@ -80,75 +70,6 @@ def _artifact_root(video_path: str) -> Path:
 
 
 def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefinition]:
-    def _build_window_proposals(
-        *,
-        frame_batches: list[FrameBatch],
-        storyboard_path: str,
-        output_root: str,
-        extraction_terms: list[str] | None = None,
-    ) -> dict[str, object]:
-        ontology = load_source_ontology()
-        resolved_terms = extraction_terms or list(ontology.extraction_entities)
-        ontology_scores = score_scene_ontology(
-            frame_batches,
-            tooling_runtime.label_client,
-            extraction_terms=resolved_terms,
-            semantic_terms=list(ontology.semantic_hints),
-            top_k=8,
-        )
-        proposer = getattr(tooling_runtime, "scene_hypothesis_proposer", None)
-        scene_hypotheses = (
-            proposer.propose(
-                frame_batches=frame_batches,
-                ontology_terms=[*ontology.extraction_entities, *ontology.semantic_hints],
-            )
-            if proposer is not None
-            else {}
-        )
-        moving_regions = propose_moving_regions(
-            frame_batches,
-            output_root=str(Path(output_root) / "motion_regions"),
-        )
-        moving_region_labels = label_moving_region_crops(
-            proposals_by_scene=moving_regions,
-            label_client=tooling_runtime.label_client,
-            label_vocabulary=resolved_terms,
-        )
-        expansions = expand_scene_ontology(
-            frame_batches=frame_batches,
-            ontology_scores=ontology_scores,
-            scene_hypotheses=scene_hypotheses,
-            moving_region_labels=moving_region_labels,
-            top_prompt_count=8,
-        )
-        return {
-            "ontology_scores_by_window": ontology_scores,
-            "scene_hypotheses_by_window": {
-                scene_index: hypothesis.model_dump(mode="json")
-                for scene_index, hypothesis in scene_hypotheses.items()
-            },
-            "proposal_provenance_by_window": {
-                scene_index: {
-                    **expansion.provenance,
-                    "motion_region_count": len(moving_regions.get(scene_index, [])),
-                }
-                for scene_index, expansion in expansions.items()
-            },
-            "expanded_candidates_by_window": {
-                scene_index: expansion.model_dump(mode="json")
-                for scene_index, expansion in expansions.items()
-            },
-            "moving_region_labels_by_window": {
-                scene_index: list(labels)
-                for scene_index, labels in moving_region_labels.items()
-            },
-            "semantic_hints_by_window": {
-                scene_index: expansion.semantic_hints
-                for scene_index, expansion in expansions.items()
-            },
-            "storyboard_path": storyboard_path,
-        }
-
     def structural_overview(
         *,
         video_path: str,
@@ -215,54 +136,93 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         storyboard_path: str,
         output_root: str,
     ) -> dict[str, object]:
-        return _build_window_proposals(
-            frame_batches=frame_batches,
-            storyboard_path=storyboard_path,
-            output_root=output_root,
+        moving_regions = propose_moving_regions(
+            frame_batches,
+            output_root=str(Path(output_root) / "motion_regions"),
         )
+        proposer = getattr(tooling_runtime, "source_proposer", None)
+        proposals = (
+            proposer.propose(
+                frame_batches=frame_batches,
+                storyboard_path=storyboard_path,
+                moving_regions_by_scene=moving_regions,
+            )
+            if proposer is not None
+            else {}
+        )
+        return {
+            "scene_hypotheses_by_window": {
+                scene_index: proposal.model_dump(mode="json")
+                for scene_index, proposal in proposals.items()
+            },
+            "moving_regions_by_window": {
+                scene_index: [proposal.model_dump(mode="json") for proposal in proposals_by_scene]
+                for scene_index, proposals_by_scene in moving_regions.items()
+            },
+            "proposal_provenance_by_window": {
+                scene_index: {
+                    "motion_region_count": len(moving_regions.get(scene_index, [])),
+                    "source_proposal": proposals[scene_index].model_dump(mode="json"),
+                }
+                for scene_index in proposals
+            },
+            "storyboard_path": storyboard_path,
+        }
 
-    def verify_source_hypotheses(
+    def verify_scene_hypotheses(
         *,
         frame_batches: list[FrameBatch],
-        ontology_scores_by_window: dict[int, dict[str, list[dict[str, float]]]],
         scene_hypotheses_by_window: dict[int, dict[str, object]],
-        moving_region_labels_by_window: dict[int, list[str]],
-        expanded_candidates_by_window: dict[int, dict[str, object]],
-        crop_label_hints_by_window: dict[int, list[str]] | None = None,
+        moving_regions_by_window: dict[int, list[dict[str, object]]],
+        storyboard_path: str | None = None,
     ) -> dict[str, object]:
-        verified = verify_scene_hypotheses(
-            frame_batches=frame_batches,
-            ontology_scores=ontology_scores_by_window,
-            scene_hypotheses={
-                scene_index: SceneHypothesis.model_validate(payload)
-                for scene_index, payload in scene_hypotheses_by_window.items()
-            },
-            moving_region_labels=moving_region_labels_by_window,
-            expanded_candidates={
-                scene_index: WindowOntologyExpansion.model_validate(payload)
-                for scene_index, payload in expanded_candidates_by_window.items()
-            },
-            crop_label_hints_by_window=crop_label_hints_by_window,
+        grounder = getattr(tooling_runtime, "proposal_grounder", None)
+        proposals = {
+            scene_index: WindowSourceProposal.model_validate(payload)
+            for scene_index, payload in scene_hypotheses_by_window.items()
+        }
+        moving_regions = {
+            scene_index: [RegionProposal.model_validate(item) for item in payload]
+            for scene_index, payload in moving_regions_by_window.items()
+        }
+        grounded = (
+            grounder.ground(
+                frame_batches=frame_batches,
+                storyboard_path=storyboard_path,
+                proposals_by_scene=proposals,
+                moving_regions_by_scene=moving_regions,
+                label_client=tooling_runtime.label_client,
+            )
+            if grounder is not None
+            else {
+                scene_index: GroundedWindowProposal(
+                    extraction_prompts=[],
+                    semantic_hints=[],
+                    rejected_phrases=[],
+                    unresolved_phrases=_proposal_phrases(proposal),
+                    rationale="proposal grounding unavailable",
+                )
+                for scene_index, proposal in proposals.items()
+            }
         )
         return {
             "verified_hypotheses_by_window": {
                 scene_index: payload.model_dump(mode="json")
-                for scene_index, payload in verified.items()
+                for scene_index, payload in grounded.items()
             },
             "prompts_by_scene": {
-                scene_index: payload.verified_extraction_prompts
-                for scene_index, payload in verified.items()
+                scene_index: payload.extraction_prompts
+                for scene_index, payload in grounded.items()
             },
             "semantic_hints_by_window": {
-                scene_index: payload.verified_semantic_hints
-                for scene_index, payload in verified.items()
+                scene_index: payload.semantic_hints
+                for scene_index, payload in grounded.items()
             },
             "proposal_provenance_by_window": {
                 scene_index: {
-                    **dict(expanded_candidates_by_window.get(scene_index, {})).get("provenance", {}),
-                    "verification": payload.model_dump(mode="json"),
+                    "grounded_proposal": payload.model_dump(mode="json"),
                 }
-                for scene_index, payload in verified.items()
+                for scene_index, payload in grounded.items()
             },
         }
 
@@ -330,12 +290,13 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         label_candidates_by_track: dict[str, list[LabelCandidate]],
         storyboard_path: str | None = None,
     ) -> dict[str, object]:
+        del tracks, label_candidates_by_track
         merged_candidate_cuts, evidence_windows = build_context_candidate_cuts(
             candidate_cuts=candidate_cuts,
             probe=probe,
             frame_batches=frame_batches,
-            tracks=tracks,
-            label_candidates_by_track=label_candidates_by_track,
+            tracks=[],
+            label_candidates_by_track={},
             storyboard_path=storyboard_path,
         )
         return {
@@ -349,35 +310,26 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         prompts_by_scene: dict[int, list[str]] | None = None,
         storyboard_path: str | None = None,
         output_root: str | None = None,
+        **_: object,
     ) -> object:
         resolved_prompts = prompts_by_scene
         if resolved_prompts is None:
-            proposals = _build_window_proposals(
+            proposals = propose_source_hypotheses(
                 frame_batches=frame_batches,
                 storyboard_path=storyboard_path or "",
                 output_root=output_root or tempfile.mkdtemp(prefix="v2a_prompt_refresh_"),
             )
-            verified = verify_source_hypotheses(
+            verified = verify_scene_hypotheses(
                 frame_batches=frame_batches,
-                ontology_scores_by_window=proposals["ontology_scores_by_window"],
                 scene_hypotheses_by_window=proposals["scene_hypotheses_by_window"],
-                moving_region_labels_by_window=proposals["moving_region_labels_by_window"],
-                expanded_candidates_by_window=proposals["expanded_candidates_by_window"],
+                moving_regions_by_window=proposals["moving_regions_by_window"],
+                storyboard_path=storyboard_path,
             )
             resolved_prompts = dict(verified["prompts_by_scene"])
-            if getattr(tooling_runtime, "should_release_clients", False):
-                tooling_runtime.release_client("label")
         return tooling_runtime.sam3_client.extract_entities(
             frame_batches,
             prompts_by_scene=resolved_prompts,
             score_threshold=0.25,
-        )
-
-    def recover_with_text_prompt(
-        *, frame_batches: list[FrameBatch], text_prompt: str, **_: object
-    ) -> object:
-        return tooling_runtime.sam3_client.recover_with_text_prompt(
-            frame_batches, text_prompt=text_prompt
         )
 
     def recover_foreground_sources(
@@ -388,18 +340,17 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         prompt_vocabulary: list[str] | None = None,
         **_: object,
     ) -> dict[str, object]:
-        refreshed = _build_window_proposals(
+        del prompt_vocabulary
+        refreshed = propose_source_hypotheses(
             frame_batches=frame_batches,
             storyboard_path=storyboard_path or "",
             output_root=output_root or tempfile.mkdtemp(prefix="v2a_prompt_recovery_"),
-            extraction_terms=prompt_vocabulary,
         )
-        verified = verify_source_hypotheses(
+        verified = verify_scene_hypotheses(
             frame_batches=frame_batches,
-            ontology_scores_by_window=refreshed["ontology_scores_by_window"],
             scene_hypotheses_by_window=refreshed["scene_hypotheses_by_window"],
-            moving_region_labels_by_window=refreshed["moving_region_labels_by_window"],
-            expanded_candidates_by_window=refreshed["expanded_candidates_by_window"],
+            moving_regions_by_window=refreshed["moving_regions_by_window"],
+            storyboard_path=storyboard_path,
         )
         track_set = tooling_runtime.sam3_client.extract_entities(
             frame_batches,
@@ -427,8 +378,9 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
     def score_track_labels(
         *, track_image_paths: dict[str, list[str]], labels: list[str] | None = None
     ) -> dict[str, list[LabelCandidate]]:
-        ontology = load_source_ontology()
-        label_set = labels or list(ontology.extraction_entities)
+        label_set = _dedupe(labels or [])
+        if not label_set:
+            return {}
         return {
             track_id: [
                 LabelCandidate(label=score.label, score=round(score.score, 4))
@@ -446,10 +398,6 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
     ) -> object:
         return group_entity_embeddings(embeddings, tracks_by_id=tracks_by_id)
 
-    def routing_priors(*, tracks: list[Sam3EntityTrack]) -> dict[str, object]:
-        del tracks
-        return {}
-
     def build_source_semantics(
         *,
         tracks: list[Sam3EntityTrack],
@@ -458,9 +406,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         label_candidates_by_track: dict[str, list[LabelCandidate]],
         evidence_windows: list[EvidenceWindow],
         candidate_groups: list[CandidateGroup] | None = None,
-        routing_decisions_by_track: dict[str, object] | None = None,
-        scene_hypotheses_by_window: dict[int, dict[str, object]] | None = None,
-        proposal_provenance_by_window: dict[int, dict[str, object]] | None = None,
+        **_: object,
     ) -> dict[str, object]:
         tracks_by_id = {track.track_id: track for track in tracks}
         identity_edges = build_identity_edges(
@@ -476,29 +422,35 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             candidate_groups=candidate_groups,
             label_candidates_by_track=label_candidates_by_track,
         )
-        sound_events = build_sound_event_segments(
-            physical_sources,
-            tracks_by_id=tracks_by_id,
-        )
-        ambience_beds = build_ambience_beds(evidence_windows, physical_sources)
-        grouping_started = perf_counter()
-        generation_groups, recipe_signatures = group_acoustic_recipes(
-            sound_events,
-            ambience_beds,
+        semantic_started = perf_counter()
+        semantic_outputs = build_source_and_event_semantics(
             physical_sources=physical_sources,
-            candidate_groups=candidate_groups,
-            routing_decisions_by_track=routing_decisions_by_track,
-            scene_hypotheses_by_window=scene_hypotheses_by_window,
-            proposal_provenance_by_window=proposal_provenance_by_window,
+            tracks_by_id=tracks_by_id,
+            track_crops=track_crops,
+            evidence_windows=evidence_windows,
+            interpreter=getattr(tooling_runtime, "source_semantics_interpreter", None),
+        )
+        generation_groups = group_generation_groups(
+            sound_events=semantic_outputs["sound_events"],
+            ambience_beds=semantic_outputs["ambience_beds"],
+            physical_sources=semantic_outputs["physical_sources"],
+            grouping_judge=getattr(tooling_runtime, "grouping_judge", None),
+        )
+        generation_groups = route_generation_groups(
+            generation_groups=generation_groups,
+            sound_events=semantic_outputs["sound_events"],
+            ambience_beds=semantic_outputs["ambience_beds"],
+            physical_sources=semantic_outputs["physical_sources"],
+            routing_judge=getattr(tooling_runtime, "routing_judge", None),
         )
         return {
             "identity_edges": identity_edges,
-            "physical_sources": physical_sources,
-            "sound_events": sound_events,
-            "ambience_beds": ambience_beds,
+            "physical_sources": semantic_outputs["physical_sources"],
+            "sound_events": semantic_outputs["sound_events"],
+            "ambience_beds": semantic_outputs["ambience_beds"],
             "generation_groups": generation_groups,
-            "recipe_signatures": recipe_signatures,
-            "recipe_grouping_seconds": round(perf_counter() - grouping_started, 4),
+            "recipe_signatures": {},
+            "recipe_grouping_seconds": round(perf_counter() - semantic_started, 4),
         }
 
     def group_acoustic_recipe_semantics(
@@ -506,21 +458,22 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         sound_events: list[object],
         ambience_beds: list[object],
         physical_sources: list[object],
-        candidate_groups: list[CandidateGroup] | None = None,
-        routing_decisions_by_track: dict[str, object] | None = None,
-        scene_hypotheses_by_window: dict[int, dict[str, object]] | None = None,
-        proposal_provenance_by_window: dict[int, dict[str, object]] | None = None,
+        **_: object,
     ) -> dict[str, object]:
-        groups, recipe_signatures = group_acoustic_recipes(
+        groups = group_generation_groups(
             sound_events=list(sound_events),
             ambience_beds=list(ambience_beds),
             physical_sources=list(physical_sources),
-            candidate_groups=candidate_groups,
-            routing_decisions_by_track=routing_decisions_by_track,
-            scene_hypotheses_by_window=scene_hypotheses_by_window,
-            proposal_provenance_by_window=proposal_provenance_by_window,
+            grouping_judge=getattr(tooling_runtime, "grouping_judge", None),
         )
-        return {"generation_groups": groups, "recipe_signatures": recipe_signatures}
+        routed = route_generation_groups(
+            generation_groups=groups,
+            sound_events=list(sound_events),
+            ambience_beds=list(ambience_beds),
+            physical_sources=list(physical_sources),
+            routing_judge=getattr(tooling_runtime, "routing_judge", None),
+        )
+        return {"generation_groups": routed, "recipe_signatures": {}}
 
     def validator(*, bundle: MultitrackDescriptionBundle) -> object:
         return validate_bundle(bundle)
@@ -544,22 +497,22 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "structural_overview": ToolDefinition(
             "structural_overview",
             structural_overview,
-            "Probe video, create a silent analysis copy, and build candidate cuts/evidence windows.",
+            "Probe video, create a silent analysis copy, and build structural evidence windows.",
         ),
         "propose_source_hypotheses": ToolDefinition(
             "propose_source_hypotheses",
             propose_source_hypotheses,
-            "Propose raw extraction candidates from ontology scoring, Gemini frame hypotheses, and motion regions.",
+            "Use Gemini to propose open-world visible sources from frames, storyboard, and motion crops.",
         ),
         "verify_scene_hypotheses": ToolDefinition(
             "verify_scene_hypotheses",
-            verify_source_hypotheses,
-            "Verify raw source hypotheses into extraction prompts and semantic hints.",
+            verify_scene_hypotheses,
+            "Ground Gemini source proposals into extraction prompts and semantic hints.",
         ),
         "extract_entities": ToolDefinition(
             "extract_entities",
             extract_entities,
-            "Run scene-specific SAM extraction from merged silent-video source proposals.",
+            "Run SAM3 extraction from grounded prompts only.",
         ),
         "densify_window_sampling": ToolDefinition(
             "densify_window_sampling",
@@ -569,17 +522,12 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "refine_candidate_cuts": ToolDefinition(
             "refine_candidate_cuts",
             refine_candidate_cuts,
-            "Merge structural, source-lifecycle, label-context, and interaction cut cues.",
-        ),
-        "recover_with_text_prompt": ToolDefinition(
-            "recover_with_text_prompt",
-            recover_with_text_prompt,
-            "Run manual recovery-only extraction.",
+            "Hydrate evidence windows after structural cut refinement.",
         ),
         "recover_foreground_sources": ToolDefinition(
             "recover_foreground_sources",
             recover_foreground_sources,
-            "Refresh silent-video source proposals and retry extraction.",
+            "Refresh open-world Gemini proposals and retry extraction.",
         ),
         "crop_tracks": ToolDefinition(
             "crop_tracks",
@@ -594,32 +542,55 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "score_track_labels": ToolDefinition(
             "score_track_labels",
             score_track_labels,
-            "Score ontology-backed labels against crop-backed track evidence.",
+            "Score dynamic Gemini-derived labels against crop-backed track evidence.",
         ),
         "group_embeddings": ToolDefinition(
             "group_embeddings",
             group_embeddings,
-            "Build grouping proposals from embeddings.",
-        ),
-        "routing_priors": ToolDefinition(
-            "routing_priors", routing_priors, "Compute deterministic routing priors."
+            "Build deterministic grouping proposals from embeddings.",
         ),
         "build_source_semantics": ToolDefinition(
             "build_source_semantics",
             build_source_semantics,
-            "Build source/event/generation semantic layers.",
+            "Interpret sources/events with Gemini and build generation groups plus routing.",
         ),
         "group_acoustic_recipes": ToolDefinition(
             "group_acoustic_recipes",
             group_acoustic_recipe_semantics,
-            "Group events into generation groups using acoustic recipe signatures.",
+            "Regroup existing events/ambience with Gemini semantic merge judgments.",
         ),
         "validate_bundle": ToolDefinition(
-            "validate_bundle", validator, "Run typed bundle validators."
+            "validate_bundle",
+            validator,
+            "Run bundle validators.",
         ),
         "rerun_description_writer": ToolDefinition(
             "rerun_description_writer",
             rerun_description_writer,
-            "Rewrite canonical descriptions from the current structured bundle state.",
+            "Rewrite canonical descriptions with Gemini.",
         ),
     }
+
+
+def _proposal_phrases(proposal: WindowSourceProposal) -> list[str]:
+    return _dedupe(
+        [
+            *proposal.visible_sources,
+            *proposal.background_sources,
+            *proposal.interactions,
+            *proposal.materials_surfaces,
+            *proposal.uncertain_regions,
+        ]
+    )
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        normalized = value.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped

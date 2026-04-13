@@ -4,33 +4,39 @@ from v2a_inspect.contracts import MultitrackDescriptionBundle, ValidationIssue
 
 
 def validate_bundle(bundle: MultitrackDescriptionBundle) -> list[ValidationIssue]:
-    del bundle
-    return []
-
-
-def _is_suspicious_generation_merge(
-    *,
-    source_ids: set[str],
-    sources_by_id: dict[str, object],
-) -> bool:
-    sources = [sources_by_id[source_id] for source_id in sorted(source_ids) if source_id in sources_by_id]
-    if len(sources) < 2:
-        return False
-    labels = {
-        source.label_candidates[0].label
-        for source in sources
-        if getattr(source, "label_candidates", None)
-    }
-    if len(labels) > 1:
-        return True
-    spans = [
-        span
-        for source in sources
-        for span in getattr(source, "spans", [])
-    ]
-    for index, (left_start, left_end) in enumerate(spans):
-        for right_start, right_end in spans[index + 1 :]:
-            overlap = max(min(left_end, right_end) - max(left_start, right_start), 0.0)
-            if overlap > 0.0:
-                return True
-    return False
+    issues: list[ValidationIssue] = []
+    if not bundle.generation_groups:
+        issues.append(
+            ValidationIssue(
+                issue_id="empty-generation-groups",
+                issue_type="empty_generation_groups",
+                severity="warning",
+                message="No generation groups were resolved from the current evidence.",
+                recommended_action="rerun_tool",
+            )
+        )
+        return issues
+    for group in bundle.generation_groups:
+        if group.route_decision is None:
+            issues.append(
+                ValidationIssue(
+                    issue_id=f"unresolved-route-{group.group_id}",
+                    issue_type="unresolved_route_decision",
+                    severity="warning",
+                    message=f"Generation group {group.group_id} has no routing decision yet.",
+                    related_ids=[group.group_id],
+                    recommended_action="rerun_tool",
+                )
+            )
+        if not group.canonical_description:
+            issues.append(
+                ValidationIssue(
+                    issue_id=f"unresolved-description-{group.group_id}",
+                    issue_type="unresolved_description",
+                    severity="warning",
+                    message=f"Generation group {group.group_id} has no canonical description yet.",
+                    related_ids=[group.group_id],
+                    recommended_action="rerun_tool",
+                )
+            )
+    return issues

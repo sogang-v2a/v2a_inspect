@@ -25,11 +25,8 @@ class FakeSam3Client:
         for batch in frame_batches:
             if not batch.frames:
                 continue
-            label_hint = (
-                (prompts_by_scene or {}).get(batch.scene_index, ["object"])[0]
-                if prompts_by_scene
-                else "object"
-            )
+            scene_prompts = (prompts_by_scene or {}).get(batch.scene_index, [])
+            label_hint = scene_prompts[0] if scene_prompts else ""
             points = [
                 Sam3TrackPoint(
                     timestamp_seconds=frame.timestamp_seconds,
@@ -80,7 +77,7 @@ class FakeLabelClient:
         del image_paths
         normalized = [label.strip().lower() for label in labels if label.strip()]
         if not normalized:
-            normalized = ["object"]
+            return []
         return [
             LabelScore(label=label, score=max(0.0, 1.0 - index * 0.1))
             for index, label in enumerate(normalized)
@@ -96,7 +93,7 @@ class FakeLabelClient:
         scores = self.score_image_labels(image_paths=image_paths, labels=labels)
         return CanonicalLabel(
             group_id=group_id,
-            label=scores[0].label,
+            label=scores[0].label if scores else "",
             scores=scores,
         )
 

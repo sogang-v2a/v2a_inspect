@@ -13,13 +13,11 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import parse_qs, urlparse
 
-from v2a_inspect.contracts.adapters import bundle_to_grouped_analysis
 from v2a_inspect.review import persist_bundle
 from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
-from .agentic import run_agentic_tool_loop
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle, build_interim_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
@@ -32,7 +30,11 @@ if TYPE_CHECKING:
     from .adjudicator import GeminiIssueJudge
     from .embeddings import EmbeddingClient, LabelClient
     from .description_writer import GeminiDescriptionWriter
-    from .scene_hypotheses import GeminiSceneHypothesisProposer
+    from .gemini_grouping import GeminiGroupingJudge
+    from .gemini_proposal_grounding import GeminiProposalGrounder
+    from .gemini_routing import GeminiRoutingJudge
+    from .gemini_source_proposal import GeminiSourceProposer
+    from .gemini_source_semantics import GeminiSourceSemanticsInterpreter
     from .sam3 import Sam3Client
 
 
@@ -54,7 +56,11 @@ class ToolingRuntime:
         self._label_client: "LabelClient | None" = None
         self._description_writer: "GeminiDescriptionWriter | None" = None
         self._adjudication_judge: "GeminiIssueJudge | None" = None
-        self._scene_hypothesis_proposer: "GeminiSceneHypothesisProposer | None" = None
+        self._source_proposer: "GeminiSourceProposer | None" = None
+        self._proposal_grounder: "GeminiProposalGrounder | None" = None
+        self._source_semantics_interpreter: "GeminiSourceSemanticsInterpreter | None" = None
+        self._grouping_judge: "GeminiGroupingJudge | None" = None
+        self._routing_judge: "GeminiRoutingJudge | None" = None
 
     @property
     def should_release_clients(self) -> bool:
@@ -131,18 +137,69 @@ class ToolingRuntime:
         return self._adjudication_judge
 
     @property
-    def scene_hypothesis_proposer(self) -> "GeminiSceneHypothesisProposer | None":
-        if self._scene_hypothesis_proposer is None:
+    def source_proposer(self) -> "GeminiSourceProposer | None":
+        if self._source_proposer is None:
             server_settings = get_server_runtime_settings()
             if server_settings.gemini_api_key is None:
                 return None
-            from .scene_hypotheses import GeminiSceneHypothesisProposer
+            from .gemini_source_proposal import GeminiSourceProposer
 
-            self._scene_hypothesis_proposer = GeminiSceneHypothesisProposer(
-                model="gemini-2.5-flash",
+            self._source_proposer = GeminiSourceProposer(
                 api_key=server_settings.gemini_api_key,
             )
-        return self._scene_hypothesis_proposer
+        return self._source_proposer
+
+    @property
+    def proposal_grounder(self) -> "GeminiProposalGrounder | None":
+        if self._proposal_grounder is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .gemini_proposal_grounding import GeminiProposalGrounder
+
+            self._proposal_grounder = GeminiProposalGrounder(
+                api_key=server_settings.gemini_api_key
+            )
+        return self._proposal_grounder
+
+    @property
+    def source_semantics_interpreter(self) -> "GeminiSourceSemanticsInterpreter | None":
+        if self._source_semantics_interpreter is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .gemini_source_semantics import GeminiSourceSemanticsInterpreter
+
+            self._source_semantics_interpreter = GeminiSourceSemanticsInterpreter(
+                api_key=server_settings.gemini_api_key
+            )
+        return self._source_semantics_interpreter
+
+    @property
+    def grouping_judge(self) -> "GeminiGroupingJudge | None":
+        if self._grouping_judge is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .gemini_grouping import GeminiGroupingJudge
+
+            self._grouping_judge = GeminiGroupingJudge(
+                api_key=server_settings.gemini_api_key
+            )
+        return self._grouping_judge
+
+    @property
+    def routing_judge(self) -> "GeminiRoutingJudge | None":
+        if self._routing_judge is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .gemini_routing import GeminiRoutingJudge
+
+            self._routing_judge = GeminiRoutingJudge(
+                api_key=server_settings.gemini_api_key
+            )
+        return self._routing_judge
 
     def artifacts_missing(self) -> list[str]:
         return [
@@ -166,6 +223,11 @@ class ToolingRuntime:
         self._sam3_client = None
         self._embedding_client = None
         self._label_client = None
+        self._source_proposer = None
+        self._proposal_grounder = None
+        self._source_semantics_interpreter = None
+        self._grouping_judge = None
+        self._routing_judge = None
         clear_cuda_cache()
 
     def resident_client_names(self) -> list[str]:
@@ -180,6 +242,16 @@ class ToolingRuntime:
             clients.append("description_writer")
         if self._adjudication_judge is not None:
             clients.append("adjudication_judge")
+        if self._source_proposer is not None:
+            clients.append("source_proposer")
+        if self._proposal_grounder is not None:
+            clients.append("proposal_grounder")
+        if self._source_semantics_interpreter is not None:
+            clients.append("source_semantics_interpreter")
+        if self._grouping_judge is not None:
+            clients.append("grouping_judge")
+        if self._routing_judge is not None:
+            clients.append("routing_judge")
         return clients
 
     def warmup_visual_clients(self) -> dict[str, object]:
@@ -467,9 +539,9 @@ def _run_tool_first_pipeline(
         started_at=started,
         metrics={
             "window_count": len(frame_batches),
-            "window_candidate_count": sum(
-                len(payload.get("extraction_prompts", []))
-                for payload in source_hypotheses["expanded_candidates_by_window"].values()
+            "motion_region_count": sum(
+                len(payload)
+                for payload in source_hypotheses.get("moving_regions_by_window", {}).values()
             ),
             "window_hypothesis_count": len(state["scene_hypotheses_by_window"]),
         },
@@ -478,18 +550,23 @@ def _run_tool_first_pipeline(
     started = stage_start()
     verified_hypotheses = registry["verify_scene_hypotheses"].handler(
         frame_batches=frame_batches,
-        ontology_scores_by_window=source_hypotheses["ontology_scores_by_window"],
         scene_hypotheses_by_window=source_hypotheses["scene_hypotheses_by_window"],
-        moving_region_labels_by_window=source_hypotheses["moving_region_labels_by_window"],
-        expanded_candidates_by_window=source_hypotheses["expanded_candidates_by_window"],
+        moving_regions_by_window=source_hypotheses["moving_regions_by_window"],
+        storyboard_path=storyboard_path,
     )
     state["verified_hypotheses_by_window"] = dict(
         verified_hypotheses["verified_hypotheses_by_window"]
     )
     state["scene_prompt_candidates"] = dict(verified_hypotheses["prompts_by_scene"])
-    state["proposal_provenance_by_window"] = dict(
-        verified_hypotheses["proposal_provenance_by_window"]
-    )
+    state["proposal_provenance_by_window"] = {
+        scene_index: {
+            **dict(state.get("proposal_provenance_by_window", {})).get(scene_index, {}),
+            **payload,
+        }
+        for scene_index, payload in dict(
+            verified_hypotheses["proposal_provenance_by_window"]
+        ).items()
+    }
     record_stage(
         state,
         stage="verify_scene_hypotheses",
@@ -501,7 +578,7 @@ def _run_tool_first_pipeline(
                 for prompts in state["scene_prompt_candidates"].values()
             ),
             "uncertain_hypothesis_count": sum(
-                len(payload.get("uncertain_hypotheses", []))
+                len(payload.get("unresolved_phrases", []))
                 for payload in state["verified_hypotheses_by_window"].values()
             ),
         },
@@ -571,12 +648,15 @@ def _run_tool_first_pipeline(
         tooling_runtime.release_client("embedding")
     started = stage_start()
     track_label_candidates = (
-        registry["score_track_labels"].handler(track_image_paths=track_image_paths)
+        registry["score_track_labels"].handler(
+            track_image_paths=track_image_paths,
+            labels=_dynamic_label_vocabulary(
+                dict(state.get("verified_hypotheses_by_window", {})),
+                dict(state.get("scene_hypotheses_by_window", {})),
+            ),
+        )
         if track_image_paths
         else {}
-    )
-    routing_decisions = (
-        dict(registry["routing_priors"].handler(tracks=tracks)) if tracks else {}
     )
     record_stage(
         state,
@@ -584,7 +664,7 @@ def _run_tool_first_pipeline(
         started_at=started,
         metrics={
             "labeled_track_count": len(track_label_candidates),
-            "routing_track_count": len(routing_decisions),
+            "routing_track_count": 0,
         },
     )
     if tooling_runtime.should_release_clients:
@@ -617,9 +697,6 @@ def _run_tool_first_pipeline(
         label_candidates_by_track=track_label_candidates,
         evidence_windows=evidence_windows,
         candidate_groups=candidate_groups,
-        routing_decisions_by_track=routing_decisions,
-        scene_hypotheses_by_window=dict(state.get("scene_hypotheses_by_window", {})),
-        proposal_provenance_by_window=dict(state.get("proposal_provenance_by_window", {})),
     )
     record_stage(
         state,
@@ -652,7 +729,7 @@ def _run_tool_first_pipeline(
         "track_crops": track_crops,
         "entity_embeddings": embeddings,
         "candidate_groups": candidate_groups,
-        "track_routing_decisions": routing_decisions,
+        "track_routing_decisions": {},
         "track_label_candidates": track_label_candidates,
         "physical_sources": list(semantics["physical_sources"]),
         "sound_event_segments": list(semantics["sound_events"]),
@@ -694,9 +771,6 @@ def _run_tool_first_pipeline(
         started_at=started,
         metrics={"bundle_path": state.get("bundle_path"), "pipeline_mode": options.pipeline_mode},
     )
-    grouped = bundle_to_grouped_analysis(bundle)
-    state["scene_analysis"] = grouped.scene_analysis
-    state["grouped_analysis"] = grouped
     state["multitrack_bundle"] = bundle
     return state
 
@@ -711,24 +785,18 @@ def _run_agentic_tool_first_pipeline(
         video_path=video_path,
         options=options.model_copy(update={"pipeline_mode": "tool_first_foundation"}),
         tooling_runtime=tooling_runtime,
-        bundle_mode="interim",
+        bundle_mode="final",
     )
     state["options"] = options
-    state, planner_state, trace_path = run_agentic_tool_loop(
-        inspect_state=state,
-        tooling_runtime=tooling_runtime,
-    )
-    state["agent_trace_path"] = trace_path
     bundle = state["multitrack_bundle"]
-    bundle.artifacts.trace_path = trace_path
-    bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
-    bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
-    bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
+    bundle.pipeline_metadata["agentic_mode_status"] = "deferred_to_foundation"
+    bundle.pipeline_metadata["agentic_mode_note"] = (
+        "Semantic reset is restoring the bundle-first foundation path before re-enabling agentic repair."
+    )
+    state.setdefault("warnings", []).append(
+        "agentic_tool_first currently defers to tool_first_foundation during the semantic reset."
+    )
     _persist_runtime_bundle(bundle, state)
-    grouped = bundle_to_grouped_analysis(bundle)
-    state["scene_analysis"] = grouped.scene_analysis
-    state["grouped_analysis"] = grouped
-    state["multitrack_bundle"] = bundle
     return state
 
 
@@ -738,6 +806,31 @@ def _coerce_tracks(extraction_result: object) -> list[object]:
     else:
         tracks = getattr(extraction_result, "tracks", [])
     return list(tracks) if isinstance(tracks, list) else list(tracks or [])
+
+
+def _dynamic_label_vocabulary(
+    verified_hypotheses_by_window: Mapping[int, dict[str, object]],
+    scene_hypotheses_by_window: Mapping[int, dict[str, object]],
+) -> list[str]:
+    labels: list[str] = []
+    for payload in verified_hypotheses_by_window.values():
+        labels.extend(list(payload.get("extraction_prompts", [])))
+        labels.extend(list(payload.get("semantic_hints", [])))
+    for payload in scene_hypotheses_by_window.values():
+        labels.extend(list(payload.get("visible_sources", [])))
+        labels.extend(list(payload.get("background_sources", [])))
+        labels.extend(list(payload.get("uncertain_regions", [])))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        if not isinstance(label, str):
+            continue
+        normalized = label.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _persist_runtime_bundle(

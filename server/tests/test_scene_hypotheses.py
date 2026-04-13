@@ -1,70 +1,61 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
+
+from PIL import Image
 
 from v2a_inspect.tools.types import FrameBatch, SampledFrame
-from v2a_inspect_server.scene_hypotheses import (
-    SceneHypothesis,
-    WindowOntologyExpansion,
-    verify_scene_hypotheses,
-)
-from v2a_inspect_server.source_ontology import EXTRACTION_ENTITY_TERMS, SEMANTIC_HINT_TERMS
+from v2a_inspect_server.scene_hypotheses import propose_moving_regions
 
 
-class SceneHypothesisTests(unittest.TestCase):
-    def test_verify_scene_hypotheses_prefers_multi_source_support(self) -> None:
-        frame_batches = [
-            FrameBatch(
-                scene_index=0,
-                frames=[
-                    SampledFrame(
-                        scene_index=0,
-                        timestamp_seconds=0.0,
-                        image_path="/tmp/frame.jpg",
-                    )
-                ],
+class SceneHypothesesTests(unittest.TestCase):
+    def test_propose_moving_regions_extracts_changed_region(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            left_path = Path(tmp_dir) / "left.jpg"
+            right_path = Path(tmp_dir) / "right.jpg"
+            Image.new("RGB", (64, 64), color="black").save(left_path)
+            image = Image.new("RGB", (64, 64), color="black")
+            for x in range(20, 36):
+                for y in range(18, 34):
+                    image.putpixel((x, y), (255, 255, 255))
+            image.save(right_path)
+            frame_batches = [
+                FrameBatch(
+                    scene_index=0,
+                    frames=[
+                        SampledFrame(scene_index=0, timestamp_seconds=0.0, image_path=str(left_path)),
+                        SampledFrame(scene_index=0, timestamp_seconds=0.5, image_path=str(right_path)),
+                    ],
+                )
+            ]
+            proposals = propose_moving_regions(
+                frame_batches,
+                output_root=str(Path(tmp_dir) / "motion"),
+                threshold=0.01,
             )
-        ]
-        verified = verify_scene_hypotheses(
-            frame_batches=frame_batches,
-            ontology_scores={
-                0: {
-                    "extraction_entities": [
-                        {"label": "sword", "score": 0.19},
-                        {"label": "fighter", "score": 0.18},
-                        {"label": "cloud", "score": 0.01},
-                    ]
-                }
-            },
-            scene_hypotheses={
-                0: SceneHypothesis(
-                    foreground_entities=["fighter"],
-                    candidate_sound_sources=["sword"],
-                    interactions=["fighting"],
-                    material_cues=["metal"],
-                    confidence=0.9,
-                )
-            },
-            moving_region_labels={0: ["sword"]},
-            expanded_candidates={
-                0: WindowOntologyExpansion(
-                    extraction_prompts=["sword", "fighter", "cloud"],
-                    semantic_hints=["fighting", "metal"],
-                    provenance={},
-                )
-            },
-        )
-        scene = verified[0]
-        self.assertIn("sword", scene.verified_extraction_prompts)
-        self.assertIn("fighter", scene.verified_extraction_prompts)
-        self.assertIn("cloud", scene.rejected_hypotheses)
-        self.assertIn("fighting", scene.verified_semantic_hints)
+            self.assertEqual(len(proposals[0]), 1)
+            self.assertGreater(proposals[0][0].motion_score, 0.0)
+            self.assertTrue(Path(proposals[0][0].crop_path).exists())
 
-    def test_ontology_is_large_and_deduped(self) -> None:
-        self.assertGreaterEqual(len(EXTRACTION_ENTITY_TERMS), 140)
-        self.assertGreaterEqual(len(SEMANTIC_HINT_TERMS), 80)
-        self.assertEqual(len(EXTRACTION_ENTITY_TERMS), len(set(EXTRACTION_ENTITY_TERMS)))
-        self.assertEqual(len(SEMANTIC_HINT_TERMS), len(set(SEMANTIC_HINT_TERMS)))
+    def test_propose_moving_regions_returns_empty_for_identical_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            left_path = Path(tmp_dir) / "left.jpg"
+            right_path = Path(tmp_dir) / "right.jpg"
+            Image.new("RGB", (64, 64), color="black").save(left_path)
+            Image.new("RGB", (64, 64), color="black").save(right_path)
+            frame_batches = [
+                FrameBatch(
+                    scene_index=0,
+                    frames=[
+                        SampledFrame(scene_index=0, timestamp_seconds=0.0, image_path=str(left_path)),
+                        SampledFrame(scene_index=0, timestamp_seconds=0.5, image_path=str(right_path)),
+                    ],
+                )
+            ]
+            proposals = propose_moving_regions(frame_batches, output_root=str(Path(tmp_dir) / "motion"))
+            self.assertEqual(proposals[0], [])
 
 
 if __name__ == "__main__":

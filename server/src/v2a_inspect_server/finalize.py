@@ -7,7 +7,6 @@ from v2a_inspect.contracts import (
     ArtifactRefs,
     MultitrackDescriptionBundle,
     ReviewMetadata,
-    RoutingDecision,
     ValidationIssue,
     ValidationReport,
     VideoMeta,
@@ -84,11 +83,6 @@ def _build_bundle(
             ),
         },
     )
-    finalized_groups = [
-        group.model_copy(update={"route_decision": finalize_route_decision(group)})
-        for group in generation_groups
-    ]
-
     bundle_started = stage_start()
     bundle = MultitrackDescriptionBundle(
         video_id=_video_id_from_path(state.get("video_path", "video")),
@@ -103,7 +97,7 @@ def _build_bundle(
         physical_sources=list(state.get("physical_sources", [])),
         sound_events=list(state.get("sound_event_segments", [])),
         ambience_beds=list(state.get("ambience_beds", [])),
-        generation_groups=finalized_groups,
+        generation_groups=generation_groups,
         validation=ValidationReport(status="pass_with_warnings"),
         artifacts=ArtifactRefs(
             run_dir=_state_path(state.get("artifact_run_dir")),
@@ -185,48 +179,6 @@ def _build_bundle(
         },
     )
     return bundle
-
-
-def finalize_route_decision(group: object) -> RoutingDecision:
-    existing = getattr(group, "route_decision", None)
-    routing_candidate = _best_routing_candidate(
-        getattr(group, "routing_candidates", None)
-    )
-    if routing_candidate is not None:
-        return RoutingDecision(
-            model_type=routing_candidate.model_type,
-            confidence=round(routing_candidate.confidence, 4),
-            factors=["group_routing_priors", routing_candidate.aggregate_method],
-            reasoning=routing_candidate.reasoning,
-            rule_based=True,
-        )
-    if isinstance(existing, RoutingDecision):
-        return existing
-    if existing is not None:
-        return RoutingDecision.model_validate(existing)
-    return RoutingDecision(
-        model_type="TTA",
-        confidence=0.0,
-        factors=[],
-        reasoning="route left unresolved after heuristic routing removal",
-        rule_based=False,
-    )
-
-
-def _best_routing_candidate(candidates: object) -> object | None:
-    from v2a_inspect.tools.types import GroupRoutingDecision
-
-    if not isinstance(candidates, list):
-        return None
-    typed_candidates = []
-    for candidate in candidates:
-        if isinstance(candidate, GroupRoutingDecision):
-            typed_candidates.append(candidate)
-        elif isinstance(candidate, dict):
-            typed_candidates.append(GroupRoutingDecision.model_validate(candidate))
-    if not typed_candidates:
-        return None
-    return max(typed_candidates, key=lambda candidate: candidate.confidence)
 
 
 def _artifact_dir_from_refs(items: list[object], *, attr: str = "crop_path") -> str | None:

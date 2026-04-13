@@ -204,19 +204,13 @@ def _apply_action_result(
         updated["analysis_video_path"] = str(result.get("analysis_video_path", ""))
         return _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
-    if tool_name in {"extract_entities", "recover_with_text_prompt"}:
+    if tool_name == "extract_entities":
         started = stage_start()
         updated["sam3_track_set"] = _merge_track_sets(
             updated.get("sam3_track_set"),
             result,
         )
         updated.setdefault("recovery_actions", []).append(tool_name)
-        if tool_name == "recover_with_text_prompt":
-            record_recovery_attempt(
-                updated,
-                tool_name=tool_name,
-                details={"track_count": len(_tracks_from_result(updated.get("sam3_track_set")))},
-            )
         rebuilt = _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
         record_stage(
             rebuilt,
@@ -226,21 +220,13 @@ def _apply_action_result(
         )
         return rebuilt
 
-    if tool_name == "recover_foreground_sources" and isinstance(result, dict):
+    if tool_name == "propose_source_hypotheses" and isinstance(result, dict):
         started = stage_start()
-        updated["sam3_track_set"] = _merge_track_sets(
-            updated.get("sam3_track_set"),
-            result.get("track_set"),
-        )
-        updated["scene_prompt_candidates"] = dict(result.get("prompts_by_scene", {}))
         updated["scene_hypotheses_by_window"] = dict(
             result.get("scene_hypotheses_by_window", {})
         )
         updated["proposal_provenance_by_window"] = dict(
             result.get("proposal_provenance_by_window", {})
-        )
-        updated["verified_hypotheses_by_window"] = dict(
-            result.get("verified_hypotheses_by_window", {})
         )
         updated.setdefault("recovery_actions", []).append(tool_name)
         record_recovery_attempt(
@@ -248,14 +234,13 @@ def _apply_action_result(
             tool_name=tool_name,
             details={
                 "window_count": len(updated.get("evidence_windows", [])),
-                "prompts_by_scene": dict(result.get("prompts_by_scene", {})),
-                "track_count": len(_tracks_from_result(updated.get("sam3_track_set"))),
+                "scene_hypothesis_count": len(result.get("scene_hypotheses_by_window", {})),
             },
         )
-        rebuilt = _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
+        rebuilt = _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
         record_stage(
             rebuilt,
-            stage="agent:recover_foreground_sources",
+            stage="agent:propose_source_hypotheses",
             started_at=started,
             metrics={"track_count": len(_tracks_from_result(rebuilt.get("sam3_track_set")))},
         )
@@ -287,16 +272,13 @@ def _apply_action_result(
         updated["candidate_groups"] = list(getattr(result, "groups", []))
         return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
-    if tool_name == "routing_priors":
-        updated["track_routing_decisions"] = dict(result)
-        return _rebuild_semantic_state(updated, tooling_runtime=tooling_runtime, registry=registry)
-
-    if tool_name == "group_acoustic_recipes" and isinstance(result, dict):
+    if tool_name == "build_source_semantics" and isinstance(result, dict):
+        updated["identity_edges"] = list(result.get("identity_edges", []))
+        updated["physical_sources"] = list(result.get("physical_sources", []))
+        updated["sound_event_segments"] = list(result.get("sound_events", []))
+        updated["ambience_beds"] = list(result.get("ambience_beds", []))
         updated["generation_groups"] = list(result.get("generation_groups", []))
-        updated["recipe_signatures_by_group"] = {
-            key: value.model_dump(mode="json") if hasattr(value, "model_dump") else dict(value)
-            for key, value in dict(result.get("recipe_signatures", {})).items()
-        }
+        updated["recipe_signatures_by_group"] = {}
         return updated
 
     if tool_name == "refine_candidate_cuts" and isinstance(result, dict):
@@ -378,10 +360,9 @@ def _rebuild_structural_state(
     )
     verified = registry["verify_scene_hypotheses"](
         frame_batches=list(inspect_state.get("frame_batches", [])),
-        ontology_scores_by_window=raw_proposals["ontology_scores_by_window"],
         scene_hypotheses_by_window=raw_proposals["scene_hypotheses_by_window"],
-        moving_region_labels_by_window=raw_proposals["moving_region_labels_by_window"],
-        expanded_candidates_by_window=raw_proposals["expanded_candidates_by_window"],
+        moving_regions_by_window=raw_proposals["moving_regions_by_window"],
+        storyboard_path=str(inspect_state.get("storyboard_path", "")),
     )
     inspect_state["scene_prompt_candidates"] = dict(verified["prompts_by_scene"])
     inspect_state["scene_hypotheses_by_window"] = dict(
@@ -443,14 +424,18 @@ def _rebuild_semantic_state(
         tooling_runtime.release_client("embedding")
 
     track_label_candidates = (
-        registry["score_track_labels"](track_image_paths=track_image_paths)
+        registry["score_track_labels"](
+            track_image_paths=track_image_paths,
+            labels=_dynamic_label_vocabulary(
+                dict(inspect_state.get("verified_hypotheses_by_window", {})),
+                dict(inspect_state.get("scene_hypotheses_by_window", {})),
+            ),
+        )
         if track_image_paths
         else {}
     )
     inspect_state["track_label_candidates"] = track_label_candidates
-    inspect_state["track_routing_decisions"] = (
-        dict(registry["routing_priors"](tracks=tracks)) if tracks else {}
-    )
+    inspect_state["track_routing_decisions"] = {}
     if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("label")
 
@@ -472,13 +457,6 @@ def _rebuild_semantic_state(
         label_candidates_by_track=track_label_candidates,
         evidence_windows=list(inspect_state.get("evidence_windows", [])),
         candidate_groups=list(inspect_state.get("candidate_groups", [])),
-        routing_decisions_by_track=dict(inspect_state.get("track_routing_decisions", {})),
-        scene_hypotheses_by_window=dict(
-            inspect_state.get("scene_hypotheses_by_window", {})
-        ),
-        proposal_provenance_by_window=dict(
-            inspect_state.get("proposal_provenance_by_window", {})
-        ),
     )
     inspect_state["identity_edges"] = list(semantics["identity_edges"])
     inspect_state["physical_sources"] = list(semantics["physical_sources"])
@@ -530,6 +508,31 @@ def _tracks_from_result(result: object) -> list[object]:
     return list(tracks or [])
 
 
+def _dynamic_label_vocabulary(
+    verified_hypotheses_by_window: Mapping[int, dict[str, object]],
+    scene_hypotheses_by_window: Mapping[int, dict[str, object]],
+) -> list[str]:
+    labels: list[str] = []
+    for payload in verified_hypotheses_by_window.values():
+        labels.extend(list(payload.get("extraction_prompts", [])))
+        labels.extend(list(payload.get("semantic_hints", [])))
+    for payload in scene_hypotheses_by_window.values():
+        labels.extend(list(payload.get("visible_sources", [])))
+        labels.extend(list(payload.get("background_sources", [])))
+        labels.extend(list(payload.get("uncertain_regions", [])))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        if not isinstance(label, str):
+            continue
+        normalized = label.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
 def _build_issues(
     *,
     bundle: MultitrackDescriptionBundle,
@@ -573,13 +576,9 @@ def _build_issues(
                     "recovery_actions": list(inspect_state.get("recovery_actions", [])),
                     "recovery_attempts": list(inspect_state.get("recovery_attempts", [])),
                     "scene_prompt_candidates": dict(inspect_state.get("scene_prompt_candidates", {})),
-                    "scene_prompt_recovery_attempted": _has_recovery_attempt(
-                        inspect_state, "recover_foreground_sources"
+                    "source_proposal_attempted": _has_recovery_attempt(
+                        inspect_state, "propose_source_hypotheses"
                     ),
-                    "text_recovery_attempted": _has_recovery_attempt(
-                        inspect_state, "recover_with_text_prompt"
-                    ),
-                    "text_prompt": _foreground_recovery_prompt(inspect_state),
                 },
             )
         )
@@ -600,13 +599,9 @@ def _build_issues(
                     "scene_prompt_candidates": dict(inspect_state.get("scene_prompt_candidates", {})),
                     "recovery_actions": list(inspect_state.get("recovery_actions", [])),
                     "recovery_attempts": list(inspect_state.get("recovery_attempts", [])),
-                    "scene_prompt_recovery_attempted": _has_recovery_attempt(
-                        inspect_state, "recover_foreground_sources"
+                    "source_proposal_attempted": _has_recovery_attempt(
+                        inspect_state, "propose_source_hypotheses"
                     ),
-                    "text_recovery_attempted": _has_recovery_attempt(
-                        inspect_state, "recover_with_text_prompt"
-                    ),
-                    "text_prompt": _foreground_recovery_prompt(inspect_state),
                 },
             )
         )
@@ -616,7 +611,7 @@ def _build_issues(
     uncertain_windows = [
         str(scene_index)
         for scene_index, payload in verified_hypotheses_by_window.items()
-        if payload.get("uncertain_hypotheses")
+        if payload.get("unresolved_phrases") or payload.get("uncertain_hypotheses")
     ]
     if uncertain_windows and (
         len(current_sources) <= 2 or len(current_events) <= 2
@@ -732,7 +727,7 @@ def _recovery_prompt(
     for source in physical_sources:
         if source.source_id in related_ids and source.label_candidates:
             return source.label_candidates[0].label
-    return "object"
+    return ""
 
 
 def _trace_path(bundle: MultitrackDescriptionBundle) -> Path:
@@ -818,17 +813,6 @@ def _has_recovery_attempt(
         isinstance(attempt, Mapping) and attempt.get("tool_name") == tool_name
         for attempt in list(inspect_state.get("recovery_attempts", []))
     )
-
-
-def _foreground_recovery_prompt(inspect_state: Mapping[str, object]) -> str:
-    prompts_by_scene = inspect_state.get("scene_prompt_candidates", {})
-    if isinstance(prompts_by_scene, Mapping):
-        for prompts in prompts_by_scene.values():
-            if isinstance(prompts, list):
-                for prompt in prompts:
-                    if isinstance(prompt, str) and prompt.strip():
-                        return prompt.strip()
-    return "object"
 
 
 def _record_agent_review_decision(

@@ -191,17 +191,17 @@ class MediaStructureTests(unittest.TestCase):
             self.assertEqual(len(clip_paths), 1)
             self.assertTrue(Path(next(iter(clip_paths.values()))).exists())
 
-    def test_context_candidate_cuts_add_source_and_label_change_signals(self) -> None:
+    def test_context_candidate_cuts_preserves_existing_structural_cuts(self) -> None:
         candidate_cuts = [
             CandidateCut(
-                cut_id="fallback",
+                cut_id="cut-0000",
                 timestamp_seconds=2.0,
                 confidence=0.2,
                 reasons=[
                     CutReason(
-                        kind="fallback_window",
+                        kind="composition_change",
                         confidence=0.2,
-                        rationale="fallback",
+                        rationale="frame difference",
                     )
                 ],
             )
@@ -279,10 +279,7 @@ class MediaStructureTests(unittest.TestCase):
             storyboard_path="/tmp/storyboard.jpg",
         )
 
-        reason_kinds = {reason.kind for cut in merged_cuts for reason in cut.reasons}
-        self.assertIn("source_lifecycle_change", reason_kinds)
-        self.assertIn("label_context_change", reason_kinds)
-        self.assertIn("interaction_onset", reason_kinds)
+        self.assertEqual(merged_cuts, candidate_cuts)
         self.assertTrue(any("/tmp/scene0.jpg" in window.sampled_frame_ids for window in evidence_windows))
 
 

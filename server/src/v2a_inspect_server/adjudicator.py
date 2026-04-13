@@ -17,10 +17,9 @@ class IssueAdjudication(BaseModel):
     tool_name: Literal[
         "refine_candidate_cuts",
         "densify_window_sampling",
-        "recover_foreground_sources",
-        "recover_with_text_prompt",
-        "group_embeddings",
-        "routing_priors",
+        "propose_source_hypotheses",
+        "verify_scene_hypotheses",
+        "build_source_semantics",
         "rerun_description_writer",
         "validate_bundle",
     ] | None = None

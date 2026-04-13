@@ -34,17 +34,6 @@ class RuntimeHttpFakeSmokeTests(unittest.TestCase):
             runtime_profile="full_gpu"
         )
         mock_analyze_with_pipeline.return_value = {
-            "scene_analysis": SimpleNamespace(
-                model_dump=lambda mode="json": {"total_duration": 1.0, "scenes": []}
-            ),
-            "grouped_analysis": SimpleNamespace(
-                model_dump=lambda mode="json": {
-                    "scene_analysis": {"total_duration": 1.0, "scenes": []},
-                    "raw_tracks": [],
-                    "groups": [],
-                    "track_to_group": {},
-                }
-            ),
             "warnings": [],
             "progress_messages": ["done"],
         }

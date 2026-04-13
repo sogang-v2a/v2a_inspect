@@ -6,11 +6,11 @@ from v2a_inspect.agent.state import AgentIssue, PlannedAction, PlannerState
 
 _TOOL_BY_ISSUE = {
     "structural_gap": "structural_overview",
-    "ambiguous_source": "recover_with_text_prompt",
-    "hypothesis_conflict": "recover_foreground_sources",
-    "missing_sources": "recover_foreground_sources",
-    "grouping_ambiguity": "group_acoustic_recipes",
-    "routing_ambiguity": "routing_priors",
+    "ambiguous_source": "propose_source_hypotheses",
+    "hypothesis_conflict": "propose_source_hypotheses",
+    "missing_sources": "propose_source_hypotheses",
+    "grouping_ambiguity": "build_source_semantics",
+    "routing_ambiguity": "build_source_semantics",
     "description_stale": "rerun_description_writer",
 }
 
@@ -55,13 +55,9 @@ def _tool_for_issue(issue: AgentIssue) -> str:
     if issue.issue_type == "foreground_collapse":
         if issue.attempts <= 0 and int(issue.payload.get("frames_per_scene", 2)) < 4:
             return "densify_window_sampling"
-        if not bool(issue.payload.get("scene_prompt_recovery_attempted")):
-            return "recover_foreground_sources"
-        return "recover_with_text_prompt"
+        return "propose_source_hypotheses"
     if issue.issue_type == "missing_sources":
-        if not bool(issue.payload.get("scene_prompt_recovery_attempted")):
-            return "recover_foreground_sources"
-        return "recover_with_text_prompt"
+        return "propose_source_hypotheses"
     if issue.issue_type == "hypothesis_conflict":
-        return "recover_foreground_sources"
+        return "propose_source_hypotheses"
     return _TOOL_BY_ISSUE[issue.issue_type]

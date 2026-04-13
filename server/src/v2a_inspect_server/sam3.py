@@ -59,31 +59,6 @@ class Sam3Client:
             tracks.extend(batch_tracks)
         return Sam3TrackSet(provider="sam3", strategy=strategy, tracks=tracks)
 
-    def recover_with_text_prompt(
-        self,
-        frame_batches: list[FrameBatch],
-        *,
-        text_prompt: str,
-        score_threshold: float = 0.2,
-    ) -> Sam3TrackSet:
-        prompt = text_prompt.strip()
-        if not prompt:
-            return Sam3TrackSet(provider="sam3", strategy="text_recovery", tracks=[])
-        prompts_by_scene = {
-            batch.scene_index: [prompt]
-            for batch in frame_batches
-        }
-        track_set = self.extract_entities(
-            frame_batches,
-            prompts_by_scene=prompts_by_scene,
-            score_threshold=score_threshold,
-            min_points=1,
-            high_confidence_threshold=0.35,
-            match_threshold=0.3,
-        )
-        track_set.strategy = "text_recovery"
-        return track_set
-
     def _extract_scene_tracks(
         self,
         batch: FrameBatch,

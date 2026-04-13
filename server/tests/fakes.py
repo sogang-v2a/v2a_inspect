@@ -31,9 +31,9 @@ class FakeSam3Client:
             if not batch.frames:
                 continue
             label_hint = (
-                (prompts_by_scene or {}).get(batch.scene_index, ["object"])[0]
+                (prompts_by_scene or {}).get(batch.scene_index, [""])[0]
                 if prompts_by_scene
-                else "object"
+                else ""
             )
             tracks.append(
                 Sam3EntityTrack(
@@ -79,7 +79,7 @@ class FakeEmbeddingClient:
 class FakeLabelClient:
     def score_image_labels(self, *, image_paths: list[str], labels: list[str]) -> list[LabelScore]:
         del image_paths
-        normalized = [label.strip().lower() for label in labels if label.strip()] or ["object"]
+        normalized = [label.strip().lower() for label in labels if label.strip()]
         return [
             LabelScore(label=label, score=max(0.0, 1.0 - index * 0.1))
             for index, label in enumerate(normalized)
@@ -87,7 +87,7 @@ class FakeLabelClient:
 
     def score_labels(self, *, group_id: str, image_paths: list[str], labels: list[str]) -> CanonicalLabel:
         scores = self.score_image_labels(image_paths=image_paths, labels=labels)
-        return CanonicalLabel(group_id=group_id, label=scores[0].label, scores=scores)
+        return CanonicalLabel(group_id=group_id, label=scores[0].label if scores else "", scores=scores)
 
 
 @dataclass(frozen=True)

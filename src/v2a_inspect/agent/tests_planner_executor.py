@@ -204,9 +204,8 @@ class PlannerExecutorTests(unittest.TestCase):
 
         state.issues[0].attempts = 2
         state.issues[0].payload["scene_prompt_recovery_attempted"] = True
-        state.issues[0].payload["text_prompt"] = "cat"
         action = cast(PlannedAction, plan_next_action(state))
-        self.assertEqual(action.tool_name, "recover_with_text_prompt")
+        self.assertEqual(action.tool_name, "recover_foreground_sources")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,6 @@ from v2a_inspect.contracts import (
     SoundEventSegment,
     TrackCrop,
 )
-from v2a_inspect.pipeline.response_models import RawTrack, TrackGroup
 from v2a_inspect.tools import (
     CandidateGroup,
     EntityEmbedding,
@@ -57,10 +56,6 @@ class InspectOptions(BaseModel):
 class InspectState(TypedDict, total=False):
     video_path: str
     options: InspectOptions
-    raw_tracks: list[RawTrack]
-    text_groups: list[TrackGroup]
-    verified_groups: list[TrackGroup]
-    final_groups: list[TrackGroup]
     multitrack_bundle: MultitrackDescriptionBundle
     trace_id: str
     root_observation_id: str

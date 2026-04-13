@@ -9,7 +9,6 @@ from v2a_inspect.contracts import (
     ReviewEdit,
     RoutingDecision,
     ValidationIssue,
-    ValidationReport,
 )
 
 
@@ -43,7 +42,7 @@ def apply_route_override(
             confidence=1.0,
             factors=["manual_override"],
             reasoning=rationale,
-            rule_based=False,
+            decision_origin="manual",
         )
         _append_edit(
             updated,
@@ -249,8 +248,10 @@ def _mark_groups_description_stale(
             group.description_stale = True
 
 
-def _normalized_route_decision(group: object) -> RoutingDecision:
+def _normalized_route_decision(group: object) -> RoutingDecision | None:
     existing = getattr(group, "route_decision", None)
+    if existing is None:
+        return None
     return existing if isinstance(existing, RoutingDecision) else RoutingDecision.model_validate(existing)
 
 

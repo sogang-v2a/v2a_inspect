@@ -71,11 +71,9 @@ class Sam3TrackSet(BaseModel):
     provider: str = "sam3"
     strategy: Literal[
         "prompt_free",
-        "default_prompt_seeded",
         "scene_prompt_seeded",
         "scene_prompt_recovery",
-        "text_recovery",
-    ] = "default_prompt_seeded"
+    ] = "scene_prompt_seeded"
     tracks: list[Sam3EntityTrack] = Field(default_factory=list)
 
 
