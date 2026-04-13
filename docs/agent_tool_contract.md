@@ -6,31 +6,36 @@
 - `detect_scenes(video_path, probe) -> SceneBoundary[]`
 - `sample_frames(video_path, scenes, output_dir) -> FrameBatch[]`
 - `create_silent_analysis_video(video_path, output_path) -> str`
-- `propose_source_hypotheses(frame_batches, storyboard_path, output_root) -> prompts + hypotheses + provenance`
+- `propose_source_hypotheses(frame_batches, storyboard_path, output_root) -> open-world source hypotheses + provenance`
+- `verify_scene_hypotheses(frame_batches, scene_hypotheses_by_window, moving_regions_by_window, storyboard_path) -> grounded prompts + semantic hints`
 - `extract_entities(frame_batches, prompts_by_scene) -> Sam3TrackSet`
 - `embed_entities(image_paths_by_track) -> EntityEmbedding[]`
 - `group_entity_embeddings(embeddings, tracks_by_id) -> CandidateGroupSet`
-- `route_track(track) -> TrackRoutingDecision`
-- `aggregate_group_routes(group_id, member_track_ids, decisions_by_track_id) -> GroupRoutingDecision`
+- `build_source_semantics(...) -> sources + events + ambience + groups + routes`
+- `rerun_description_writer(...) -> GenerationGroup[]`
+- `validate_bundle(bundle) -> ValidationIssue[]`
 
-## New proposal-stage expectations
+## Proposal-stage expectations
 
-The active silent-video source proposal stage should combine:
-- large-ontology SigLIP2 scoring
-- Gemini frame/storyboard hypotheses
+The active silent-video proposal stage should combine:
+- Gemini open-world source proposal from sampled frames + storyboard + motion crops
+- SigLIP2 grounding over Gemini-proposed phrases only
 - motion-region proposals from frame differencing
 
 The output of that stage should split into:
 - extraction prompts for SAM3
-- semantic hints for downstream grouping/routing
-- provenance explaining where each proposal came from
+- semantic hints for downstream interpretation
+- rejected / unresolved phrases
+- provenance explaining what Gemini proposed and what grounding confirmed
 
 ## Gemini usage contract
 
 Gemini may only see:
 - sampled still frames
 - storyboard panels
-- optional **audio-stripped** short clips in targeted recovery paths
+- motion-region crops
+- track crops
+- optional **audio-stripped** short clips in targeted repair paths
 
 Gemini must not receive:
 - uploaded source videos
@@ -39,15 +44,15 @@ Gemini must not receive:
 ## Agentic control flow
 
 `agentic_tool_first` should behave as:
-- foundation pipeline first
+- foundation pipeline first in interim mode
 - then selective ambiguity repair only when the issue is high-value
 
 High-value agentic classes are:
 - weak or missing foreground discovery
 - conflicting scene/source hypotheses
 - generation-group merge/split ambiguity
-- route ambiguity with downstream impact
-- stale descriptions after structural edits
+- unresolved route decisions
+- stale or unresolved descriptions
 
 ## Non-goals for this layer
 
@@ -55,3 +60,4 @@ High-value agentic classes are:
 - No local CUDA/GPU execution
 - No Gemini video upload path
 - No legacy compatibility mode
+- No grouped-analysis export shape

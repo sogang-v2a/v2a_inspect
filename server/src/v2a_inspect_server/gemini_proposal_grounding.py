@@ -57,6 +57,7 @@ class GeminiProposalGrounder:
         self._max_retries = max_retries
         self._timeout_seconds = timeout_seconds
         self._llm: BaseChatModel | None = None
+        self.last_error_message: str | None = None
 
     @property
     def llm(self) -> BaseChatModel:
@@ -80,6 +81,7 @@ class GeminiProposalGrounder:
     ) -> dict[int, GroundedWindowProposal]:
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        self.last_error_message = None
         moving_regions_by_scene = moving_regions_by_scene or {}
         structured_llm = self.llm.with_structured_output(
             _GroundedWindowProposalPayload,
@@ -159,7 +161,11 @@ class GeminiProposalGrounder:
             ]
             try:
                 payload = structured_llm.invoke(prompt)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                if self.last_error_message is None:
+                    self.last_error_message = (
+                        f"Gemini proposal grounding failed: {type(exc).__name__}: {str(exc)[:240]}"
+                    )
                 grounded[batch.scene_index] = GroundedWindowProposal(
                     extraction_prompts=[],
                     semantic_hints=[],

@@ -225,6 +225,9 @@ def _apply_action_result(
         updated["scene_hypotheses_by_window"] = dict(
             result.get("scene_hypotheses_by_window", {})
         )
+        updated["moving_regions_by_window"] = dict(
+            result.get("moving_regions_by_window", {})
+        )
         updated["proposal_provenance_by_window"] = dict(
             result.get("proposal_provenance_by_window", {})
         )
@@ -367,6 +370,9 @@ def _rebuild_structural_state(
     inspect_state["scene_prompt_candidates"] = dict(verified["prompts_by_scene"])
     inspect_state["scene_hypotheses_by_window"] = dict(
         raw_proposals["scene_hypotheses_by_window"]
+    )
+    inspect_state["moving_regions_by_window"] = dict(
+        raw_proposals["moving_regions_by_window"]
     )
     inspect_state["proposal_provenance_by_window"] = dict(
         verified["proposal_provenance_by_window"]

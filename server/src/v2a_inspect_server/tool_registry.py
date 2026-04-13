@@ -166,6 +166,11 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
                 }
                 for scene_index in proposals
             },
+            "warnings": (
+                [proposer.last_error_message]
+                if proposer is not None and getattr(proposer, "last_error_message", None)
+                else []
+            ),
             "storyboard_path": storyboard_path,
         }
 
@@ -224,6 +229,11 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
                 }
                 for scene_index, payload in grounded.items()
             },
+            "warnings": (
+                [grounder.last_error_message]
+                if grounder is not None and getattr(grounder, "last_error_message", None)
+                else []
+            ),
         }
 
     def densify_window_sampling(
@@ -332,38 +342,6 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             score_threshold=0.25,
         )
 
-    def recover_foreground_sources(
-        *,
-        frame_batches: list[FrameBatch],
-        storyboard_path: str | None = None,
-        output_root: str | None = None,
-        prompt_vocabulary: list[str] | None = None,
-        **_: object,
-    ) -> dict[str, object]:
-        del prompt_vocabulary
-        refreshed = propose_source_hypotheses(
-            frame_batches=frame_batches,
-            storyboard_path=storyboard_path or "",
-            output_root=output_root or tempfile.mkdtemp(prefix="v2a_prompt_recovery_"),
-        )
-        verified = verify_scene_hypotheses(
-            frame_batches=frame_batches,
-            scene_hypotheses_by_window=refreshed["scene_hypotheses_by_window"],
-            moving_regions_by_window=refreshed["moving_regions_by_window"],
-            storyboard_path=storyboard_path,
-        )
-        track_set = tooling_runtime.sam3_client.extract_entities(
-            frame_batches,
-            prompts_by_scene=dict(verified["prompts_by_scene"]),
-            score_threshold=0.22,
-        )
-        track_set.strategy = "scene_prompt_recovery"
-        return {
-            "track_set": track_set,
-            **refreshed,
-            **verified,
-        }
-
     def crop_track_artifacts(
         *,
         frame_batches: list[FrameBatch],
@@ -453,28 +431,6 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "recipe_grouping_seconds": round(perf_counter() - semantic_started, 4),
         }
 
-    def group_acoustic_recipe_semantics(
-        *,
-        sound_events: list[object],
-        ambience_beds: list[object],
-        physical_sources: list[object],
-        **_: object,
-    ) -> dict[str, object]:
-        groups = group_generation_groups(
-            sound_events=list(sound_events),
-            ambience_beds=list(ambience_beds),
-            physical_sources=list(physical_sources),
-            grouping_judge=getattr(tooling_runtime, "grouping_judge", None),
-        )
-        routed = route_generation_groups(
-            generation_groups=groups,
-            sound_events=list(sound_events),
-            ambience_beds=list(ambience_beds),
-            physical_sources=list(physical_sources),
-            routing_judge=getattr(tooling_runtime, "routing_judge", None),
-        )
-        return {"generation_groups": routed, "recipe_signatures": {}}
-
     def validator(*, bundle: MultitrackDescriptionBundle) -> object:
         return validate_bundle(bundle)
 
@@ -524,11 +480,6 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             refine_candidate_cuts,
             "Hydrate evidence windows after structural cut refinement.",
         ),
-        "recover_foreground_sources": ToolDefinition(
-            "recover_foreground_sources",
-            recover_foreground_sources,
-            "Refresh open-world Gemini proposals and retry extraction.",
-        ),
         "crop_tracks": ToolDefinition(
             "crop_tracks",
             crop_track_artifacts,
@@ -553,11 +504,6 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "build_source_semantics",
             build_source_semantics,
             "Interpret sources/events with Gemini and build generation groups plus routing.",
-        ),
-        "group_acoustic_recipes": ToolDefinition(
-            "group_acoustic_recipes",
-            group_acoustic_recipe_semantics,
-            "Regroup existing events/ambience with Gemini semantic merge judgments.",
         ),
         "validate_bundle": ToolDefinition(
             "validate_bundle",

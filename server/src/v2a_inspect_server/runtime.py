@@ -18,6 +18,7 @@ from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
 from .bootstrap import WeightsBootstrapper, WeightsManifest
+from .agentic import run_agentic_tool_loop
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle, build_interim_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
@@ -533,6 +534,10 @@ def _run_tool_first_pipeline(
     state["proposal_provenance_by_window"] = dict(
         source_hypotheses["proposal_provenance_by_window"]
     )
+    if source_hypotheses.get("warnings"):
+        state.setdefault("warnings", []).extend(
+            [str(item) for item in source_hypotheses.get("warnings", []) if item]
+        )
     record_stage(
         state,
         stage="propose_source_hypotheses",
@@ -567,6 +572,10 @@ def _run_tool_first_pipeline(
             verified_hypotheses["proposal_provenance_by_window"]
         ).items()
     }
+    if verified_hypotheses.get("warnings"):
+        state.setdefault("warnings", []).extend(
+            [str(item) for item in verified_hypotheses.get("warnings", []) if item]
+        )
     record_stage(
         state,
         stage="verify_scene_hypotheses",
@@ -740,7 +749,7 @@ def _run_tool_first_pipeline(
             for key, value in semantics.get("recipe_signatures", {}).items()
         },
         "identity_edges": list(semantics["identity_edges"]),
-        "warnings": [],
+        "warnings": list(state.get("warnings", [])),
         "errors": [],
         "progress_messages": [
             f"Tool-first pipeline: proposed {len(candidate_cuts)} candidate cuts.",
@@ -785,18 +794,21 @@ def _run_agentic_tool_first_pipeline(
         video_path=video_path,
         options=options.model_copy(update={"pipeline_mode": "tool_first_foundation"}),
         tooling_runtime=tooling_runtime,
-        bundle_mode="final",
+        bundle_mode="interim",
     )
     state["options"] = options
+    state, planner_state, trace_path = run_agentic_tool_loop(
+        inspect_state=state,
+        tooling_runtime=tooling_runtime,
+    )
+    state["agent_trace_path"] = trace_path
     bundle = state["multitrack_bundle"]
-    bundle.pipeline_metadata["agentic_mode_status"] = "deferred_to_foundation"
-    bundle.pipeline_metadata["agentic_mode_note"] = (
-        "Semantic reset is restoring the bundle-first foundation path before re-enabling agentic repair."
-    )
-    state.setdefault("warnings", []).append(
-        "agentic_tool_first currently defers to tool_first_foundation during the semantic reset."
-    )
+    bundle.artifacts.trace_path = trace_path
+    bundle.pipeline_metadata["agent_review_trace_path"] = trace_path
+    bundle.pipeline_metadata["agent_review_issue_count"] = len(planner_state.issues)
+    bundle.pipeline_metadata["agent_review_tool_calls"] = len(planner_state.tool_calls)
     _persist_runtime_bundle(bundle, state)
+    state["multitrack_bundle"] = bundle
     return state
 
 

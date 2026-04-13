@@ -42,8 +42,8 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertIn("propose_source_hypotheses", registry)
         self.assertIn("verify_scene_hypotheses", registry)
         self.assertIn("build_source_semantics", registry)
-        self.assertIn("recover_foreground_sources", registry)
-        self.assertIn("group_acoustic_recipes", registry)
+        self.assertNotIn("recover_foreground_sources", registry)
+        self.assertNotIn("group_acoustic_recipes", registry)
         self.assertNotIn("routing_priors", registry)
 
     def test_extract_entities_requires_explicit_grounded_prompts(self) -> None:

@@ -179,7 +179,7 @@ class PlannerExecutorTests(unittest.TestCase):
 
         state.issues[0].status = "resolved"
         action = cast(PlannedAction, plan_next_action(state))
-        self.assertEqual(action.tool_name, "recover_foreground_sources")
+        self.assertEqual(action.tool_name, "propose_source_hypotheses")
 
     def test_planner_escalates_foreground_collapse_recovery_ladder(self) -> None:
         state = PlannerState(
@@ -198,14 +198,12 @@ class PlannerExecutorTests(unittest.TestCase):
         self.assertEqual(action.tool_name, "densify_window_sampling")
 
         state.issues[0].attempts = 1
-        state.issues[0].payload["scene_prompt_recovery_attempted"] = False
         action = cast(PlannedAction, plan_next_action(state))
-        self.assertEqual(action.tool_name, "recover_foreground_sources")
+        self.assertEqual(action.tool_name, "propose_source_hypotheses")
 
         state.issues[0].attempts = 2
-        state.issues[0].payload["scene_prompt_recovery_attempted"] = True
         action = cast(PlannedAction, plan_next_action(state))
-        self.assertEqual(action.tool_name, "recover_foreground_sources")
+        self.assertEqual(action.tool_name, "propose_source_hypotheses")
 
 
 if __name__ == "__main__":

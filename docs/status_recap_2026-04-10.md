@@ -1,26 +1,29 @@
 # V2A Inspect — Current Recap (2026-04-10)
 
 ## Current state
-The project is now a **silent-video, bundle-first, tool-first research prototype** centered on the resident remote server runtime.
+The project is now a **silent-video, bundle-first research prototype** centered on the resident remote server runtime.
 
 The active system now:
 - exposes only `tool_first_foundation` and `agentic_tool_first`
-- removes legacy Gemini video upload and `tool_context`
+- removes legacy Gemini video upload, `tool_context`, grouped-analysis compatibility, and legacy pipeline response models
 - creates a silent analysis copy before downstream media work
-- proposes sources from a merged stack of:
-  - SigLIP2 ontology scoring
-  - Gemini frame/storyboard hypotheses
-  - motion-region proposals
-- verifies those hypotheses explicitly before SAM3 extraction
-- groups output events through explicit acoustic recipe signatures
-- keeps agentic work focused on high-value ambiguity only
+- proposes sources from:
+  - Gemini open-world frame/storyboard/motion-crop reasoning
+  - SigLIP2 phrase grounding over Gemini-proposed phrases
+  - motion-region proposals from frame differencing
+- builds source/event/group/route semantics through Gemini-backed structured judgments
+- keeps unresolved route/description states explicit instead of inventing fallbacks
 
 ## Latest implemented improvements
-- Added explicit `verify_scene_hypotheses(...)` handling into the active proposal flow.
-- Added explicit acoustic recipe grouping and recipe-signature metadata.
-- Expanded the ontology substantially beyond the tiny hardcoded prompt regime.
-- Added Gemini failure short-circuiting so benchmarking does not stall on repeated scene-hypothesis / adjudication / description-writer failures.
-- Marked stale planning docs as historical where they still describe removed architecture.
+- Removed the ontology-driven proposal layer and hardcoded semantic fallbacks from the active path.
+- Replaced grouped-analysis compatibility with bundle-only rendering and persistence.
+- Added explicit Gemini-backed modules for:
+  - source proposal
+  - proposal grounding
+  - source/event interpretation
+  - grouping
+  - routing
+- Kept deterministic CV limited to geometry/evidence work.
 
 ## Verified local status
 Passed locally:
@@ -29,27 +32,16 @@ Passed locally:
 - `unittest discover -s server/tests -v`
 
 Most recent local result:
-- root tests: **40 passed**
-- server tests: **62 passed**
-
-## Verified post-redesign hardware evidence
-Saved locally:
-- `data/live_test_table_tennis_foundation_redesign/`
-
-Completed on `sogang_gpu`:
-- clip: `playing_table_tennis_same_class_abab_5s`
-- mode: `tool_first_foundation`
-- total recorded stage time: about **480.3s**
-- physical sources: **27**
-- sound events: **51**
-- generation groups: **32**
-- verified windows: **6**
-- recipe signatures: **32**
-- validation: `pass_with_warnings`
-
-Partial saved redesign evidence also exists for an `agentic_tool_first` attempt on the same clip, but it is not yet a completed benchmark-quality comparison.
+- root tests: **37 passed**
+- server tests: **49 passed**
 
 ## Main blocker now
-The main blocker is now **cost/benefit evidence**, not architecture cleanup:
-- the redesigned stack clearly runs on the target hardware,
-- but the temporal benchmark pack is expensive enough that we still need broader saved results before concluding the redesign and selective agentic layer are worth their cost.
+The main blocker is now **end-to-end validation of the rewritten semantics on real clips**:
+- the code and tests reflect the semantic reset,
+- but broader real-hardware evidence is still needed to judge bundle quality and agentic ROI.
+
+
+## New observed blocker after the semantic reset
+- A fresh remote benchmark on `playing_table_tennis_same_class_abab_5s` now completes on the rewritten stack, but Gemini semantic calls fail with `RESOURCE_EXHAUSTED` on the configured remote project.
+- The pipeline now reports that failure explicitly in benchmark warnings instead of silently returning an apparently normal empty bundle.
+- Until the Gemini project spend cap is lifted, real end-to-end semantic quality on the rewritten stack cannot be evaluated meaningfully on hardware.
