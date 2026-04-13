@@ -15,18 +15,10 @@ from v2a_inspect.tools.types import (
 
 from .image_features import frame_motion_score, summarize_image_paths
 from .model_runtime import inference_device, inference_dtype, load_rgb_images, move_inputs_to_device
+from .source_ontology import EMERGENCY_FALLBACK_PROMPTS
 from .tracking import FrameDetection, link_frame_detections
 
-DEFAULT_SAM3_PROMPTS = [
-    "person",
-    "cat",
-    "dog",
-    "car",
-    "boat",
-    "vehicle",
-    "animal",
-    "object",
-]
+DEFAULT_SAM3_PROMPTS = list(EMERGENCY_FALLBACK_PROMPTS)
 
 
 class Sam3Client:

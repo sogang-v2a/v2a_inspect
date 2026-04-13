@@ -1,91 +1,48 @@
 # V2A Inspect — Current Problem (2026-04-11)
 
 ## Short version
-The project is no longer blocked by:
-- MiG survivability
-- server startup/warmup shape
-- foundation-mode completion on real hardware
-- the cut-ambiguity payload/signature crash in the agentic loop
+The repo is no longer blocked by:
+- MiG runtime survival
+- legacy agent crash bugs
+- missing foundation completion on temporal clips
+- public legacy Gemini/video-upload code paths
 
 The current blocker is now:
 
-> **the full agentic path completes, but it is still too slow and is not yet showing enough value over foundation mode on the current temporal benchmark.**
+> **The silent-video dynamic proposal stack exists, but we still need to prove that it improves temporal benchmark quality enough to justify the extra hypothesis work and selective agentic repairs.**
 
-## What is confirmed working now
-- The resident `full_gpu` server on `sogang_gpu` is operational through the normal HTTP path.
-- Local SSH forwarding works from this machine to the remote server.
-- Local benchmark artifacts can be saved under `data/`.
-- `tool_first_foundation` completes on the local sword-fighting temporal sample and saves a full bundle.
-- `agentic_tool_first` now also completes on that same sample after fixing the executor payload filtering bug.
-- The first concrete agentic crash is fixed:
-  - `cut_ambiguity` diagnostic payload fields no longer crash strict tool handlers.
+## What changed in this redesign
+- `legacy_gemini` is gone from the public product surface.
+- The old Gemini video-upload workflow is removed.
+- The old `tool_context` compatibility branch is removed.
+- The active pipeline now creates a silent analysis copy and uses that path everywhere downstream.
+- Source discovery is no longer based on tiny hardcoded prompt lists alone.
+- The active discovery stack is now:
+  - SigLIP2 ontology scoring
+  - Gemini frame/storyboard hypotheses
+  - motion-region proposals
 
-## Latest live benchmark evidence
-### Foundation — `13_sword_fighting.mp4`
-Saved under:
-- `data/live_test_sword_fighting_foundation/`
+## What is confirmed now
+- Only two supported pipeline modes remain:
+  - `tool_first_foundation`
+  - `agentic_tool_first`
+- Public CLI/UI/server paths now route only through the tool-first server runtime.
+- ffmpeg frame/clip extraction now uses silent-video discipline.
+- Foundation and agentic still both complete on the saved sword-fighting temporal sample.
+- The previous agentic cut-payload crash remains fixed.
 
-Observed:
-- elapsed: about **223.8s**
-- physical sources: **9**
-- sound events: **9**
-- generation groups: **8**
-- validation: `pass_with_warnings`
+## Current research question
+The next question is no longer “can the system run?”
+It is:
 
-### Agentic — `13_sword_fighting.mp4`
-Saved under:
-- `data/live_test_sword_fighting_agentic/`
+> **On the temporal benchmark pack, when does the new proposal stack improve source/event/group quality, and when does `agentic_tool_first` add enough value over `tool_first_foundation` to justify its extra latency?**
 
-Observed:
-- elapsed: about **503.0s**
-- physical sources: **9**
-- sound events: **9**
-- generation groups: **8**
-- validation: `pass_with_warnings`
-- adjudicator call count: **3**
-- agent review tool calls: **3**
-- agent review issue count: **2**
-- pipeline version: `agentic_tool_first`
-
-## What is not good enough yet
-The current problem is not “agentic mode crashes.”
-That part is fixed.
-
-The current problem is:
-
-1. **Agentic mode is much slower than foundation mode** on the live sword-fighting benchmark.
-   - foundation: ~224s
-   - agentic: ~503s
-
-2. **Top-line structural results are currently the same** on this benchmark.
-   - both produced 9 sources / 9 events / 8 groups
-   - so the extra agentic cost is not yet justified by a clear measurable structural win
-
-3. **Final descriptions are still heuristic in the completed agentic run.**
-   - the run exercised the agentic path
-   - adjudication was attempted
-   - but final writer-backed descriptions did not land in the saved bundle
-
-4. **The benchmark story is still thin.**
-   - we now have a real temporal sample success
-   - but we still need a broader temporal clip set to determine whether agentic mode adds value on harder cases rather than just adding latency
-
-## Immediate next question
-The next question is no longer:
-- “why does the agentic run 500?”
-
-The next question is:
-
-> **Which parts of the agentic loop are consuming the extra ~280 seconds, and on which temporal clips does that extra work actually improve the bundle enough to justify itself?**
-
-## Practical interpretation
-The project has crossed another threshold:
-- foundation path works on real temporal video
-- agentic path now also completes
-
-So the repo is no longer in a “make it run at all” phase.
-It is now in a:
-- **cost/benefit**
-- **quality-delta**
-- **temporal benchmark evaluation**
-phase.
+## Immediate next evidence to gather
+- Re-run the temporal core clips with the redesigned silent-video proposal stack.
+- Compare foundation vs agentic on:
+  - source count correctness
+  - event segmentation quality
+  - grouping quality
+  - routing plausibility
+  - final description grounding
+- Use the local `data/` benchmark workflow and persist outputs under `data/benchmarks/...`.

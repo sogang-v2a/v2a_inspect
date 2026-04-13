@@ -122,6 +122,8 @@ def build_generation_groups(
     physical_sources: list[PhysicalSourceTrack],
     candidate_groups: list[CandidateGroup] | None = None,
     routing_decisions_by_track: dict[str, TrackRoutingDecision] | None = None,
+    scene_hypotheses_by_window: dict[int, dict[str, object]] | None = None,
+    proposal_provenance_by_window: dict[int, dict[str, object]] | None = None,
 ) -> list[GenerationGroup]:
     labels_by_source = {
         source.source_id: source.label_candidates[0].label
@@ -138,9 +140,13 @@ def build_generation_groups(
             candidate_groups_by_track[track_id] = candidate_group
     grouped_events: dict[str, list[SoundEventSegment]] = defaultdict(list)
     for event in sound_events:
-        grouped_events[
-            _event_group_key(event, labels_by_source.get(event.source_id))
-        ].append(event)
+        grouped_events[_event_group_key(
+            event,
+            labels_by_source.get(event.source_id),
+            scene_hypotheses_by_window=scene_hypotheses_by_window,
+            proposal_provenance_by_window=proposal_provenance_by_window,
+            track_ids_by_source=track_ids_by_source,
+        )].append(event)
 
     groups: list[GenerationGroup] = []
     for index, (group_key, events) in enumerate(grouped_events.items()):
@@ -189,7 +195,7 @@ def build_generation_groups(
                 reasoning_summary=(
                     "heuristic acoustic-equivalence grouping informed by candidate embedding groups"
                     if candidate_group_ids
-                    else "heuristic acoustic-equivalence grouping from event type and source label"
+                    else "acoustic recipe grouping from source identity, interaction texture, materials, and scene hypotheses"
                 ),
                 routing_candidates=routing_candidates,
                 temporary_adapter_from=(
@@ -242,10 +248,58 @@ def _material_hint(label_candidates: list[LabelCandidate]) -> str | None:
     return None
 
 
-def _event_group_key(event: SoundEventSegment, source_label: str | None) -> str:
+def _event_group_key(
+    event: SoundEventSegment,
+    source_label: str | None,
+    *,
+    scene_hypotheses_by_window: dict[int, dict[str, object]] | None,
+    proposal_provenance_by_window: dict[int, dict[str, object]] | None,
+    track_ids_by_source: dict[str, list[str]],
+) -> str:
     label = source_label or "unknown"
     material = event.material_or_surface or "generic"
-    return f"{label}:{event.event_type}:{material}"
+    interaction = sorted(event.interaction_flags or [])
+    motion = event.motion_profile or "unknown"
+    texture = event.texture or "generic"
+    scene_key = _scene_recipe_hint(
+        event.source_id,
+        track_ids_by_source=track_ids_by_source,
+        scene_hypotheses_by_window=scene_hypotheses_by_window,
+        proposal_provenance_by_window=proposal_provenance_by_window,
+    )
+    return f"{label}:{event.event_type}:{material}:{motion}:{texture}:{'+'.join(interaction) or 'none'}:{scene_key}"
+
+
+def _scene_recipe_hint(
+    source_id: str,
+    *,
+    track_ids_by_source: dict[str, list[str]],
+    scene_hypotheses_by_window: dict[int, dict[str, object]] | None,
+    proposal_provenance_by_window: dict[int, dict[str, object]] | None,
+) -> str:
+    candidate_scene_indices = sorted(
+        {
+            int(track_id.split("-")[1])
+            for track_id in track_ids_by_source.get(source_id, [])
+            if "-" in track_id and track_id.split("-")[1].isdigit()
+        }
+    )
+    for scene_index in candidate_scene_indices:
+        hypothesis = (scene_hypotheses_by_window or {}).get(scene_index, {})
+        if hypothesis:
+            cues = [
+                *list(hypothesis.get("background_environment", [])[:1]),
+                *list(hypothesis.get("material_cues", [])[:1]),
+                *list(hypothesis.get("interactions", [])[:1]),
+            ]
+            deduped = [cue for cue in cues if cue]
+            if deduped:
+                return "|".join(deduped)
+        provenance = (proposal_provenance_by_window or {}).get(scene_index, {})
+        ontology_hints = list(provenance.get("ontology_semantics", [])[:2])
+        if ontology_hints:
+            return "|".join(str(item) for item in ontology_hints)
+    return "generic_scene"
 
 
 def _provisional_route(*, event_type: str, ambience: bool) -> RoutingDecision:

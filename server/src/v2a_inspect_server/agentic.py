@@ -201,6 +201,7 @@ def _apply_action_result(
         updated["frame_batches"] = list(result["frame_batches"])
         updated["storyboard_path"] = str(result["storyboard_path"])
         updated["artifact_run_dir"] = str(result["artifact_root"])
+        updated["analysis_video_path"] = str(result.get("analysis_video_path", ""))
         return _rebuild_structural_state(updated, tooling_runtime=tooling_runtime, registry=registry)
 
     if tool_name in {"extract_entities", "recover_with_text_prompt"}:
@@ -232,6 +233,12 @@ def _apply_action_result(
             result.get("track_set"),
         )
         updated["scene_prompt_candidates"] = dict(result.get("prompts_by_scene", {}))
+        updated["scene_hypotheses_by_window"] = dict(
+            result.get("scene_hypotheses_by_window", {})
+        )
+        updated["proposal_provenance_by_window"] = dict(
+            result.get("proposal_provenance_by_window", {})
+        )
         updated.setdefault("recovery_actions", []).append(tool_name)
         record_recovery_attempt(
             updated,
@@ -278,6 +285,12 @@ def _apply_action_result(
             evidence_windows=list(updated.get("evidence_windows", [])),
             candidate_groups=list(updated.get("candidate_groups", [])),
             routing_decisions_by_track=dict(updated.get("track_routing_decisions", {})),
+            scene_hypotheses_by_window=dict(
+                updated.get("scene_hypotheses_by_window", {})
+            ),
+            proposal_provenance_by_window=dict(
+                updated.get("proposal_provenance_by_window", {})
+            ),
         )
         updated["identity_edges"] = list(semantics["identity_edges"])
         updated["physical_sources"] = list(semantics["physical_sources"])
@@ -329,9 +342,23 @@ def _rebuild_structural_state(
     tooling_runtime: "ToolingRuntime",
     registry: dict[str, Any],
 ) -> InspectState:
+    proposals = registry["propose_source_hypotheses"](
+        frame_batches=list(inspect_state.get("frame_batches", [])),
+        storyboard_path=str(inspect_state.get("storyboard_path", "")),
+        output_root=str(inspect_state.get("artifact_run_dir", "")),
+    )
+    inspect_state["scene_prompt_candidates"] = dict(proposals["prompts_by_scene"])
+    inspect_state["scene_hypotheses_by_window"] = dict(
+        proposals["scene_hypotheses_by_window"]
+    )
+    inspect_state["proposal_provenance_by_window"] = dict(
+        proposals["proposal_provenance_by_window"]
+    )
     extraction = registry["extract_entities"](
         frame_batches=list(inspect_state.get("frame_batches", [])),
         prompts_by_scene=dict(inspect_state.get("scene_prompt_candidates", {})) or None,
+        storyboard_path=str(inspect_state.get("storyboard_path", "")),
+        output_root=str(inspect_state.get("artifact_run_dir", "")),
     )
     inspect_state["sam3_track_set"] = extraction
     if tooling_runtime.should_release_clients:
@@ -407,6 +434,12 @@ def _rebuild_semantic_state(
         evidence_windows=list(inspect_state.get("evidence_windows", [])),
         candidate_groups=list(inspect_state.get("candidate_groups", [])),
         routing_decisions_by_track=dict(inspect_state.get("track_routing_decisions", {})),
+        scene_hypotheses_by_window=dict(
+            inspect_state.get("scene_hypotheses_by_window", {})
+        ),
+        proposal_provenance_by_window=dict(
+            inspect_state.get("proposal_provenance_by_window", {})
+        ),
     )
     inspect_state["identity_edges"] = list(semantics["identity_edges"])
     inspect_state["physical_sources"] = list(semantics["physical_sources"])
@@ -488,6 +521,7 @@ def _build_issues(
                     "window_ids": [window.window_id for window in bundle.evidence_windows],
                     "output_root": bundle.artifacts.run_dir,
                     "storyboard_path": bundle.artifacts.storyboard_path,
+                    "analysis_video_path": inspect_state.get("analysis_video_path"),
                     "current_track_count": 0,
                     "current_source_count": len(current_sources),
                     "current_event_count": len(current_events),
@@ -514,6 +548,8 @@ def _build_issues(
                 priority=4,
                 payload={
                     "frame_batches": list(inspect_state.get("frame_batches", [])),
+                    "storyboard_path": inspect_state.get("storyboard_path"),
+                    "output_root": bundle.artifacts.run_dir,
                     "current_track_count": len(current_tracks),
                     "current_source_count": 0,
                     "current_event_count": len(current_events),
@@ -570,7 +606,9 @@ def _build_issues(
         for window in bundle.evidence_windows
         if (window.end_time - window.start_time) > 8.0
     ]
-    if low_confidence_cuts or overly_broad_windows:
+    if (low_confidence_cuts or overly_broad_windows) and (
+        len(current_sources) <= 2 or len(current_events) <= 2
+    ):
         issues.append(
             AgentIssue(
                 issue_id="cut-ambiguity",

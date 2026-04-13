@@ -5,48 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .server import run_server_inspect, run_server_inspect_raw
-    from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
-    from .video import (
-        build_inline_video_content_block,
-        build_uploaded_video_content_block,
-        encode_file_base64,
-        guess_mime_type,
-        state_name,
-        upload_file,
-        upload_video,
-        wait_for_file_active,
-    )
 
-__all__ = [
-    "DEFAULT_GEMINI_MODEL",
-    "build_inline_video_content_block",
-    "build_uploaded_video_content_block",
-    "encode_file_base64",
-    "guess_mime_type",
-    "state_name",
-    "upload_file",
-    "upload_video",
-    "wait_for_file_active",
-    "run_server_inspect",
-    "run_server_inspect_raw",
-]
+__all__ = ["run_server_inspect", "run_server_inspect_raw"]
 
 _EXPORT_MAP = {
-    "DEFAULT_GEMINI_MODEL": ("v2a_inspect.constants", "DEFAULT_GEMINI_MODEL"),
-    "build_inline_video_content_block": (
-        "v2a_inspect.clients.video",
-        "build_inline_video_content_block",
-    ),
-    "build_uploaded_video_content_block": (
-        "v2a_inspect.clients.video",
-        "build_uploaded_video_content_block",
-    ),
-    "encode_file_base64": ("v2a_inspect.clients.video", "encode_file_base64"),
-    "guess_mime_type": ("v2a_inspect.clients.video", "guess_mime_type"),
-    "state_name": ("v2a_inspect.clients.video", "state_name"),
-    "upload_file": ("v2a_inspect.clients.video", "upload_file"),
-    "upload_video": ("v2a_inspect.clients.video", "upload_video"),
-    "wait_for_file_active": ("v2a_inspect.clients.video", "wait_for_file_active"),
     "run_server_inspect": ("v2a_inspect.clients.server", "run_server_inspect"),
     "run_server_inspect_raw": ("v2a_inspect.clients.server", "run_server_inspect_raw"),
 }

@@ -26,13 +26,13 @@ from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
 from .model_runtime import clear_cuda_cache
 from .telemetry import ensure_runtime_trace_path, record_stage, stage_start
 from .tool_registry import build_tool_registry
-from .tool_context import build_tool_context
 
 if TYPE_CHECKING:
     from v2a_inspect.contracts import MultitrackDescriptionBundle
     from .adjudicator import GeminiIssueJudge
     from .embeddings import EmbeddingClient, LabelClient
     from .description_writer import GeminiDescriptionWriter
+    from .scene_hypotheses import GeminiSceneHypothesisProposer
     from .sam3 import Sam3Client
 
 
@@ -54,6 +54,7 @@ class ToolingRuntime:
         self._label_client: "LabelClient | None" = None
         self._description_writer: "GeminiDescriptionWriter | None" = None
         self._adjudication_judge: "GeminiIssueJudge | None" = None
+        self._scene_hypothesis_proposer: "GeminiSceneHypothesisProposer | None" = None
 
     @property
     def should_release_clients(self) -> bool:
@@ -114,6 +115,20 @@ class ToolingRuntime:
                 api_key=server_settings.gemini_api_key
             )
         return self._adjudication_judge
+
+    @property
+    def scene_hypothesis_proposer(self) -> "GeminiSceneHypothesisProposer | None":
+        if self._scene_hypothesis_proposer is None:
+            server_settings = get_server_runtime_settings()
+            if server_settings.gemini_api_key is None:
+                return None
+            from .scene_hypotheses import GeminiSceneHypothesisProposer
+
+            self._scene_hypothesis_proposer = GeminiSceneHypothesisProposer(
+                model="gemini-2.5-flash",
+                api_key=server_settings.gemini_api_key,
+            )
+        return self._scene_hypothesis_proposer
 
     def artifacts_missing(self) -> list[str]:
         return [
@@ -364,19 +379,8 @@ def _analyze_with_pipeline(
             options=options,
             tooling_runtime=tooling_runtime,
         )
-    tool_context = build_tool_context(
-        video_path,
-        options=options,
-        tooling_runtime=tooling_runtime,
-    )
-    if tooling_runtime.should_release_clients:
-        tooling_runtime.release_all()
-    from v2a_inspect.runner import run_inspect
-
-    return run_inspect(
-        video_path,
-        options=options,
-        initial_state_overrides=tool_context,
+    raise ValueError(
+        f"Unsupported pipeline_mode {options.pipeline_mode!r}; only tool-first modes remain."
     )
 
 
@@ -413,7 +417,9 @@ def _run_tool_first_pipeline(
     frame_batches = list(structural["frame_batches"])
     storyboard_path = str(structural["storyboard_path"])
     artifact_run_dir = str(structural["artifact_root"])
+    analysis_video_path = str(structural["analysis_video_path"])
     state["artifact_run_dir"] = artifact_run_dir
+    state["analysis_video_path"] = analysis_video_path
     state["storyboard_path"] = storyboard_path
     state["frames_per_window"] = int(structural.get("frames_per_scene", 2))
     ensure_runtime_trace_path(state)
@@ -430,7 +436,39 @@ def _run_tool_first_pipeline(
     )
 
     started = stage_start()
-    extraction = registry["extract_entities"].handler(frame_batches=frame_batches)
+    source_hypotheses = registry["propose_source_hypotheses"].handler(
+        frame_batches=frame_batches,
+        storyboard_path=storyboard_path,
+        output_root=artifact_run_dir,
+    )
+    state["scene_prompt_candidates"] = dict(source_hypotheses["prompts_by_scene"])
+    state["scene_hypotheses_by_window"] = dict(
+        source_hypotheses["scene_hypotheses_by_window"]
+    )
+    state["proposal_provenance_by_window"] = dict(
+        source_hypotheses["proposal_provenance_by_window"]
+    )
+    record_stage(
+        state,
+        stage="propose_source_hypotheses",
+        started_at=started,
+        metrics={
+            "window_count": len(frame_batches),
+            "window_prompt_count": sum(
+                len(prompts)
+                for prompts in state["scene_prompt_candidates"].values()
+            ),
+            "window_hypothesis_count": len(state["scene_hypotheses_by_window"]),
+        },
+    )
+
+    started = stage_start()
+    extraction = registry["extract_entities"].handler(
+        frame_batches=frame_batches,
+        prompts_by_scene=dict(state["scene_prompt_candidates"]),
+        storyboard_path=storyboard_path,
+        output_root=artifact_run_dir,
+    )
     tracks = _coerce_tracks(extraction)
     record_stage(
         state,
@@ -535,6 +573,8 @@ def _run_tool_first_pipeline(
         evidence_windows=evidence_windows,
         candidate_groups=candidate_groups,
         routing_decisions_by_track=routing_decisions,
+        scene_hypotheses_by_window=dict(state.get("scene_hypotheses_by_window", {})),
+        proposal_provenance_by_window=dict(state.get("proposal_provenance_by_window", {})),
     )
     record_stage(
         state,
@@ -555,8 +595,12 @@ def _run_tool_first_pipeline(
         "candidate_cuts": candidate_cuts,
         "evidence_windows": evidence_windows,
         "frame_batches": frame_batches,
+        "analysis_video_path": analysis_video_path,
         "storyboard_path": storyboard_path,
         "sam3_track_set": extraction,
+        "scene_prompt_candidates": dict(state.get("scene_prompt_candidates", {})),
+        "scene_hypotheses_by_window": dict(state.get("scene_hypotheses_by_window", {})),
+        "proposal_provenance_by_window": dict(state.get("proposal_provenance_by_window", {})),
         "track_crops": track_crops,
         "entity_embeddings": embeddings,
         "candidate_groups": candidate_groups,
@@ -573,6 +617,7 @@ def _run_tool_first_pipeline(
             f"Tool-first pipeline: proposed {len(candidate_cuts)} candidate cuts.",
             f"Tool-first pipeline: built {len(evidence_windows)} evidence windows.",
             f"Tool-first pipeline: sampled {sum(len(batch.frames) for batch in frame_batches)} frames.",
+            f"Tool-first pipeline: proposed {sum(len(prompts) for prompts in state.get('scene_prompt_candidates', {}).values())} extraction prompts.",
             f"Tool-first pipeline: extracted {len(tracks)} source tracks.",
             f"Tool-first pipeline: generated {len(track_crops)} track crops.",
             f"Tool-first pipeline: embedded {len(embeddings)} crop-backed track identities.",

@@ -4,27 +4,13 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .runner import get_grouped_analysis, run_group_from_scene_analysis, run_inspect
-    from .runtime import build_genai_client, build_inspect_runtime, build_llm
+    from .runner import run_inspect
+    from .runtime import build_llm
 
-__all__ = [
-    "build_genai_client",
-    "build_inspect_runtime",
-    "build_llm",
-    "get_grouped_analysis",
-    "run_group_from_scene_analysis",
-    "run_inspect",
-]
+__all__ = ["build_llm", "run_inspect"]
 
 _EXPORT_MAP = {
-    "build_genai_client": ("v2a_inspect.runtime", "build_genai_client"),
-    "build_inspect_runtime": ("v2a_inspect.runtime", "build_inspect_runtime"),
     "build_llm": ("v2a_inspect.runtime", "build_llm"),
-    "get_grouped_analysis": ("v2a_inspect.runner", "get_grouped_analysis"),
-    "run_group_from_scene_analysis": (
-        "v2a_inspect.runner",
-        "run_group_from_scene_analysis",
-    ),
     "run_inspect": ("v2a_inspect.runner", "run_inspect"),
 }
 

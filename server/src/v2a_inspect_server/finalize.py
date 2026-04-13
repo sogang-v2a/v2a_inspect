@@ -122,12 +122,19 @@ def _build_bundle(
                 state.get("options"), "pipeline_mode", "tool_first_foundation"
             ),
             "generated_at": datetime.now(UTC).isoformat(),
-            "tool_context_enabled": True,
+            "analysis_media_mode": "silent_video",
+            "analysis_video_path": _state_path(state.get("analysis_video_path")),
             "sampling_frames_per_window": state.get("frames_per_window"),
             "recovery_actions": list(state.get("recovery_actions", [])),
             "recovery_attempts": list(state.get("recovery_attempts", [])),
             "stage_history": list(state.get("stage_history", [])),
             "runtime_trace_path": _state_path(state.get("runtime_trace_path")),
+            "scene_hypotheses_by_window": dict(
+                state.get("scene_hypotheses_by_window", {})
+            ),
+            "proposal_provenance_by_window": dict(
+                state.get("proposal_provenance_by_window", {})
+            ),
             "terminal_resolution": state.get("terminal_resolution"),
             "agent_review_decisions": list(state.get("agent_review_decisions", [])),
             "effective_runtime_profile": state.get("effective_runtime_profile"),

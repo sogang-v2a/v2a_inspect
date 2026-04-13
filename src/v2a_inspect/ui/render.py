@@ -43,25 +43,23 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
         st.caption("초당 분석 프레임 수. 높을수록 정밀하지만 느림")
 
         pipeline_mode = cast(
-            Literal["legacy_gemini", "tool_first_foundation", "agentic_tool_first"],
+            Literal["tool_first_foundation", "agentic_tool_first"],
             st.selectbox(
                 "Pipeline Mode",
-                ["agentic_tool_first", "tool_first_foundation", "legacy_gemini"],
+                ["agentic_tool_first", "tool_first_foundation"],
                 index=[
                     "agentic_tool_first",
                     "tool_first_foundation",
-                    "legacy_gemini",
                 ].index(settings.visual_pipeline_mode),
                 format_func=lambda value: {
-                    "agentic_tool_first": "agentic_tool_first — bounded repair + bundle adjudication",
-                    "tool_first_foundation": "tool_first_foundation — deterministic bundle baseline",
-                    "legacy_gemini": "legacy_gemini — compatibility fallback",
+                    "agentic_tool_first": "agentic_tool_first — selective ambiguity repair",
+                    "tool_first_foundation": "tool_first_foundation — deterministic silent-video baseline",
                 }[value],
             ),
         )
         st.caption(
             "University GPU 실험 기본값은 agentic_tool_first입니다. "
-            "foundation은 baseline 비교용, legacy_gemini는 fallback용입니다."
+            "모든 경로는 silent-video tool-first 파이프라인만 사용합니다."
         )
 
         prompt_type = cast(
@@ -70,29 +68,9 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
         )
         st.caption("`default`: 간결 | `extended`: Foley 상세")
 
-        enable_vlm_verify = pipeline_mode == "legacy_gemini" and st.checkbox(
-            "VLM 그룹 검증 사용",
-            value=True,
+        st.caption(
+            "Silent-video 기반 source/event semantics와 route priors가 항상 계산됩니다."
         )
-        if pipeline_mode == "legacy_gemini":
-            st.caption("시각 검증 단계가 실제 영상 프레임으로 그룹핑 결과를 확인")
-        else:
-            st.caption(
-                "Tool-first 모드에서는 bundle validator와 agentic repair가 기본 경로입니다."
-            )
-
-        enable_model_select = pipeline_mode == "legacy_gemini" and st.checkbox(
-            "TTA/VTA 모델 자동 선정",
-            value=False,
-        )
-        if pipeline_mode == "legacy_gemini":
-            st.caption(
-                "Legacy 경로에서만 별도 모델 선정 단계를 사용합니다."
-            )
-        else:
-            st.caption(
-                "Tool-first 모드에서는 source/event semantics와 route priors가 항상 계산됩니다."
-            )
 
         st.divider()
 
@@ -140,8 +118,6 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
         fps=fps,
         pipeline_mode=pipeline_mode,
         scene_analysis_mode=prompt_type,
-        enable_vlm_verify=enable_vlm_verify,
-        enable_model_select=enable_model_select,
     )
 
 

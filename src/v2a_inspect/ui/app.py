@@ -119,16 +119,8 @@ def run_analysis(video_path: str, options: InspectOptions) -> None:
                 state = run_inspect(
                     video_path,
                     options=options,
-                    progress_callback=status.write
-                    if options.runtime_mode != "nvidia_docker"
-                    else None,
-                    warning_callback=(
-                        lambda message: (
-                            status.write(f"⚠️ {message}")
-                            if options.runtime_mode != "nvidia_docker"
-                            else None
-                        )
-                    ),
+                    progress_callback=status.write,
+                    warning_callback=lambda message: status.write(f"⚠️ {message}"),
                     trace_context=_build_ui_trace_context(options),
                 )
                 for message in state.get("progress_messages", []):
@@ -173,18 +165,12 @@ def run_analysis(video_path: str, options: InspectOptions) -> None:
 
 def _build_ui_trace_context(options: InspectOptions) -> WorkflowTraceContext:
     username = st.session_state.get("username")
-    tags: list[str] = []
-    if options.enable_vlm_verify:
-        tags.append("vlm-verify")
-    if options.enable_model_select:
-        tags.append("model-select")
-
     return WorkflowTraceContext(
         source="ui",
         operation="analyze",
         user_id=str(username) if username else None,
         session_id=get_langfuse_session_id(),
-        tags=tuple(tags),
+        tags=(),
         metadata={
             "scene_analysis_mode": options.scene_analysis_mode,
             "pipeline_mode": options.pipeline_mode,

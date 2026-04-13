@@ -17,6 +17,7 @@ from v2a_inspect.tools import (
     build_candidate_cuts,
     build_context_candidate_cuts,
     build_evidence_windows,
+    create_silent_analysis_video,
     evidence_windows_to_scene_boundaries,
     export_window_clips,
     generate_storyboard,
@@ -28,16 +29,17 @@ from v2a_inspect.tools import (
 )
 from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack, SceneBoundary
 
-from .constants import DEFAULT_TRACK_LABELS, RECOVERY_SCENE_LABELS
 from .crops import crop_tracks
-from .settings import get_server_runtime_settings
 from .reid import build_identity_edges, build_provisional_source_tracks
-from .semantics import (
-    build_ambience_beds,
-    build_generation_groups,
-    build_sound_event_segments,
+from .scene_hypotheses import (
+    expand_scene_ontology,
+    label_moving_region_crops,
+    propose_moving_regions,
+    score_scene_ontology,
 )
+from .semantics import build_ambience_beds, build_generation_groups, build_sound_event_segments
 from .descriptions import synthesize_canonical_descriptions
+from .source_ontology import EXTRACTION_ENTITY_TERMS, SEMANTIC_HINT_TERMS
 from .validators import validate_bundle
 
 
@@ -48,7 +50,13 @@ class ToolDefinition:
     description: str
 
 
+if TYPE_CHECKING:
+    from .runtime import ToolingRuntime
+
+
 def _artifact_root(video_path: str) -> Path:
+    from .settings import get_server_runtime_settings
+
     settings = get_server_runtime_settings()
     preferred_root = (
         settings.shared_video_dir.parent / "artifacts"
@@ -64,11 +72,69 @@ def _artifact_root(video_path: str) -> Path:
     )
 
 
-if TYPE_CHECKING:
-    from .runtime import ToolingRuntime
-
-
 def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefinition]:
+    def _build_window_proposals(
+        *,
+        frame_batches: list[FrameBatch],
+        storyboard_path: str,
+        output_root: str,
+        extraction_terms: list[str] | None = None,
+    ) -> dict[str, object]:
+        ontology_scores = score_scene_ontology(
+            frame_batches,
+            tooling_runtime.label_client,
+            extraction_terms=extraction_terms or list(EXTRACTION_ENTITY_TERMS),
+            semantic_terms=list(SEMANTIC_HINT_TERMS),
+            top_k=8,
+        )
+        proposer = getattr(tooling_runtime, "scene_hypothesis_proposer", None)
+        scene_hypotheses = (
+            proposer.propose(
+                frame_batches=frame_batches,
+                ontology_terms=[*EXTRACTION_ENTITY_TERMS, *SEMANTIC_HINT_TERMS],
+            )
+            if proposer is not None
+            else {}
+        )
+        moving_regions = propose_moving_regions(
+            frame_batches,
+            output_root=str(Path(output_root) / "motion_regions"),
+        )
+        moving_region_labels = label_moving_region_crops(
+            proposals_by_scene=moving_regions,
+            label_client=tooling_runtime.label_client,
+        )
+        expansions = expand_scene_ontology(
+            frame_batches=frame_batches,
+            ontology_scores=ontology_scores,
+            scene_hypotheses=scene_hypotheses,
+            moving_region_labels=moving_region_labels,
+            top_prompt_count=6,
+        )
+        return {
+            "prompts_by_scene": {
+                scene_index: expansion.extraction_prompts
+                for scene_index, expansion in expansions.items()
+            },
+            "scene_hypotheses_by_window": {
+                scene_index: hypothesis.model_dump(mode="json")
+                for scene_index, hypothesis in scene_hypotheses.items()
+            },
+            "proposal_provenance_by_window": {
+                scene_index: expansion.provenance
+                for scene_index, expansion in expansions.items()
+            },
+            "semantic_hints_by_window": {
+                scene_index: expansion.semantic_hints
+                for scene_index, expansion in expansions.items()
+            },
+            "motion_region_count_by_window": {
+                scene_index: len(proposals)
+                for scene_index, proposals in moving_regions.items()
+            },
+            "storyboard_path": storyboard_path,
+        }
+
     def structural_overview(
         *,
         video_path: str,
@@ -76,9 +142,15 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         frames_per_scene: int = 2,
         output_root: str | None = None,
     ) -> dict[str, object]:
-        probe = probe_video(video_path)
-        candidate_cuts = build_candidate_cuts(
+        frame_root = Path(output_root) if output_root is not None else _artifact_root(video_path)
+        frame_root.mkdir(parents=True, exist_ok=True)
+        analysis_video_path = create_silent_analysis_video(
             video_path,
+            output_path=str(frame_root / "analysis_silent.mp4"),
+        )
+        probe = probe_video(analysis_video_path)
+        candidate_cuts = build_candidate_cuts(
+            analysis_video_path,
             probe=probe,
             target_scene_seconds=target_scene_seconds,
         )
@@ -90,10 +162,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             evidence_windows,
             candidate_cuts=candidate_cuts,
         )
-        frame_root = Path(output_root) if output_root is not None else _artifact_root(video_path)
-        frame_root.mkdir(parents=True, exist_ok=True)
         frame_batches = sample_frames(
-            video_path,
+            analysis_video_path,
             scenes,
             output_dir=str(frame_root),
             frames_per_scene=frames_per_scene,
@@ -103,7 +173,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             output_path=str(frame_root / "storyboard.jpg"),
         )
         clip_paths_by_window = export_window_clips(
-            video_path,
+            analysis_video_path,
             evidence_windows,
             output_dir=str(frame_root / "clips"),
             max_windows=3,
@@ -122,11 +192,24 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "storyboard_path": storyboard_path,
             "artifact_root": str(frame_root),
             "frames_per_scene": frames_per_scene,
+            "analysis_video_path": analysis_video_path,
         }
+
+    def propose_source_hypotheses(
+        *,
+        frame_batches: list[FrameBatch],
+        storyboard_path: str,
+        output_root: str,
+    ) -> dict[str, object]:
+        return _build_window_proposals(
+            frame_batches=frame_batches,
+            storyboard_path=storyboard_path,
+            output_root=output_root,
+        )
 
     def densify_window_sampling(
         *,
-        video_path: str,
+        analysis_video_path: str,
         evidence_windows: list[EvidenceWindow],
         frame_batches: list[FrameBatch],
         window_ids: list[str] | None = None,
@@ -150,10 +233,10 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             for index, window in enumerate(evidence_windows)
             if window.window_id in window_id_filter
         ]
-        frame_root = Path(output_root) if output_root is not None else _artifact_root(video_path)
+        frame_root = Path(output_root) if output_root is not None else _artifact_root(analysis_video_path)
         frame_root.mkdir(parents=True, exist_ok=True)
         densified = sample_frames(
-            video_path,
+            analysis_video_path,
             scenes,
             output_dir=str(frame_root),
             frames_per_scene=frames_per_scene,
@@ -205,19 +288,18 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         *,
         frame_batches: list[FrameBatch],
         prompts_by_scene: dict[int, list[str]] | None = None,
+        storyboard_path: str | None = None,
+        output_root: str | None = None,
     ) -> object:
         resolved_prompts = prompts_by_scene
         if resolved_prompts is None:
-            resolved_prompts = _scene_prompt_candidates(
-                frame_batches,
-                tooling_runtime.label_client,
-                prompt_vocabulary=list(RECOVERY_SCENE_LABELS),
-                per_scene_top_k=2,
-                score_threshold=0.12,
+            proposals = _build_window_proposals(
+                frame_batches=frame_batches,
+                storyboard_path=storyboard_path or "",
+                output_root=output_root or tempfile.mkdtemp(prefix="v2a_prompt_refresh_"),
             )
-            if getattr(tooling_runtime, "should_release_clients", False) and callable(
-                getattr(tooling_runtime, "release_client", None)
-            ):
+            resolved_prompts = dict(proposals["prompts_by_scene"])
+            if getattr(tooling_runtime, "should_release_clients", False):
                 tooling_runtime.release_client("label")
         return tooling_runtime.sam3_client.extract_entities(
             frame_batches,
@@ -235,29 +317,26 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
     def recover_foreground_sources(
         *,
         frame_batches: list[FrameBatch],
+        storyboard_path: str | None = None,
+        output_root: str | None = None,
         prompt_vocabulary: list[str] | None = None,
-        per_scene_top_k: int = 3,
-        score_threshold: float = 0.18,
         **_: object,
     ) -> dict[str, object]:
-        prompts_by_scene = _scene_prompt_candidates(
-            frame_batches,
-            tooling_runtime.label_client,
-            prompt_vocabulary=prompt_vocabulary or list(RECOVERY_SCENE_LABELS),
-            per_scene_top_k=per_scene_top_k,
-            score_threshold=score_threshold,
+        refreshed = _build_window_proposals(
+            frame_batches=frame_batches,
+            storyboard_path=storyboard_path or "",
+            output_root=output_root or tempfile.mkdtemp(prefix="v2a_prompt_recovery_"),
+            extraction_terms=prompt_vocabulary,
         )
-        if tooling_runtime.should_release_clients:
-            tooling_runtime.release_client("label")
         track_set = tooling_runtime.sam3_client.extract_entities(
             frame_batches,
-            prompts_by_scene=prompts_by_scene,
+            prompts_by_scene=dict(refreshed["prompts_by_scene"]),
             score_threshold=0.22,
         )
         track_set.strategy = "scene_prompt_recovery"
         return {
             "track_set": track_set,
-            "prompts_by_scene": prompts_by_scene,
+            **refreshed,
         }
 
     def crop_track_artifacts(
@@ -274,7 +353,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
     def score_track_labels(
         *, track_image_paths: dict[str, list[str]], labels: list[str] | None = None
     ) -> dict[str, list[LabelCandidate]]:
-        label_set = labels or list(DEFAULT_TRACK_LABELS)
+        label_set = labels or list(EXTRACTION_ENTITY_TERMS)
         return {
             track_id: [
                 LabelCandidate(label=score.label, score=round(score.score, 4))
@@ -304,6 +383,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         evidence_windows: list[EvidenceWindow],
         candidate_groups: list[CandidateGroup] | None = None,
         routing_decisions_by_track: dict[str, object] | None = None,
+        scene_hypotheses_by_window: dict[int, dict[str, object]] | None = None,
+        proposal_provenance_by_window: dict[int, dict[str, object]] | None = None,
     ) -> dict[str, object]:
         tracks_by_id = {track.track_id: track for track in tracks}
         identity_edges = build_identity_edges(
@@ -330,6 +411,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             physical_sources=physical_sources,
             candidate_groups=candidate_groups,
             routing_decisions_by_track=routing_decisions_by_track,
+            scene_hypotheses_by_window=scene_hypotheses_by_window,
+            proposal_provenance_by_window=proposal_provenance_by_window,
         )
         return {
             "identity_edges": identity_edges,
@@ -361,12 +444,17 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "structural_overview": ToolDefinition(
             "structural_overview",
             structural_overview,
-            "Probe video and build candidate cuts/evidence windows.",
+            "Probe video, create a silent analysis copy, and build candidate cuts/evidence windows.",
+        ),
+        "propose_source_hypotheses": ToolDefinition(
+            "propose_source_hypotheses",
+            propose_source_hypotheses,
+            "Propose extraction prompts from ontology scoring, Gemini frame hypotheses, and motion regions.",
         ),
         "extract_entities": ToolDefinition(
             "extract_entities",
             extract_entities,
-            "Run baseline prompt-seeded SAM extraction.",
+            "Run scene-specific SAM extraction from merged silent-video source proposals.",
         ),
         "densify_window_sampling": ToolDefinition(
             "densify_window_sampling",
@@ -386,7 +474,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "recover_foreground_sources": ToolDefinition(
             "recover_foreground_sources",
             recover_foreground_sources,
-            "Recover missing foreground sources with scene-specific prompt expansion.",
+            "Refresh silent-video source proposals and retry extraction.",
         ),
         "crop_tracks": ToolDefinition(
             "crop_tracks",
@@ -401,7 +489,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "score_track_labels": ToolDefinition(
             "score_track_labels",
             score_track_labels,
-            "Score labels against crop-backed track evidence.",
+            "Score ontology-backed labels against crop-backed track evidence.",
         ),
         "group_embeddings": ToolDefinition(
             "group_embeddings",
@@ -425,41 +513,3 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "Rewrite canonical descriptions from the current structured bundle state.",
         ),
     }
-
-
-def _scene_prompt_candidates(
-    frame_batches: list[FrameBatch],
-    label_client: object,
-    *,
-    prompt_vocabulary: list[str],
-    per_scene_top_k: int,
-    score_threshold: float,
-) -> dict[int, list[str]]:
-    prompts_by_scene: dict[int, list[str]] = {}
-    for batch in frame_batches:
-        image_paths = [frame.image_path for frame in batch.frames]
-        if not image_paths:
-            continue
-        scored = label_client.score_image_labels(
-            image_paths=image_paths,
-            labels=prompt_vocabulary,
-        )
-        ranked_prompts = [
-            score.label
-            for score in scored[: max(per_scene_top_k, 1)]
-        ]
-        prompts = [
-            score.label
-            for score in scored[: max(per_scene_top_k, 1)]
-            if score.score >= score_threshold
-        ]
-        if not prompts:
-            prompts = ranked_prompts
-        if "object" not in prompts:
-            prompts.append("object")
-        deduped: list[str] = []
-        for prompt in prompts:
-            if prompt not in deduped:
-                deduped.append(prompt)
-        prompts_by_scene[batch.scene_index] = deduped
-    return prompts_by_scene

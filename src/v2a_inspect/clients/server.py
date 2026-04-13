@@ -43,7 +43,7 @@ def run_server_inspect_raw(
     remote_video_path = _upload_video(
         server_base_url=server_base_url,
         video_path=video_path,
-        timeout_seconds=options.video_timeout_ms / 1000,
+        timeout_seconds=float(options.remote_timeout_seconds),
     )
     payload = _build_request_payload(
         video_path=video_path,
@@ -60,9 +60,7 @@ def run_server_inspect_raw(
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
     )
-    with request.urlopen(
-        request_obj, timeout=options.video_timeout_ms / 1000
-    ) as response:
+    with request.urlopen(request_obj, timeout=float(options.remote_timeout_seconds)) as response:
         body = response.read().decode("utf-8")
     decoded = json.loads(body)
     if not isinstance(decoded, dict):

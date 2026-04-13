@@ -28,6 +28,46 @@ _DEFAULT_MINIMUM_CUT_SPACING = 0.75
 _DEFAULT_MINIMUM_WINDOW_SECONDS = 1.0
 
 
+def create_silent_analysis_video(
+    video_path: str,
+    *,
+    output_path: str,
+) -> str:
+    resolved_output = Path(output_path)
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    copy_command = [
+        _media_binary("ffmpeg"),
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        video_path,
+        "-an",
+        "-c:v",
+        "copy",
+        str(resolved_output),
+    ]
+    try:
+        subprocess.run(copy_command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        transcode_command = [
+            _media_binary("ffmpeg"),
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            video_path,
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(resolved_output),
+        ]
+        subprocess.run(transcode_command, check=True, capture_output=True, text=True)
+    return str(resolved_output)
+
+
 def probe_video(video_path: str) -> VideoProbe:
     command = [
         _media_binary("ffprobe"),
@@ -437,6 +477,7 @@ def _extract_single_frame(
         f"{timestamp_seconds:.3f}",
         "-i",
         video_path,
+        "-an",
         "-frames:v",
         "1",
         str(output_path),
@@ -458,6 +499,7 @@ def _extract_single_frame(
             video_path,
             "-ss",
             f"{timestamp_seconds:.3f}",
+            "-an",
             "-frames:v",
             "1",
             str(output_path),
@@ -477,6 +519,7 @@ def _extract_single_frame(
                 "error",
                 "-i",
                 video_path,
+                "-an",
                 "-frames:v",
                 "1",
                 str(output_path),
@@ -506,6 +549,7 @@ def _extract_analysis_frames(
         "error",
         "-i",
         video_path,
+        "-an",
         "-vf",
         f"fps={effective_fps}",
         str(pattern),

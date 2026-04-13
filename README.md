@@ -8,7 +8,7 @@ Current target runtime is:
 - university-hosted `sogang_gpu` is the default target
 - `runtime_profile=full_gpu` is the default research profile for the A100 10GB MiG slice
 - Hugging Face used only for weights bootstrap
-- Gemini stays in the pipeline and consumes server-side tool evidence
+- Gemini stays in the pipeline as a frame/storyboard hypothesis model, adjudicator, and description writer
 
 ## Roadmap and architecture docs
 
@@ -32,7 +32,7 @@ This starts:
 - server runtime on `http://localhost:8080`
 
 The client saves uploaded videos into the shared `/data/uploads` volume so the
-server can analyze the same real files.
+server can build a silent analysis copy and analyze the same real files.
 
 ## Remote deployment shape
 
@@ -65,7 +65,7 @@ This will:
 
 - extract `data/video_samples.zip` into `data/video_samples/`
 - warm the forwarded server once
-- run both `tool_first_foundation` and `agentic_tool_first`
+- run the supported `tool_first_foundation` and `agentic_tool_first` silent-video modes
 - save local outputs under `data/benchmarks/<run_id>/`
 
 Tracked benchmark metadata for the sample pack lives in:
