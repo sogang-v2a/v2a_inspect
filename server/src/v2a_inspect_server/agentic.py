@@ -549,6 +549,7 @@ def _build_issues(
     current_tracks = list(_tracks_from_result(inspect_state.get("sam3_track_set")))
     current_sources = list(bundle.physical_sources)
     current_events = list(bundle.sound_events)
+    rich_structure_present = len(current_sources) >= 5 or len(current_events) >= 10
     duration_seconds = float(getattr(bundle.video_meta, "duration_seconds", 0.0))
     if duration_seconds > 1.0 and not current_tracks:
         issues.append(
@@ -654,16 +655,24 @@ def _build_issues(
             issue_type = "routing_ambiguity"
         elif issue.issue_type == "suspicious_cross_scene_generation_merge":
             payload = {
-                "embeddings": list(inspect_state.get("entity_embeddings", [])),
-                "tracks_by_id": {
-                    track.track_id: track
-                    for track in list(
-                        getattr(inspect_state.get("sam3_track_set"), "tracks", [])
-                    )
-                },
+                "sound_events": list(bundle.sound_events),
+                "ambience_beds": list(bundle.ambience_beds),
+                "physical_sources": list(bundle.physical_sources),
+                "candidate_groups": list(inspect_state.get("candidate_groups", [])),
+                "routing_decisions_by_track": dict(
+                    inspect_state.get("track_routing_decisions", {})
+                ),
+                "scene_hypotheses_by_window": dict(
+                    inspect_state.get("scene_hypotheses_by_window", {})
+                ),
+                "proposal_provenance_by_window": dict(
+                    inspect_state.get("proposal_provenance_by_window", {})
+                ),
             }
             issue_type = "grouping_ambiguity"
         elif issue.issue_type == "low_confidence_identity_merge":
+            if rich_structure_present:
+                continue
             payload = {
                 "frame_batches": list(inspect_state.get("frame_batches", [])),
                 "text_prompt": _recovery_prompt(

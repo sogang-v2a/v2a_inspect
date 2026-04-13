@@ -132,6 +132,31 @@ class ReidTests(unittest.TestCase):
         self.assertTrue(any(source.identity_confidence > 0.9 for source in sources))
         self.assertTrue(any(source.identity_confidence < 0.9 for source in sources))
 
+    def test_identity_edges_clamp_negative_similarity_to_zero(self) -> None:
+        tracks = [
+            Sam3EntityTrack(
+                track_id="left",
+                scene_index=0,
+                start_seconds=0.0,
+                end_seconds=1.0,
+                confidence=0.9,
+            ),
+            Sam3EntityTrack(
+                track_id="right",
+                scene_index=1,
+                start_seconds=2.0,
+                end_seconds=3.0,
+                confidence=0.9,
+            ),
+        ]
+        embeddings = [
+            EntityEmbedding(track_id="left", model_name="fake", vector=[1.0, 0.0]),
+            EntityEmbedding(track_id="right", model_name="fake", vector=[-1.0, 0.0]),
+        ]
+        edges = build_identity_edges(tracks, embeddings)
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(edges[0].similarity, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

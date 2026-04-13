@@ -34,6 +34,7 @@ def build_identity_edges(
             similarity = cosine_similarity(
                 left_embedding.vector, right_embedding.vector
             )
+            normalized_similarity = max(0.0, min(similarity, 1.0))
             same_window = left_track.scene_index == right_track.scene_index
             threshold = same_window_threshold if same_window else cross_window_threshold
             label_compatibility = _label_compatibility(
@@ -45,7 +46,7 @@ def build_identity_edges(
                 0.0,
                 min(
                     1.0,
-                    (similarity * 0.7)
+                    (normalized_similarity * 0.7)
                     + (label_compatibility * 0.2)
                     + continuity_bonus,
                 ),
@@ -56,7 +57,7 @@ def build_identity_edges(
                     edge_id=f"edge-{left_track.track_id}-{right_track.track_id}",
                     source_track_id=left_track.track_id,
                     target_track_id=right_track.track_id,
-                    similarity=round(similarity, 4),
+                    similarity=round(normalized_similarity, 4),
                     same_window=same_window,
                     temporal_gap_seconds=round(
                         abs(right_track.start_seconds - left_track.end_seconds), 3

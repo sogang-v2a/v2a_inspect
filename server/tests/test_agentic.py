@@ -11,7 +11,10 @@ from v2a_inspect.agent import AgentIssue
 from v2a_inspect.contracts import (
     ArtifactRefs,
     EvidenceWindow,
+    LabelCandidate,
     MultitrackDescriptionBundle,
+    PhysicalSourceTrack,
+    SoundEventSegment,
     ValidationIssue,
     ValidationReport,
     VideoMeta,
@@ -328,6 +331,94 @@ class AgenticIntegrationTests(unittest.TestCase):
         issue_types = {issue.issue_type for issue in issues}
         self.assertIn("foreground_collapse", issue_types)
         self.assertNotIn("validation_issue", issue_types)
+
+    def test_grouping_ambiguity_payload_matches_group_acoustic_recipes(self) -> None:
+        bundle = MultitrackDescriptionBundle(
+            video_id="video",
+            video_meta=VideoMeta(duration_seconds=10.0, fps=2.0, width=320, height=240),
+            evidence_windows=[
+                EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)
+            ],
+            physical_sources=[],
+            sound_events=[],
+            ambience_beds=[],
+            validation=ValidationReport(
+                status="pass_with_warnings",
+                issues=[
+                    ValidationIssue(
+                        issue_type="suspicious_cross_scene_generation_merge",
+                        severity="warning",
+                        message="merge looks suspicious",
+                    )
+                ],
+            ),
+            artifacts=ArtifactRefs(run_dir="/tmp/run", storyboard_path="/tmp/run/storyboard.jpg"),
+        )
+        inspect_state = {
+            "candidate_groups": ["cg0"],
+            "track_routing_decisions": {"trk0": "tta"},
+            "scene_hypotheses_by_window": {0: {"background_environment": ["street"]}},
+            "proposal_provenance_by_window": {0: {"ontology_semantics": ["street"]}},
+            "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
+        }
+        issues = _build_issues(bundle=bundle, inspect_state=inspect_state)
+        grouping_issue = next(issue for issue in issues if issue.issue_type == "grouping_ambiguity")
+        self.assertIn("sound_events", grouping_issue.payload)
+        self.assertIn("ambience_beds", grouping_issue.payload)
+        self.assertIn("physical_sources", grouping_issue.payload)
+        self.assertIn("routing_decisions_by_track", grouping_issue.payload)
+        self.assertIn("scene_hypotheses_by_window", grouping_issue.payload)
+        self.assertIn("proposal_provenance_by_window", grouping_issue.payload)
+
+    def test_build_issues_skips_low_confidence_identity_merge_when_structure_is_already_rich(self) -> None:
+        bundle = MultitrackDescriptionBundle(
+            video_id="video",
+            video_meta=VideoMeta(duration_seconds=10.0, fps=2.0, width=320, height=240),
+            evidence_windows=[
+                EvidenceWindow(window_id="window-0000", start_time=0.0, end_time=4.0)
+            ],
+            physical_sources=[
+                PhysicalSourceTrack(
+                    source_id=f"source-{idx}",
+                    kind="foreground",
+                    label_candidates=[LabelCandidate(label="person", score=0.9)],
+                    spans=[(0.0, 1.0)],
+                    track_refs=[],
+                    identity_confidence=0.9,
+                    reid_neighbors=[],
+                )
+                for idx in range(6)
+            ],
+            sound_events=[
+                SoundEventSegment(
+                    event_id=f"event-{idx}",
+                    source_id=f"source-{idx % 6}",
+                    start_time=0.0,
+                    end_time=1.0,
+                    event_type="presence_texture",
+                    confidence=0.8,
+                )
+                for idx in range(12)
+            ],
+            validation=ValidationReport(
+                status="pass_with_warnings",
+                issues=[
+                    ValidationIssue(
+                        issue_type="low_confidence_identity_merge",
+                        severity="warning",
+                        message="merge confidence is low",
+                        related_ids=["source-0"],
+                    )
+                ],
+            ),
+            artifacts=ArtifactRefs(run_dir="/tmp/run", storyboard_path="/tmp/run/storyboard.jpg"),
+        )
+        inspect_state = {
+            "frame_batches": [],
+            "sam3_track_set": Sam3TrackSet(provider="fake", tracks=[]),
+        }
+        issue_types = {issue.issue_type for issue in _build_issues(bundle=bundle, inspect_state=inspect_state)}
+        self.assertNotIn("ambiguous_source", issue_types)
 
     def test_build_issues_skips_missing_crops_when_no_tracks_exist(self) -> None:
         bundle = MultitrackDescriptionBundle(
