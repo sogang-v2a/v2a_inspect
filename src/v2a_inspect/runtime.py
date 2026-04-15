@@ -1,9 +1,28 @@
 from __future__ import annotations
 
 import os
+from typing import Protocol, TypeVar
 
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 from v2a_inspect.openai_compat_llm import build_openai_compat_llm
+
+
+StructuredSchemaModel = TypeVar("StructuredSchemaModel")
+
+
+class StructuredInvoker(Protocol):
+    def invoke(self, prompt: object) -> object: ...
+
+
+class StructuredChatModel(Protocol):
+    def invoke(self, prompt: object) -> object: ...
+
+    def with_structured_output(
+        self,
+        schema_model: type[StructuredSchemaModel],
+        *,
+        method: str = "json_schema",
+    ) -> StructuredInvoker: ...
 
 
 def build_llm(
@@ -12,7 +31,7 @@ def build_llm(
     api_key: str | None = None,
     max_retries: int = 3,
     timeout_seconds: float | None = None,
-) -> object:
+) -> StructuredChatModel:
     """Build the Gemini chat model used by the server-side silent-video pipeline."""
 
     openai_compat_base_url = os.getenv("V2A_LLM_BASE_URL", "").strip()

@@ -17,7 +17,7 @@ from .scene_hypotheses import RegionProposal, _image_block
 
 if TYPE_CHECKING:
     from .embeddings import LabelClient
-    from langchain_core.language_models import BaseChatModel
+    from v2a_inspect.runtime import StructuredChatModel
 
 
 class PhraseGroundingEvidence(BaseModel):
@@ -75,11 +75,11 @@ class GeminiProposalGrounder:
         self._api_key = api_key
         self._max_retries = max_retries
         self._timeout_seconds = timeout_seconds
-        self._llm: BaseChatModel | None = None
+        self._llm: StructuredChatModel | None = None
         self.last_error_message: str | None = None
 
     @property
-    def llm(self) -> BaseChatModel:
+    def llm(self) -> StructuredChatModel:
         if self._llm is None:
             self._llm = build_llm(
                 model=self._model,
@@ -149,7 +149,7 @@ class GeminiProposalGrounder:
                     rationale="no open-world proposal phrases available",
                 )
                 continue
-            content: list[object] = [
+            content: list[str | dict[str, object]] = [
                 {
                     "type": "text",
                     "text": (
@@ -392,7 +392,16 @@ def _region_seeds_from_cards(
     deduped: list[Sam3RegionSeed] = []
     seen: set[tuple[int, tuple[float, float, float, float], str | None]] = set()
     for seed in seeds:
-        key = (seed.region_index, tuple(seed.bbox_xyxy), seed.label_hint)
+        key = (
+            seed.region_index,
+            (
+                float(seed.bbox_xyxy[0]),
+                float(seed.bbox_xyxy[1]),
+                float(seed.bbox_xyxy[2]),
+                float(seed.bbox_xyxy[3]),
+            ),
+            seed.label_hint,
+        )
         if key in seen:
             continue
         seen.add(key)

@@ -10,10 +10,28 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import parse_qs, urlparse
 
+from v2a_inspect.contracts import (
+    AmbienceBed,
+    CandidateCut,
+    EvidenceWindow,
+    IdentityEdge,
+    LabelCandidate,
+    PhysicalSourceTrack,
+    SoundEventSegment,
+    TrackCrop,
+)
 from v2a_inspect.review import persist_bundle
+from v2a_inspect.tools.types import (
+    EntityEmbedding,
+    FrameBatch,
+    Sam3EntityTrack,
+    Sam3RegionSeed,
+    Sam3TrackSet,
+    VideoProbe,
+)
 from .settings import get_server_runtime_settings
 from v2a_inspect.workflows import InspectOptions, InspectState
 
@@ -392,7 +410,8 @@ def _warmup_payload(
         )
         return payload, HTTPStatus.INTERNAL_SERVER_ERROR
 
-    warnings = list(payload.get("warnings", []))
+    warning_items = payload.get("warnings")
+    warnings = list(warning_items) if isinstance(warning_items, list) else []
     if source == "readyz_alias":
         warnings.append(
             "POST /warmup is the preferred warmup path; /readyz?load_models=true is a deprecated alias."
@@ -495,21 +514,23 @@ def _run_tool_first_pipeline(
         ),
     }
     started = stage_start()
-    structural = registry["structural_overview"].handler(
-        video_path=video_path,
-        target_scene_seconds=5.0,
+    structural = _mapping_result(
+        registry["structural_overview"].handler(
+            video_path=video_path,
+            target_scene_seconds=5.0,
+        )
     )
-    probe = structural["probe"]
-    candidate_cuts = list(structural["candidate_cuts"])
-    evidence_windows = list(structural["evidence_windows"])
-    frame_batches = list(structural["frame_batches"])
+    probe = cast(VideoProbe, structural["probe"])
+    candidate_cuts = list(cast(list[CandidateCut], structural["candidate_cuts"]))
+    evidence_windows = list(cast(list[EvidenceWindow], structural["evidence_windows"]))
+    frame_batches = list(cast(list[FrameBatch], structural["frame_batches"]))
     storyboard_path = str(structural["storyboard_path"])
     artifact_run_dir = str(structural["artifact_root"])
     analysis_video_path = str(structural["analysis_video_path"])
     state["artifact_run_dir"] = artifact_run_dir
     state["analysis_video_path"] = analysis_video_path
     state["storyboard_path"] = storyboard_path
-    state["frames_per_window"] = int(structural.get("frames_per_scene", 2))
+    state["frames_per_window"] = _int_value(structural.get("frames_per_scene"), 2)
     ensure_runtime_trace_path(state)
     record_stage(
         state,
@@ -524,20 +545,29 @@ def _run_tool_first_pipeline(
     )
 
     started = stage_start()
-    source_hypotheses = registry["propose_source_hypotheses"].handler(
-        frame_batches=frame_batches,
-        storyboard_path=storyboard_path,
-        output_root=artifact_run_dir,
+    source_hypotheses = _mapping_result(
+        registry["propose_source_hypotheses"].handler(
+            frame_batches=frame_batches,
+            storyboard_path=storyboard_path,
+            output_root=artifact_run_dir,
+        )
     )
-    state["scene_hypotheses_by_window"] = dict(
-        source_hypotheses["scene_hypotheses_by_window"]
+    state["scene_hypotheses_by_window"] = cast(
+        dict[int, dict[str, object]],
+        source_hypotheses["scene_hypotheses_by_window"],
     )
-    state["proposal_provenance_by_window"] = dict(
-        source_hypotheses["proposal_provenance_by_window"]
+    state["proposal_provenance_by_window"] = cast(
+        dict[int, dict[str, object]],
+        source_hypotheses["proposal_provenance_by_window"],
     )
-    if source_hypotheses.get("warnings"):
+    source_warnings = source_hypotheses.get("warnings")
+    moving_regions_by_window = cast(
+        dict[int, list[dict[str, object]]],
+        source_hypotheses.get("moving_regions_by_window", {}),
+    )
+    if isinstance(source_warnings, list) and source_warnings:
         state.setdefault("warnings", []).extend(
-            [str(item) for item in source_hypotheses.get("warnings", []) if item]
+            [str(item) for item in source_warnings if item]
         )
     record_stage(
         state,
@@ -547,36 +577,48 @@ def _run_tool_first_pipeline(
             "window_count": len(frame_batches),
             "motion_region_count": sum(
                 len(payload)
-                for payload in source_hypotheses.get("moving_regions_by_window", {}).values()
+                for payload in moving_regions_by_window.values()
             ),
             "window_hypothesis_count": len(state["scene_hypotheses_by_window"]),
         },
     )
 
     started = stage_start()
-    verified_hypotheses = registry["verify_scene_hypotheses"].handler(
-        frame_batches=frame_batches,
-        scene_hypotheses_by_window=source_hypotheses["scene_hypotheses_by_window"],
-        moving_regions_by_window=source_hypotheses["moving_regions_by_window"],
-        storyboard_path=storyboard_path,
+    verified_hypotheses = _mapping_result(
+        registry["verify_scene_hypotheses"].handler(
+            frame_batches=frame_batches,
+            scene_hypotheses_by_window=source_hypotheses["scene_hypotheses_by_window"],
+            moving_regions_by_window=source_hypotheses["moving_regions_by_window"],
+            storyboard_path=storyboard_path,
+        )
     )
-    state["verified_hypotheses_by_window"] = dict(
-        verified_hypotheses["verified_hypotheses_by_window"]
+    state["verified_hypotheses_by_window"] = cast(
+        dict[int, dict[str, object]],
+        verified_hypotheses["verified_hypotheses_by_window"],
     )
-    state["scene_prompt_candidates"] = dict(verified_hypotheses["prompts_by_scene"])
-    state["region_seeds_by_scene"] = dict(verified_hypotheses["region_seeds_by_scene"])
+    state["scene_prompt_candidates"] = cast(
+        dict[int, list[str]],
+        verified_hypotheses["prompts_by_scene"],
+    )
+    state["region_seeds_by_scene"] = cast(
+        dict[int, list[Sam3RegionSeed]],
+        verified_hypotheses["region_seeds_by_scene"],
+    )
+    verified_provenance = cast(
+        dict[int, dict[str, object]],
+        verified_hypotheses["proposal_provenance_by_window"],
+    )
     state["proposal_provenance_by_window"] = {
         scene_index: {
             **dict(state.get("proposal_provenance_by_window", {})).get(scene_index, {}),
             **payload,
         }
-        for scene_index, payload in dict(
-            verified_hypotheses["proposal_provenance_by_window"]
-        ).items()
+        for scene_index, payload in verified_provenance.items()
     }
-    if verified_hypotheses.get("warnings"):
+    verified_warnings = verified_hypotheses.get("warnings")
+    if isinstance(verified_warnings, list) and verified_warnings:
         state.setdefault("warnings", []).extend(
-            [str(item) for item in verified_hypotheses.get("warnings", []) if item]
+            [str(item) for item in verified_warnings if item]
         )
     record_stage(
         state,
@@ -593,19 +635,22 @@ def _run_tool_first_pipeline(
                 for seeds in state["region_seeds_by_scene"].values()
             ),
             "uncertain_hypothesis_count": sum(
-                len(payload.get("unresolved_phrases", []))
+                _list_length(payload.get("unresolved_phrases"))
                 for payload in state["verified_hypotheses_by_window"].values()
             ),
         },
     )
 
     started = stage_start()
-    extraction = registry["extract_entities"].handler(
+    extraction = cast(
+        Sam3TrackSet,
+        registry["extract_entities"].handler(
         frame_batches=frame_batches,
         prompts_by_scene=dict(state["scene_prompt_candidates"]),
         region_seeds_by_scene=dict(state["region_seeds_by_scene"]),
         storyboard_path=storyboard_path,
         output_root=artifact_run_dir,
+    ),
     )
     tracks = _coerce_tracks(extraction)
     record_stage(
@@ -620,10 +665,13 @@ def _run_tool_first_pipeline(
     if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("sam3")
     started = stage_start()
-    track_crops = registry["crop_tracks"].handler(
-        frame_batches=frame_batches,
-        tracks=tracks,
-        output_dir=str(Path(storyboard_path).parent / "crops"),
+    track_crops = cast(
+        list[TrackCrop],
+        registry["crop_tracks"].handler(
+            frame_batches=frame_batches,
+            tracks=tracks,
+            output_dir=str(Path(storyboard_path).parent / "crops"),
+        ),
     )
     track_image_paths = group_crop_paths_by_track(track_crops)
     record_stage(
@@ -637,7 +685,10 @@ def _run_tool_first_pipeline(
     )
     started = stage_start()
     embeddings = (
-        registry["embed_track_crops"].handler(track_image_paths=track_image_paths)
+        cast(
+            list[EntityEmbedding],
+            registry["embed_track_crops"].handler(track_image_paths=track_image_paths),
+        )
         if track_image_paths
         else []
     )
@@ -664,11 +715,14 @@ def _run_tool_first_pipeline(
         tooling_runtime.release_client("embedding")
     started = stage_start()
     track_label_candidates = (
-        registry["score_track_labels"].handler(
-            track_image_paths=track_image_paths,
-            labels=dynamic_label_vocabulary(
-                dict(state.get("verified_hypotheses_by_window", {})),
-                dict(state.get("scene_hypotheses_by_window", {})),
+        cast(
+            dict[str, list[LabelCandidate]],
+            registry["score_track_labels"].handler(
+                track_image_paths=track_image_paths,
+                labels=dynamic_label_vocabulary(
+                    dict(state.get("verified_hypotheses_by_window", {})),
+                    dict(state.get("scene_hypotheses_by_window", {})),
+                ),
             ),
         )
         if track_image_paths
@@ -686,16 +740,18 @@ def _run_tool_first_pipeline(
     if tooling_runtime.should_release_clients:
         tooling_runtime.release_client("label")
     started = stage_start()
-    refined_structure = registry["refine_candidate_cuts"].handler(
-        probe=probe,
-        candidate_cuts=candidate_cuts,
-        frame_batches=frame_batches,
-        tracks=tracks,
-        label_candidates_by_track=track_label_candidates,
-        storyboard_path=storyboard_path,
+    refined_structure = _mapping_result(
+        registry["refine_candidate_cuts"].handler(
+            probe=probe,
+            candidate_cuts=candidate_cuts,
+            frame_batches=frame_batches,
+            tracks=tracks,
+            label_candidates_by_track=track_label_candidates,
+            storyboard_path=storyboard_path,
+        )
     )
-    candidate_cuts = list(refined_structure["candidate_cuts"])
-    evidence_windows = list(refined_structure["evidence_windows"])
+    candidate_cuts = list(cast(list[CandidateCut], refined_structure["candidate_cuts"]))
+    evidence_windows = list(cast(list[EvidenceWindow], refined_structure["evidence_windows"]))
     record_stage(
         state,
         stage="refine_candidate_cuts",
@@ -706,25 +762,33 @@ def _run_tool_first_pipeline(
         },
     )
     started = stage_start()
-    semantics = registry["build_source_semantics"].handler(
-        tracks=tracks,
-        embeddings=embeddings,
-        track_crops=track_crops,
-        label_candidates_by_track=track_label_candidates,
-        evidence_windows=evidence_windows,
-        candidate_groups=candidate_groups,
+    semantics = _mapping_result(
+        registry["build_source_semantics"].handler(
+            tracks=tracks,
+            embeddings=embeddings,
+            track_crops=track_crops,
+            label_candidates_by_track=track_label_candidates,
+            evidence_windows=evidence_windows,
+            candidate_groups=candidate_groups,
+        )
     )
+    physical_sources = list(cast(list[PhysicalSourceTrack], semantics["physical_sources"]))
+    sound_events = list(cast(list[SoundEventSegment], semantics["sound_events"]))
+    ambience_beds = list(cast(list[AmbienceBed], semantics["ambience_beds"]))
+    generation_groups = list(cast(list[object], semantics["generation_groups"]))
+    recipe_signatures = _mapping_result(semantics.get("recipe_signatures", {}))
+    identity_edges = list(cast(list[IdentityEdge], semantics["identity_edges"]))
     record_stage(
         state,
         stage="build_source_semantics",
         started_at=started,
         metrics={
-            "identity_edge_count": len(semantics["identity_edges"]),
-            "physical_source_count": len(semantics["physical_sources"]),
-            "sound_event_count": len(semantics["sound_events"]),
-            "ambience_bed_count": len(semantics["ambience_beds"]),
-            "generation_group_count": len(semantics["generation_groups"]),
-            "recipe_signature_count": len(semantics.get("recipe_signatures", {})),
+            "identity_edge_count": len(identity_edges),
+            "physical_source_count": len(physical_sources),
+            "sound_event_count": len(sound_events),
+            "ambience_bed_count": len(ambience_beds),
+            "generation_group_count": len(generation_groups),
+            "recipe_signature_count": len(recipe_signatures),
             "recipe_grouping_seconds": semantics.get("recipe_grouping_seconds"),
         },
     )
@@ -748,15 +812,15 @@ def _run_tool_first_pipeline(
         "candidate_groups": candidate_groups,
         "track_routing_decisions": {},
         "track_label_candidates": track_label_candidates,
-        "physical_sources": list(semantics["physical_sources"]),
-        "sound_event_segments": list(semantics["sound_events"]),
-        "ambience_beds": list(semantics["ambience_beds"]),
-        "generation_groups": list(semantics["generation_groups"]),
+        "physical_sources": physical_sources,
+        "sound_event_segments": sound_events,
+        "ambience_beds": ambience_beds,
+        "generation_groups": generation_groups,
         "recipe_signatures_by_group": {
-            key: value.model_dump(mode="json")
-            for key, value in semantics.get("recipe_signatures", {}).items()
+            key: _jsonable_value(value)
+            for key, value in recipe_signatures.items()
         },
-        "identity_edges": list(semantics["identity_edges"]),
+        "identity_edges": identity_edges,
         "warnings": list(state.get("warnings", [])),
         "errors": [],
         "progress_messages": [
@@ -821,12 +885,40 @@ def _run_agentic_tool_first_pipeline(
     return state
 
 
-def _coerce_tracks(extraction_result: object) -> list[object]:
+def _coerce_tracks(extraction_result: object) -> list[Sam3EntityTrack]:
     if isinstance(extraction_result, dict):
-        tracks = extraction_result.get("tracks", [])
+        extraction_payload = cast(dict[str, object], extraction_result)
+        tracks = extraction_payload.get("tracks")
     else:
         tracks = getattr(extraction_result, "tracks", [])
-    return list(tracks) if isinstance(tracks, list) else list(tracks or [])
+    if isinstance(tracks, list):
+        return list(cast(list[Sam3EntityTrack], tracks))
+    return list(cast(list[Sam3EntityTrack], tracks)) if tracks is not None else []
+
+
+def _mapping_result(result: object) -> dict[str, object]:
+    if not isinstance(result, Mapping):
+        raise TypeError(
+            f"Expected mapping-like tool result, received {type(result).__name__}."
+        )
+    return {str(key): value for key, value in result.items()}
+
+
+def _int_value(value: object, default: int) -> int:
+    return value if isinstance(value, int) else default
+
+
+def _list_length(value: object) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def _jsonable_value(value: object) -> dict[str, object]:
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return cast(dict[str, object], model_dump(mode="json"))
+    if isinstance(value, Mapping):
+        return {str(key): item for key, item in value.items()}
+    return {"value": str(value)}
 
 def _persist_runtime_bundle(
     bundle: "MultitrackDescriptionBundle", state: InspectState

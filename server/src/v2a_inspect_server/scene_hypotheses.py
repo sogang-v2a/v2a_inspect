@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageOps, ImageStat
@@ -92,7 +92,7 @@ def _proposal_from_frame_pair(
     )
 
 
-def _image_block(image_path: str) -> Mapping[str, object]:
+def _image_block(image_path: str) -> dict[str, object]:
     mime_type = mimetypes.guess_type(image_path)[0] or "image/jpeg"
     encoded = base64.b64encode(Path(image_path).read_bytes()).decode("ascii")
     return {

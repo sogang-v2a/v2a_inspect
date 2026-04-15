@@ -16,7 +16,7 @@ def dynamic_label_vocabulary(
                 _string_list(
                     [
                         card.get("source_name"),
-                        *(card.get("aliases") or []),
+                        *_alias_list(card.get("aliases")),
                         card.get("extraction_prompt"),
                     ]
                 )
@@ -28,7 +28,7 @@ def dynamic_label_vocabulary(
         for card in _dict_list(payload.get("source_cards")):
             labels.extend(
                 _string_list(
-                    [card.get("source_name"), *(card.get("aliases") or [])]
+                    [card.get("source_name"), *_alias_list(card.get("aliases"))]
                 )
             )
     deduped: list[str] = []
@@ -51,4 +51,14 @@ def _string_list(value: object) -> list[str]:
 def _dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
-    return [item for item in value if isinstance(item, dict)]
+    return [
+        {str(key): item_value for key, item_value in item.items()}
+        for item in value
+        if isinstance(item, dict)
+    ]
+
+
+def _alias_list(value: object) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    return list(value)

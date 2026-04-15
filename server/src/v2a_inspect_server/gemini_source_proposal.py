@@ -13,7 +13,7 @@ from v2a_inspect.tools.types import FrameBatch
 from .scene_hypotheses import RegionProposal, _image_block
 
 if TYPE_CHECKING:
-    from langchain_core.language_models import BaseChatModel
+    from v2a_inspect.runtime import StructuredChatModel
 
 
 class SourceCard(BaseModel):
@@ -59,11 +59,11 @@ class GeminiSourceProposer:
         self._api_key = api_key
         self._max_retries = max_retries
         self._timeout_seconds = timeout_seconds
-        self._llm: BaseChatModel | None = None
+        self._llm: StructuredChatModel | None = None
         self.last_error_message: str | None = None
 
     @property
-    def llm(self) -> BaseChatModel:
+    def llm(self) -> StructuredChatModel:
         if self._llm is None:
             self._llm = build_llm(
                 model=self._model,
@@ -93,7 +93,7 @@ class GeminiSourceProposer:
         for batch in frame_batches:
             if not batch.frames:
                 continue
-            content: list[object] = [
+            content: list[str | dict[str, object]] = [
                 {
                     "type": "text",
                     "text": (

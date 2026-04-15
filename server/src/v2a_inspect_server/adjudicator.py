@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 
 if TYPE_CHECKING:
-    from langchain_core.language_models import BaseChatModel
+    from v2a_inspect.runtime import StructuredChatModel
 
 
 class IssueAdjudication(BaseModel):
@@ -37,14 +37,14 @@ class GeminiIssueJudge:
         max_retries: int = 1,
         timeout_seconds: float = 30.0,
     ) -> None:
-        self._llm: BaseChatModel | None = None
+        self._llm: StructuredChatModel | None = None
         self._model = model
         self._api_key = api_key
         self._max_retries = max_retries
         self._timeout_seconds = timeout_seconds
 
     @property
-    def llm(self) -> BaseChatModel:
+    def llm(self) -> StructuredChatModel:
         if self._llm is None:
             from v2a_inspect.runtime import build_llm
 

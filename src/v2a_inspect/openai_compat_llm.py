@@ -153,7 +153,9 @@ def _normalize_messages(prompt: object) -> list[dict[str, object]]:
             normalized_content: list[dict[str, object]] = []
             for block in content:
                 if isinstance(block, dict):
-                    normalized_content.append(dict(block))
+                    normalized_content.append(
+                        {str(key): value for key, value in block.items()}
+                    )
                 else:
                     normalized_content.append({"type": "text", "text": str(block)})
             messages.append({"role": role, "content": normalized_content})
@@ -175,7 +177,12 @@ def _extract_text_content(response_payload: Mapping[str, object]) -> str:
     choices = response_payload.get("choices", [])
     if not isinstance(choices, list) or not choices:
         raise ValueError("OpenAI-compatible response is missing choices.")
-    message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+    first_choice = choices[0]
+    message = (
+        {str(key): value for key, value in first_choice.items()}
+        if isinstance(first_choice, dict)
+        else {}
+    )
     content = message.get("content", "") if isinstance(message, dict) else ""
     if not isinstance(content, str):
         raise TypeError("OpenAI-compatible response content must be a string.")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any, cast
 
 import torch
 from transformers import Sam3Model, Sam3Processor
@@ -27,11 +28,12 @@ class Sam3Client:
             self.model_dir,
             local_files_only=True,
         )
-        self.model = Sam3Model.from_pretrained(
+        model = Sam3Model.from_pretrained(
             self.model_dir,
             local_files_only=True,
             torch_dtype=self.dtype,
-        ).to(self.device)
+        )
+        self.model = cast(Any, model).to(self.device)
         self.model.eval()
 
     def extract_entities(
@@ -81,7 +83,9 @@ class Sam3Client:
             return []
         if prompts is None and region_seeds is None:
             return []
-        prompt_list = [prompt.strip().lower() for prompt in prompts if prompt.strip()]
+        prompt_list = [
+            prompt.strip().lower() for prompt in (prompts or []) if prompt.strip()
+        ]
         region_seed_list = list(region_seeds or [])
         if not prompt_list and not region_seed_list:
             return []

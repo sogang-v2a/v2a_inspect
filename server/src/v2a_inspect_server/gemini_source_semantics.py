@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,13 +15,24 @@ from v2a_inspect.tools.types import Sam3EntityTrack
 from .scene_hypotheses import _image_block
 
 if TYPE_CHECKING:
-    from langchain_core.language_models import BaseChatModel
+    from v2a_inspect.runtime import StructuredChatModel
 
 
 class SourceSemanticInterpretation(BaseModel):
     canonical_label: str | None = None
-    source_kind: str = "unknown"
-    audibility_state: str = "unknown"
+    source_kind: Literal[
+        "foreground",
+        "background_region",
+        "ambience_region",
+        "unknown",
+    ] = "unknown"
+    audibility_state: Literal[
+        "audible_active",
+        "visible_but_silent",
+        "background_region",
+        "ambience_region",
+        "unknown",
+    ] = "unknown"
     event_label: str | None = None
     material_or_surface: str | None = None
     intensity: str | None = None
@@ -48,10 +59,10 @@ class GeminiSourceSemanticsInterpreter:
         self._api_key = api_key
         self._max_retries = max_retries
         self._timeout_seconds = timeout_seconds
-        self._llm: BaseChatModel | None = None
+        self._llm: StructuredChatModel | None = None
 
     @property
-    def llm(self) -> BaseChatModel:
+    def llm(self) -> StructuredChatModel:
         if self._llm is None:
             self._llm = build_llm(
                 model=self._model,
@@ -71,7 +82,7 @@ class GeminiSourceSemanticsInterpreter:
     ) -> SourceSemanticInterpretation | None:
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        content: list[object] = [
+        content: list[str | dict[str, object]] = [
             {
                 "type": "text",
                 "text": (
@@ -176,7 +187,7 @@ def build_source_and_event_semantics(
             "ambience_region",
             "unknown",
         }:
-            updated_source.kind = interpretation.source_kind  # type: ignore[assignment]
+            updated_source.kind = interpretation.source_kind
         if interpretation is not None and interpretation.audibility_state in {
             "audible_active",
             "visible_but_silent",
@@ -184,7 +195,7 @@ def build_source_and_event_semantics(
             "ambience_region",
             "unknown",
         }:
-            updated_source.audibility_state = interpretation.audibility_state  # type: ignore[assignment]
+            updated_source.audibility_state = interpretation.audibility_state
         updated_sources.append(updated_source)
 
         if updated_source.kind in {"ambience_region", "background_region"}:

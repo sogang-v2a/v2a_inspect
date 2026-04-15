@@ -66,15 +66,19 @@ class InspectState(TypedDict, total=False):
     candidate_cuts: list[CandidateCut]
     evidence_windows: list[EvidenceWindow]
     scene_boundaries: list[SceneBoundary]
+    artifact_run_dir: str
     analysis_video_path: str
+    bundle_path: str
     frame_batches: list[FrameBatch]
     frames_per_window: int
     stage_history: list[dict[str, object]]
     storyboard_path: str
     runtime_trace_path: str
+    agent_trace_path: str
     sam3_track_set: Sam3TrackSet
     scene_prompt_candidates: dict[int, list[str]]
     scene_hypotheses_by_window: dict[int, dict[str, object]]
+    moving_regions_by_window: dict[int, list[dict[str, object]]]
     proposal_provenance_by_window: dict[int, dict[str, object]]
     verified_hypotheses_by_window: dict[int, dict[str, object]]
     region_seeds_by_scene: dict[int, list[Sam3RegionSeed]]
@@ -88,6 +92,7 @@ class InspectState(TypedDict, total=False):
     physical_sources: list[PhysicalSourceTrack]
     sound_event_segments: list[SoundEventSegment]
     ambience_beds: list[AmbienceBed]
+    generation_groups: list[object]
     recipe_signatures_by_group: dict[str, dict[str, object]]
     recovery_actions: list[str]
     recovery_attempts: list[dict[str, object]]
