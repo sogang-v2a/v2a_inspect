@@ -71,3 +71,16 @@ This will:
 Tracked benchmark metadata for the sample pack lives in:
 
 - `docs/benchmark_video_samples_manifest.json`
+
+## Optional semantic debug harness
+
+When Gemini quota is unavailable, the semantic LLM path can be redirected to an
+OpenAI-compatible endpoint for debugging only:
+
+```bash
+export V2A_LLM_BASE_URL=http://127.0.0.1:8080/v1
+export V2A_LLM_MODEL=gpt-5.4
+```
+
+This keeps the public runtime contract unchanged; it is an opt-in local/debug
+override, not the default production backend.

@@ -10,10 +10,12 @@ from v2a_inspect_server.tool_registry import build_tool_registry
 class _CapturingSam3Client:
     def __init__(self) -> None:
         self.prompts_by_scene: dict[int, list[str]] | None = None
+        self.region_seeds_by_scene = None
 
-    def extract_entities(self, frame_batches, *, prompts_by_scene=None, score_threshold=0.35, **kwargs):
+    def extract_entities(self, frame_batches, *, prompts_by_scene=None, region_seeds_by_scene=None, score_threshold=0.35, **kwargs):
         del frame_batches, score_threshold, kwargs
         self.prompts_by_scene = prompts_by_scene
+        self.region_seeds_by_scene = region_seeds_by_scene
         return Sam3TrackSet(provider="fake", strategy="scene_prompt_seeded", tracks=[])
 
 
@@ -70,6 +72,48 @@ class ToolRegistryTests(unittest.TestCase):
         ]
         registry["extract_entities"].handler(frame_batches=frame_batches, prompts_by_scene={0: ["table tennis paddle"]})
         self.assertEqual(sam3_client.prompts_by_scene, {0: ["table tennis paddle"]})
+        self.assertIsNone(sam3_client.region_seeds_by_scene)
+
+    def test_extract_entities_accepts_region_seeds(self) -> None:
+        sam3_client = _CapturingSam3Client()
+        runtime = SimpleNamespace(
+            runtime_profile="cpu_dev",
+            should_release_clients=False,
+            sam3_client=sam3_client,
+            embedding_client=SimpleNamespace(embed_images=lambda track_image_paths: []),
+            label_client=_FakeLabelClient(),
+            source_proposer=None,
+            proposal_grounder=None,
+            source_semantics_interpreter=None,
+            grouping_judge=None,
+            routing_judge=None,
+            description_writer=None,
+        )
+        registry = build_tool_registry(runtime)
+        frame_batches = [
+            FrameBatch(
+                scene_index=0,
+                frames=[SampledFrame(scene_index=0, timestamp_seconds=0.5, image_path="/tmp/frame.jpg")],
+            )
+        ]
+        registry["extract_entities"].handler(
+            frame_batches=frame_batches,
+            prompts_by_scene={0: ["table tennis paddle"]},
+            region_seeds_by_scene={
+                0: [
+                    {
+                        "scene_index": 0,
+                        "region_index": 0,
+                        "bbox_xyxy": [1.0, 2.0, 10.0, 20.0],
+                        "label_hint": "table tennis paddle",
+                        "crop_path": "/tmp/crop.jpg",
+                        "confidence": 0.9,
+                    }
+                ]
+            },
+        )
+        self.assertEqual(len(sam3_client.region_seeds_by_scene[0]), 1)
+        self.assertEqual(sam3_client.region_seeds_by_scene[0][0].label_hint, "table tennis paddle")
 
     def test_verify_scene_hypotheses_returns_unresolved_when_grounder_is_absent(self) -> None:
         runtime = SimpleNamespace(
@@ -111,6 +155,7 @@ class ToolRegistryTests(unittest.TestCase):
             storyboard_path=None,
         )
         self.assertEqual(verified["prompts_by_scene"], {0: []})
+        self.assertEqual(verified["region_seeds_by_scene"], {0: []})
         self.assertEqual(
             verified["verified_hypotheses_by_window"][0]["unresolved_phrases"],
             ["paddle", "ball", "paddle hits ball"],

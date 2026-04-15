@@ -111,11 +111,6 @@ def _add_analyze_option_arguments(
     defaults: InspectOptions,
 ) -> None:
     parser.add_argument("--fps", type=float, default=defaults.fps)
-    parser.add_argument(
-        "--scene-analysis-mode",
-        choices=("default", "extended"),
-        default=defaults.scene_analysis_mode,
-    )
     _add_common_runtime_arguments(parser, defaults=defaults)
 
 
@@ -146,7 +141,6 @@ def _run_analyze_command(args: argparse.Namespace) -> int:
         metadata={
             "video_path": args.video_path,
             "output_path": args.output,
-            "scene_analysis_mode": options.scene_analysis_mode,
             "fps": options.fps,
         },
         tags=_build_runtime_tags(options),
@@ -229,7 +223,6 @@ def _build_analyze_options(args: argparse.Namespace) -> InspectOptions:
     return InspectOptions(
         fps=args.fps,
         pipeline_mode=args.pipeline_mode,
-        scene_analysis_mode=args.scene_analysis_mode,
         gemini_model=args.gemini_model,
         text_timeout_ms=args.text_timeout_ms,
         max_retries=args.max_retries,

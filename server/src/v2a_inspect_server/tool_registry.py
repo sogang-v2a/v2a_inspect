@@ -27,7 +27,14 @@ from v2a_inspect.tools import (
     probe_video,
     sample_frames,
 )
-from v2a_inspect.tools.types import CandidateGroup, EntityEmbedding, FrameBatch, Sam3EntityTrack, SceneBoundary
+from v2a_inspect.tools.types import (
+    CandidateGroup,
+    EntityEmbedding,
+    FrameBatch,
+    Sam3EntityTrack,
+    Sam3RegionSeed,
+    SceneBoundary,
+)
 
 from .crops import crop_tracks
 from .descriptions import synthesize_canonical_descriptions
@@ -162,6 +169,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "proposal_provenance_by_window": {
                 scene_index: {
                     "motion_region_count": len(moving_regions.get(scene_index, [])),
+                    "source_card_count": len(proposals[scene_index].source_cards),
                     "source_proposal": proposals[scene_index].model_dump(mode="json"),
                 }
                 for scene_index in proposals
@@ -215,6 +223,12 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
                 scene_index: payload.model_dump(mode="json")
                 for scene_index, payload in grounded.items()
             },
+            "region_seeds_by_scene": {
+                scene_index: [
+                    seed.model_dump(mode="json") for seed in payload.region_seeds
+                ]
+                for scene_index, payload in grounded.items()
+            },
             "prompts_by_scene": {
                 scene_index: payload.extraction_prompts
                 for scene_index, payload in grounded.items()
@@ -226,6 +240,8 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "proposal_provenance_by_window": {
                 scene_index: {
                     "grounded_proposal": payload.model_dump(mode="json"),
+                    "grounded_source_card_count": len(payload.grounded_source_cards),
+                    "region_seed_count": len(payload.region_seeds),
                 }
                 for scene_index, payload in grounded.items()
             },
@@ -243,7 +259,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         frame_batches: list[FrameBatch],
         window_ids: list[str] | None = None,
         output_root: str | None = None,
-        frames_per_scene: int = 4,
+        frames_per_scene: int = 6,
         storyboard_path: str | None = None,
         **_: object,
     ) -> dict[str, object]:
@@ -264,11 +280,19 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         ]
         frame_root = Path(output_root) if output_root is not None else _artifact_root(analysis_video_path)
         frame_root.mkdir(parents=True, exist_ok=True)
+        existing_counts = {
+            batch.scene_index: len(batch.frames)
+            for batch in frame_batches
+        }
+        target_frames_per_scene = max(
+            frames_per_scene,
+            max(existing_counts.values(), default=0) + 2,
+        )
         densified = sample_frames(
             analysis_video_path,
             scenes,
             output_dir=str(frame_root),
-            frames_per_scene=frames_per_scene,
+            frames_per_scene=target_frames_per_scene,
         )
         batch_by_scene = {batch.scene_index: batch for batch in frame_batches}
         for batch in densified:
@@ -287,7 +311,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
             "frame_batches": merged_batches,
             "evidence_windows": hydrated_windows,
             "storyboard_path": resolved_storyboard,
-            "frames_per_scene": frames_per_scene,
+            "frames_per_scene": target_frames_per_scene,
             "window_ids": [window.window_id for window in selected_windows],
         }
 
@@ -318,11 +342,23 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         *,
         frame_batches: list[FrameBatch],
         prompts_by_scene: dict[int, list[str]] | None = None,
+        region_seeds_by_scene: dict[int, list[dict[str, object]]] | None = None,
         storyboard_path: str | None = None,
         output_root: str | None = None,
         **_: object,
     ) -> object:
         resolved_prompts = prompts_by_scene
+        resolved_region_seeds = (
+            {
+                scene_index: [
+                    Sam3RegionSeed.model_validate(seed)
+                    for seed in seeds
+                ]
+                for scene_index, seeds in (region_seeds_by_scene or {}).items()
+            }
+            if region_seeds_by_scene
+            else None
+        )
         if resolved_prompts is None:
             proposals = propose_source_hypotheses(
                 frame_batches=frame_batches,
@@ -336,9 +372,17 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
                 storyboard_path=storyboard_path,
             )
             resolved_prompts = dict(verified["prompts_by_scene"])
+            resolved_region_seeds = {
+                scene_index: [
+                    Sam3RegionSeed.model_validate(seed)
+                    for seed in seeds
+                ]
+                for scene_index, seeds in verified.get("region_seeds_by_scene", {}).items()
+            }
         return tooling_runtime.sam3_client.extract_entities(
             frame_batches,
             prompts_by_scene=resolved_prompts,
+            region_seeds_by_scene=resolved_region_seeds,
             score_threshold=0.25,
         )
 
@@ -468,7 +512,7 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
         "extract_entities": ToolDefinition(
             "extract_entities",
             extract_entities,
-            "Run SAM3 extraction from grounded prompts only.",
+            "Run SAM3 extraction from grounded region seeds first, with grounded prompts as rescue hints.",
         ),
         "densify_window_sampling": ToolDefinition(
             "densify_window_sampling",
@@ -521,6 +565,11 @@ def build_tool_registry(tooling_runtime: "ToolingRuntime") -> dict[str, ToolDefi
 def _proposal_phrases(proposal: WindowSourceProposal) -> list[str]:
     return _dedupe(
         [
+            *[
+                label
+                for card in proposal.source_cards
+                for label in [card.source_name, *card.aliases]
+            ],
             *proposal.visible_sources,
             *proposal.background_sources,
             *proposal.interactions,

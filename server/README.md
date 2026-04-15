@@ -9,6 +9,7 @@ Current target runtime:
 - `runtime_profile=full_gpu` is the default research profile for the 10GB A100 MiG slice
 - HF only for weights bootstrap
 - Gemini stays in the pipeline; server-side tools provide visual evidence
+- optional debug-only override: set `V2A_LLM_BASE_URL` and `V2A_LLM_MODEL` to route semantic calls through an OpenAI-compatible endpoint during local quota bypass experiments
 
 What this package is responsible for:
 - checking that an NVIDIA GPU is visible at startup

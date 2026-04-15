@@ -9,7 +9,7 @@ from v2a_inspect_server.gemini_source_semantics import build_source_and_event_se
 
 
 class SemanticLayerTests(unittest.TestCase):
-    def test_build_source_and_event_semantics_emits_one_unresolved_event_per_span(self) -> None:
+    def test_build_source_and_event_semantics_keeps_unknown_sources_silent_without_interpretation(self) -> None:
         source = PhysicalSourceTrack(
             source_id="source-0000",
             kind="foreground",
@@ -47,9 +47,62 @@ class SemanticLayerTests(unittest.TestCase):
             evidence_windows=[],
             interpreter=None,
         )
-        self.assertEqual(len(outputs["sound_events"]), 2)
-        self.assertEqual([event.event_type for event in outputs["sound_events"]], ["", ""])
+        self.assertEqual(outputs["sound_events"], [])
         self.assertEqual(outputs["ambience_beds"], [])
+
+    def test_build_source_and_event_semantics_emits_events_only_for_audible_active_sources(self) -> None:
+        source = PhysicalSourceTrack(
+            source_id="source-0000",
+            kind="foreground",
+            label_candidates=[LabelCandidate(label="paddle", score=0.9)],
+            spans=[(0.0, 1.0), (2.0, 3.0)],
+            track_refs=["trk0"],
+            crop_refs=["crop-0000"],
+            window_refs=["window-0000"],
+            identity_confidence=0.9,
+            reid_neighbors=[],
+        )
+
+        class _Interpreter:
+            def interpret_source(self, **_: object):
+                from v2a_inspect_server.gemini_source_semantics import SourceSemanticInterpretation
+
+                return SourceSemanticInterpretation(
+                    canonical_label="paddle",
+                    source_kind="foreground",
+                    audibility_state="audible_active",
+                    event_label="paddle_hit",
+                    confidence=0.8,
+                )
+
+        outputs = build_source_and_event_semantics(
+            physical_sources=[source],
+            tracks_by_id={
+                "trk0": Sam3EntityTrack(
+                    track_id="trk0",
+                    scene_index=0,
+                    start_seconds=0.0,
+                    end_seconds=3.0,
+                    confidence=0.8,
+                    features=Sam3VisualFeatures(motion_score=0.5),
+                )
+            },
+            track_crops=[
+                TrackCrop(
+                    crop_id="crop-0000",
+                    track_id="trk0",
+                    scene_index=0,
+                    frame_path="/tmp/frame.jpg",
+                    crop_path="/tmp/crop.jpg",
+                    timestamp_seconds=0.5,
+                    bbox_xyxy=[0.0, 0.0, 10.0, 10.0],
+                )
+            ],
+            evidence_windows=[],
+            interpreter=_Interpreter(),
+        )
+        self.assertEqual(len(outputs["sound_events"]), 2)
+        self.assertEqual(outputs["physical_sources"][0].audibility_state, "audible_active")
 
     def test_group_generation_groups_defaults_to_singletons_without_judge(self) -> None:
         source = PhysicalSourceTrack(

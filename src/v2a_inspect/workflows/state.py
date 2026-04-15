@@ -23,6 +23,7 @@ from v2a_inspect.tools import (
     FrameBatch,
     GroupRoutingDecision,
     Sam3TrackSet,
+    Sam3RegionSeed,
     SceneBoundary,
     TrackRoutingDecision,
     VideoProbe,
@@ -37,7 +38,6 @@ class InspectOptions(BaseModel):
         "tool_first_foundation",
         "agentic_tool_first",
     ] = "agentic_tool_first"
-    scene_analysis_mode: Literal["default", "extended"] = "default"
     gemini_model: str = DEFAULT_GEMINI_MODEL
     text_timeout_ms: int = Field(default=120_000, ge=1)
     max_retries: int = Field(default=3, ge=0)
@@ -77,6 +77,7 @@ class InspectState(TypedDict, total=False):
     scene_hypotheses_by_window: dict[int, dict[str, object]]
     proposal_provenance_by_window: dict[int, dict[str, object]]
     verified_hypotheses_by_window: dict[int, dict[str, object]]
+    region_seeds_by_scene: dict[int, list[Sam3RegionSeed]]
     track_crops: list[TrackCrop]
     entity_embeddings: list[EntityEmbedding]
     track_label_candidates: dict[str, list[LabelCandidate]]

@@ -7,8 +7,8 @@ from v2a_inspect.agent.state import AgentIssue, PlannedAction, PlannerState
 _TOOL_BY_ISSUE = {
     "structural_gap": "structural_overview",
     "ambiguous_source": "propose_source_hypotheses",
-    "hypothesis_conflict": "propose_source_hypotheses",
-    "missing_sources": "propose_source_hypotheses",
+    "hypothesis_conflict": "verify_scene_hypotheses",
+    "missing_sources": "build_source_semantics",
     "grouping_ambiguity": "build_source_semantics",
     "routing_ambiguity": "build_source_semantics",
     "description_stale": "rerun_description_writer",
@@ -53,11 +53,9 @@ def resolve_issue(state: PlannerState, issue_id: str) -> PlannerState:
 
 def _tool_for_issue(issue: AgentIssue) -> str:
     if issue.issue_type == "foreground_collapse":
-        if issue.attempts <= 0 and int(issue.payload.get("frames_per_scene", 2)) < 4:
+        if issue.attempts <= 0 and int(issue.payload.get("frames_per_scene", 2)) < 6:
             return "densify_window_sampling"
-        return "propose_source_hypotheses"
-    if issue.issue_type == "missing_sources":
-        return "propose_source_hypotheses"
-    if issue.issue_type == "hypothesis_conflict":
+        if int(issue.payload.get("region_seed_count", 0)) > 0:
+            return "extract_entities"
         return "propose_source_hypotheses"
     return _TOOL_BY_ISSUE[issue.issue_type]

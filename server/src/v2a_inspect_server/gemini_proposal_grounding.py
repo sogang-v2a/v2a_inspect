@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 from v2a_inspect.runtime import build_llm
+from v2a_inspect.tools.types import Sam3RegionSeed
 from v2a_inspect.tools.types import FrameBatch
 
-from .gemini_source_proposal import WindowSourceProposal
+from .gemini_source_proposal import SourceCard, WindowSourceProposal
 from .scene_hypotheses import RegionProposal, _image_block
 
 if TYPE_CHECKING:
@@ -26,7 +27,24 @@ class PhraseGroundingEvidence(BaseModel):
     motion_crop_score_max: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
+class GroundedSourceCard(BaseModel):
+    source_name: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    source_kind_candidate: str = "unknown"
+    sound_relevance: str = "unknown"
+    interaction: str | None = None
+    material_or_surface: str | None = None
+    region_refs: list[int] = Field(default_factory=list)
+    supporting_frame_indices: list[int] = Field(default_factory=list)
+    extraction_prompt: str | None = None
+    semantic_hints: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    rationale: str = ""
+
+
 class GroundedWindowProposal(BaseModel):
+    grounded_source_cards: list[GroundedSourceCard] = Field(default_factory=list)
+    region_seeds: list[Sam3RegionSeed] = Field(default_factory=list)
     extraction_prompts: list[str] = Field(default_factory=list)
     semantic_hints: list[str] = Field(default_factory=list)
     rejected_phrases: list[str] = Field(default_factory=list)
@@ -36,6 +54,7 @@ class GroundedWindowProposal(BaseModel):
 
 
 class _GroundedWindowProposalPayload(BaseModel):
+    grounded_source_cards: list[GroundedSourceCard] = Field(default_factory=list)
     extraction_prompts: list[str] = Field(default_factory=list)
     semantic_hints: list[str] = Field(default_factory=list)
     rejected_phrases: list[str] = Field(default_factory=list)
@@ -93,8 +112,14 @@ class GeminiProposalGrounder:
             proposal = proposals_by_scene.get(batch.scene_index)
             if proposal is None:
                 continue
+            proposal_regions = list(moving_regions_by_scene.get(batch.scene_index, []))
             candidate_phrases = _dedupe(
                 [
+                    *[
+                        label
+                        for card in proposal.source_cards
+                        for label in [card.source_name, *card.aliases]
+                    ],
                     *proposal.visible_sources,
                     *proposal.background_sources,
                     *proposal.interactions,
@@ -106,14 +131,16 @@ class GeminiProposalGrounder:
                 candidate_phrases,
                 frame_image_paths=[frame.image_path for frame in batch.frames],
                 motion_crop_paths=[
-                    proposal.crop_path
-                    for proposal in moving_regions_by_scene.get(batch.scene_index, [])
-                    if proposal.crop_path
+                    region.crop_path
+                    for region in proposal_regions
+                    if region.crop_path
                 ],
                 label_client=label_client,
             )
             if not candidate_phrases:
                 grounded[batch.scene_index] = GroundedWindowProposal(
+                    grounded_source_cards=[],
+                    region_seeds=[],
                     extraction_prompts=[],
                     semantic_hints=[],
                     rejected_phrases=[],
@@ -129,7 +156,19 @@ class GeminiProposalGrounder:
                         "Ground source-proposal phrases for silent-video extraction. "
                         "Use only the provided frames, storyboard, motion-region crops, and score summaries. "
                         "Choose extraction prompts only for phrases that are visually grounded enough to seed SAM extraction. "
+                        "Promote region-grounded source cards into extraction seeds whenever the card points to a plausible visible region. "
                         "Keep environment/material/interaction terms as semantic hints unless they denote a concrete visible source."
+                    ),
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "Source cards from the proposal stage:\n"
+                        + json.dumps(
+                            [card.model_dump(mode='json') for card in proposal.source_cards],
+                            indent=2,
+                            ensure_ascii=False,
+                        )
                     ),
                 },
                 {
@@ -166,8 +205,18 @@ class GeminiProposalGrounder:
                     self.last_error_message = (
                         f"Gemini proposal grounding failed: {type(exc).__name__}: {str(exc)[:240]}"
                     )
+                fallback_cards = _fallback_grounded_source_cards(
+                    proposal.source_cards,
+                    evidence=evidence,
+                )
                 grounded[batch.scene_index] = GroundedWindowProposal(
-                    extraction_prompts=[],
+                    grounded_source_cards=fallback_cards,
+                    region_seeds=_region_seeds_from_cards(
+                        batch.scene_index,
+                        fallback_cards,
+                        proposal_regions,
+                    ),
+                    extraction_prompts=_prompts_from_cards(fallback_cards),
                     semantic_hints=[],
                     rejected_phrases=[],
                     unresolved_phrases=candidate_phrases,
@@ -177,9 +226,34 @@ class GeminiProposalGrounder:
                 continue
             if not isinstance(payload, _GroundedWindowProposalPayload):
                 payload = _GroundedWindowProposalPayload.model_validate(payload)
+            grounded_cards = list(payload.grounded_source_cards)
+            if not grounded_cards:
+                grounded_cards = _fallback_grounded_source_cards(
+                    proposal.source_cards,
+                    evidence=evidence,
+                )
+            extraction_prompts = _dedupe(
+                [*payload.extraction_prompts, *_prompts_from_cards(grounded_cards)]
+            )
+            semantic_hints = _dedupe(
+                [
+                    *payload.semantic_hints,
+                    *[
+                        hint
+                        for card in grounded_cards
+                        for hint in card.semantic_hints
+                    ],
+                ]
+            )
             grounded[batch.scene_index] = GroundedWindowProposal(
-                extraction_prompts=_dedupe(payload.extraction_prompts),
-                semantic_hints=_dedupe(payload.semantic_hints),
+                grounded_source_cards=grounded_cards,
+                region_seeds=_region_seeds_from_cards(
+                    batch.scene_index,
+                    grounded_cards,
+                    proposal_regions,
+                ),
+                extraction_prompts=extraction_prompts,
+                semantic_hints=semantic_hints,
                 rejected_phrases=_dedupe(payload.rejected_phrases),
                 unresolved_phrases=_dedupe(payload.unresolved_phrases),
                 phrase_evidence=evidence,
@@ -240,4 +314,87 @@ def _dedupe(values: Sequence[str]) -> list[str]:
             continue
         seen.add(normalized)
         deduped.append(normalized)
+    return deduped
+
+
+def _prompts_from_cards(cards: Sequence[GroundedSourceCard]) -> list[str]:
+    prompts: list[str] = []
+    for card in cards:
+        prompt = (card.extraction_prompt or card.source_name).strip().lower()
+        if prompt:
+            prompts.append(prompt)
+    return _dedupe(prompts)
+
+
+def _fallback_grounded_source_cards(
+    source_cards: Sequence[SourceCard],
+    *,
+    evidence: Sequence[PhraseGroundingEvidence],
+) -> list[GroundedSourceCard]:
+    if not source_cards:
+        return []
+    best_score_by_phrase = {
+        item.phrase: max(item.frame_score_max, item.motion_crop_score_max)
+        for item in evidence
+    }
+    promoted: list[GroundedSourceCard] = []
+    for card in source_cards:
+        labels = [card.source_name, *card.aliases]
+        best_score = max(
+            (best_score_by_phrase.get(label.strip().lower(), 0.0) for label in labels if label.strip()),
+            default=0.0,
+        )
+        if not card.region_refs and best_score < 0.22:
+            continue
+        promoted.append(
+            GroundedSourceCard(
+                source_name=card.source_name,
+                aliases=list(card.aliases),
+                source_kind_candidate=card.source_kind_candidate,
+                sound_relevance=card.sound_relevance,
+                interaction=card.interaction,
+                material_or_surface=card.material_or_surface,
+                region_refs=list(card.region_refs),
+                supporting_frame_indices=list(card.supporting_frame_indices),
+                extraction_prompt=card.source_name,
+                semantic_hints=_dedupe(
+                    [card.material_or_surface or "", card.interaction or ""]
+                ),
+                confidence=round(best_score if best_score > 0.0 else card.confidence, 4),
+                rationale="fallback promotion from region-backed proposal evidence",
+            )
+        )
+    promoted.sort(key=lambda item: item.confidence, reverse=True)
+    return promoted[:3]
+
+
+def _region_seeds_from_cards(
+    scene_index: int,
+    cards: Sequence[GroundedSourceCard],
+    regions: Sequence[RegionProposal],
+) -> list[Sam3RegionSeed]:
+    seeds: list[Sam3RegionSeed] = []
+    for card in cards:
+        for region_index in card.region_refs:
+            if region_index < 0 or region_index >= len(regions):
+                continue
+            region = regions[region_index]
+            seeds.append(
+                Sam3RegionSeed(
+                    scene_index=scene_index,
+                    region_index=region_index,
+                    bbox_xyxy=list(region.bbox_xyxy),
+                    label_hint=(card.extraction_prompt or card.source_name).strip().lower() or None,
+                    crop_path=region.crop_path,
+                    confidence=round(max(card.confidence, region.motion_score), 4),
+                )
+            )
+    deduped: list[Sam3RegionSeed] = []
+    seen: set[tuple[int, tuple[float, float, float, float], str | None]] = set()
+    for seed in seeds:
+        key = (seed.region_index, tuple(seed.bbox_xyxy), seed.label_hint)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(seed)
     return deduped

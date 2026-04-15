@@ -43,7 +43,7 @@ Deterministic CV handles only geometry and evidence:
 
 Gemini handles semantic judgment:
 1. open-world source proposal from frames + storyboard + motion crops
-2. phrase grounding over Gemini-proposed phrases
+2. region-grounded source cards and phrase grounding over Gemini-proposed labels
 3. source / event interpretation
 4. generation-group merge / split judgment
 5. routing judgment

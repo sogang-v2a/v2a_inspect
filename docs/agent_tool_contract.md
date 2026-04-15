@@ -7,8 +7,8 @@
 - `sample_frames(video_path, scenes, output_dir) -> FrameBatch[]`
 - `create_silent_analysis_video(video_path, output_path) -> str`
 - `propose_source_hypotheses(frame_batches, storyboard_path, output_root) -> open-world source hypotheses + provenance`
-- `verify_scene_hypotheses(frame_batches, scene_hypotheses_by_window, moving_regions_by_window, storyboard_path) -> grounded prompts + semantic hints`
-- `extract_entities(frame_batches, prompts_by_scene) -> Sam3TrackSet`
+- `verify_scene_hypotheses(frame_batches, scene_hypotheses_by_window, moving_regions_by_window, storyboard_path) -> grounded prompts + region seeds + semantic hints`
+- `extract_entities(frame_batches, prompts_by_scene, region_seeds_by_scene) -> Sam3TrackSet`
 - `embed_entities(image_paths_by_track) -> EntityEmbedding[]`
 - `group_entity_embeddings(embeddings, tracks_by_id) -> CandidateGroupSet`
 - `build_source_semantics(...) -> sources + events + ambience + groups + routes`
@@ -24,6 +24,7 @@ The active silent-video proposal stage should combine:
 
 The output of that stage should split into:
 - extraction prompts for SAM3
+- region-grounded SAM seeds
 - semantic hints for downstream interpretation
 - rejected / unresolved phrases
 - provenance explaining what Gemini proposed and what grounding confirmed

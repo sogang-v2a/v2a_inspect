@@ -19,6 +19,7 @@ class IssueAdjudication(BaseModel):
         "densify_window_sampling",
         "propose_source_hypotheses",
         "verify_scene_hypotheses",
+        "extract_entities",
         "build_source_semantics",
         "rerun_description_writer",
         "validate_bundle",

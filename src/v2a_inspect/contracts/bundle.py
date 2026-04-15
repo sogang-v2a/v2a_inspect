@@ -64,6 +64,13 @@ class IdentityEdge(BaseModel):
 class PhysicalSourceTrack(BaseModel):
     source_id: str
     kind: Literal["foreground", "background_region", "ambience_region", "unknown"]
+    audibility_state: Literal[
+        "audible_active",
+        "visible_but_silent",
+        "background_region",
+        "ambience_region",
+        "unknown",
+    ] = "unknown"
     label_candidates: list[LabelCandidate] = Field(default_factory=list)
     spans: list[tuple[float, float]] = Field(default_factory=list)
     track_refs: list[str] = Field(default_factory=list)

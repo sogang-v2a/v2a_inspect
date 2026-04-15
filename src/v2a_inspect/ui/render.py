@@ -45,15 +45,12 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
                 ["agentic_tool_first", "tool_first_foundation"],
                 index=["agentic_tool_first", "tool_first_foundation"].index(settings.visual_pipeline_mode),
                 format_func=lambda value: {
-                    "agentic_tool_first": "agentic_tool_first — deferred during semantic reset",
+                    "agentic_tool_first": "agentic_tool_first — bundle-first Gemini semantics + bounded repair",
                     "tool_first_foundation": "tool_first_foundation — bundle-first Gemini semantics",
                 }[value],
             ),
         )
         st.caption("모든 경로는 silent-video bundle-first 파이프라인만 사용합니다.")
-
-        prompt_type = cast(Literal["default", "extended"], st.selectbox("Prompt Type", ["default", "extended"], index=0))
-        st.caption("`default`: 간결 | `extended`: Foley 상세")
 
         if st.button("🔄 Reset", use_container_width=True, type="secondary"):
             reset_state()
@@ -61,7 +58,7 @@ def render_sidebar(authenticator: Any) -> InspectOptions:
 
         authenticator.logout("Logout", "sidebar")
 
-    return InspectOptions(fps=fps, pipeline_mode=pipeline_mode, scene_analysis_mode=prompt_type)
+    return InspectOptions(fps=fps, pipeline_mode=pipeline_mode)
 
 
 def render_results(

@@ -18,6 +18,7 @@ from v2a_inspect.workflows import InspectState
 
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle, build_interim_bundle
+from .label_vocabulary import dynamic_label_vocabulary
 from .telemetry import record_recovery_attempt, record_stage, stage_start
 from .tool_registry import build_tool_registry
 
@@ -254,6 +255,7 @@ def _apply_action_result(
             result.get("verified_hypotheses_by_window", {})
         )
         updated["scene_prompt_candidates"] = dict(result.get("prompts_by_scene", {}))
+        updated["region_seeds_by_scene"] = dict(result.get("region_seeds_by_scene", {}))
         updated["proposal_provenance_by_window"] = dict(
             result.get("proposal_provenance_by_window", {})
         )
@@ -380,9 +382,11 @@ def _rebuild_structural_state(
     inspect_state["verified_hypotheses_by_window"] = dict(
         verified["verified_hypotheses_by_window"]
     )
+    inspect_state["region_seeds_by_scene"] = dict(verified.get("region_seeds_by_scene", {}))
     extraction = registry["extract_entities"](
         frame_batches=list(inspect_state.get("frame_batches", [])),
         prompts_by_scene=dict(inspect_state.get("scene_prompt_candidates", {})) or None,
+        region_seeds_by_scene=dict(inspect_state.get("region_seeds_by_scene", {})) or None,
         storyboard_path=str(inspect_state.get("storyboard_path", "")),
         output_root=str(inspect_state.get("artifact_run_dir", "")),
     )
@@ -432,7 +436,7 @@ def _rebuild_semantic_state(
     track_label_candidates = (
         registry["score_track_labels"](
             track_image_paths=track_image_paths,
-            labels=_dynamic_label_vocabulary(
+            labels=dynamic_label_vocabulary(
                 dict(inspect_state.get("verified_hypotheses_by_window", {})),
                 dict(inspect_state.get("scene_hypotheses_by_window", {})),
             ),
@@ -513,32 +517,6 @@ def _tracks_from_result(result: object) -> list[object]:
         tracks = getattr(result, "tracks", [])
     return list(tracks or [])
 
-
-def _dynamic_label_vocabulary(
-    verified_hypotheses_by_window: Mapping[int, dict[str, object]],
-    scene_hypotheses_by_window: Mapping[int, dict[str, object]],
-) -> list[str]:
-    labels: list[str] = []
-    for payload in verified_hypotheses_by_window.values():
-        labels.extend(list(payload.get("extraction_prompts", [])))
-        labels.extend(list(payload.get("semantic_hints", [])))
-    for payload in scene_hypotheses_by_window.values():
-        labels.extend(list(payload.get("visible_sources", [])))
-        labels.extend(list(payload.get("background_sources", [])))
-        labels.extend(list(payload.get("uncertain_regions", [])))
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for label in labels:
-        if not isinstance(label, str):
-            continue
-        normalized = label.strip().lower()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return deduped
-
-
 def _build_issues(
     *,
     bundle: MultitrackDescriptionBundle,
@@ -579,6 +557,10 @@ def _build_issues(
                     "current_source_count": len(current_sources),
                     "current_event_count": len(current_events),
                     "frames_per_scene": int(inspect_state.get("frames_per_window", 3)),
+                    "region_seed_count": sum(
+                        len(seeds)
+                        for seeds in dict(inspect_state.get("region_seeds_by_scene", {})).values()
+                    ),
                     "recovery_actions": list(inspect_state.get("recovery_actions", [])),
                     "recovery_attempts": list(inspect_state.get("recovery_attempts", [])),
                     "scene_prompt_candidates": dict(inspect_state.get("scene_prompt_candidates", {})),
@@ -636,6 +618,9 @@ def _build_issues(
                     "verified_hypotheses_by_window": verified_hypotheses_by_window,
                     "scene_hypotheses_by_window": dict(
                         inspect_state.get("scene_hypotheses_by_window", {})
+                    ),
+                    "moving_regions_by_window": dict(
+                        inspect_state.get("moving_regions_by_window", {})
                     ),
                     "proposal_provenance_by_window": dict(
                         inspect_state.get("proposal_provenance_by_window", {})
@@ -780,6 +765,10 @@ def _adjudicate_issue(
                 "current_source_count": len(bundle.physical_sources),
                 "current_event_count": len(bundle.sound_events),
                 "scene_prompt_candidates_present": bool(inspect_state.get("scene_prompt_candidates")),
+                "region_seed_count": sum(
+                    len(seeds)
+                    for seeds in dict(inspect_state.get("region_seeds_by_scene", {})).values()
+                ),
                 "recovery_actions": list(inspect_state.get("recovery_actions", []))[-3:],
                 "recovery_attempts": list(inspect_state.get("recovery_attempts", []))[-3:],
                 "stage_history": list(inspect_state.get("stage_history", []))[-5:],

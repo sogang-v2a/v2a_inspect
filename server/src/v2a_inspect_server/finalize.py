@@ -129,6 +129,7 @@ def _build_bundle(
             "verified_hypotheses_by_window": dict(
                 state.get("verified_hypotheses_by_window", {})
             ),
+            "region_seeds_by_scene": dict(state.get("region_seeds_by_scene", {})),
             "proposal_provenance_by_window": dict(
                 state.get("proposal_provenance_by_window", {})
             ),

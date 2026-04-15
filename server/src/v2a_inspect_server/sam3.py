@@ -9,6 +9,7 @@ from transformers import Sam3Model, Sam3Processor
 from v2a_inspect.tools.types import (
     FrameBatch,
     Sam3EntityTrack,
+    Sam3RegionSeed,
     Sam3TrackSet,
     Sam3VisualFeatures,
 )
@@ -38,19 +39,25 @@ class Sam3Client:
         frame_batches: list[FrameBatch],
         *,
         prompts_by_scene: Mapping[int, Sequence[str]] | None = None,
+        region_seeds_by_scene: Mapping[int, Sequence[Sam3RegionSeed]] | None = None,
         score_threshold: float = 0.35,
         min_points: int = 2,
         high_confidence_threshold: float = 0.45,
         match_threshold: float = 0.45,
     ) -> Sam3TrackSet:
         tracks: list[Sam3EntityTrack] = []
-        if prompts_by_scene is None:
+        if prompts_by_scene is None and region_seeds_by_scene is None:
             return Sam3TrackSet(provider="sam3", strategy="prompt_free", tracks=[])
-        strategy = "scene_prompt_seeded"
+        strategy = "scene_prompt_seeded" if prompts_by_scene else "scene_prompt_recovery"
         for batch in frame_batches:
             batch_tracks = self._extract_scene_tracks(
                 batch,
                 prompts=prompts_by_scene.get(batch.scene_index) if prompts_by_scene else None,
+                region_seeds=(
+                    region_seeds_by_scene.get(batch.scene_index)
+                    if region_seeds_by_scene
+                    else None
+                ),
                 score_threshold=score_threshold,
                 min_points=min_points,
                 high_confidence_threshold=high_confidence_threshold,
@@ -64,6 +71,7 @@ class Sam3Client:
         batch: FrameBatch,
         *,
         prompts: Sequence[str] | None,
+        region_seeds: Sequence[Sam3RegionSeed] | None,
         score_threshold: float,
         min_points: int,
         high_confidence_threshold: float,
@@ -71,10 +79,11 @@ class Sam3Client:
     ) -> list[Sam3EntityTrack]:
         if not batch.frames:
             return []
-        if prompts is None:
+        if prompts is None and region_seeds is None:
             return []
         prompt_list = [prompt.strip().lower() for prompt in prompts if prompt.strip()]
-        if not prompt_list:
+        region_seed_list = list(region_seeds or [])
+        if not prompt_list and not region_seed_list:
             return []
         detections_by_frame: list[list[FrameDetection]] = []
         stats = summarize_image_paths([frame.image_path for frame in batch.frames])
@@ -90,6 +99,39 @@ class Sam3Client:
             images = load_rgb_images([frame.image_path])
             image = images[0]
             frame_detections: list[FrameDetection] = []
+            for seed in region_seed_list:
+                inputs = self.processor(
+                    images=image,
+                    text=seed.label_hint or "",
+                    input_boxes=[[list(seed.bbox_xyxy)]],
+                    return_tensors="pt",
+                )
+                model_inputs = move_inputs_to_device(dict(inputs), self.device)
+                with torch.no_grad():
+                    outputs = self.model(**model_inputs)
+                processed = self.processor.post_process_instance_segmentation(
+                    outputs,
+                    threshold=score_threshold,
+                    mask_threshold=score_threshold,
+                    target_sizes=inputs.get("original_sizes").tolist(),
+                )[0]
+                boxes = processed.get("boxes", [])
+                scores = processed.get("scores", [])
+                if not boxes:
+                    boxes = [torch.tensor(seed.bbox_xyxy)]
+                    scores = [max(seed.confidence, score_threshold)]
+                for index, box in enumerate(boxes):
+                    score = float(scores[index]) if index < len(scores) else float(seed.confidence)
+                    if score < score_threshold:
+                        continue
+                    frame_detections.append(
+                        FrameDetection(
+                            frame=frame,
+                            bbox_xyxy=[float(value) for value in box.tolist()],
+                            confidence=min(max(score, 0.0), 1.0),
+                            label_hint=seed.label_hint,
+                        )
+                    )
             for prompt in prompt_list:
                 inputs = self.processor(
                     images=image,

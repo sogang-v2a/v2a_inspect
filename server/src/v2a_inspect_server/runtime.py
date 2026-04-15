@@ -22,6 +22,7 @@ from .agentic import run_agentic_tool_loop
 from .crops import group_crop_paths_by_track
 from .finalize import build_final_bundle, build_interim_bundle
 from .gpu_runtime import inspect_nvidia_runtime, runtime_check_to_json
+from .label_vocabulary import dynamic_label_vocabulary
 from .model_runtime import clear_cuda_cache
 from .telemetry import ensure_runtime_trace_path, record_stage, stage_start
 from .tool_registry import build_tool_registry
@@ -108,12 +109,12 @@ class ToolingRuntime:
             }:
                 return None
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .description_writer import GeminiDescriptionWriter
 
             self._description_writer = GeminiDescriptionWriter(
-                api_key=server_settings.gemini_api_key
+                api_key=server_settings.gemini_api_key or ""
             )
         return self._description_writer
 
@@ -128,12 +129,12 @@ class ToolingRuntime:
             }:
                 return None
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .adjudicator import GeminiIssueJudge
 
             self._adjudication_judge = GeminiIssueJudge(
-                api_key=server_settings.gemini_api_key
+                api_key=server_settings.gemini_api_key or ""
             )
         return self._adjudication_judge
 
@@ -141,12 +142,12 @@ class ToolingRuntime:
     def source_proposer(self) -> "GeminiSourceProposer | None":
         if self._source_proposer is None:
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .gemini_source_proposal import GeminiSourceProposer
 
             self._source_proposer = GeminiSourceProposer(
-                api_key=server_settings.gemini_api_key,
+                api_key=server_settings.gemini_api_key or "",
             )
         return self._source_proposer
 
@@ -154,12 +155,12 @@ class ToolingRuntime:
     def proposal_grounder(self) -> "GeminiProposalGrounder | None":
         if self._proposal_grounder is None:
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .gemini_proposal_grounding import GeminiProposalGrounder
 
             self._proposal_grounder = GeminiProposalGrounder(
-                api_key=server_settings.gemini_api_key
+                api_key=server_settings.gemini_api_key or ""
             )
         return self._proposal_grounder
 
@@ -167,12 +168,12 @@ class ToolingRuntime:
     def source_semantics_interpreter(self) -> "GeminiSourceSemanticsInterpreter | None":
         if self._source_semantics_interpreter is None:
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .gemini_source_semantics import GeminiSourceSemanticsInterpreter
 
             self._source_semantics_interpreter = GeminiSourceSemanticsInterpreter(
-                api_key=server_settings.gemini_api_key
+                api_key=server_settings.gemini_api_key or ""
             )
         return self._source_semantics_interpreter
 
@@ -180,12 +181,12 @@ class ToolingRuntime:
     def grouping_judge(self) -> "GeminiGroupingJudge | None":
         if self._grouping_judge is None:
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .gemini_grouping import GeminiGroupingJudge
 
             self._grouping_judge = GeminiGroupingJudge(
-                api_key=server_settings.gemini_api_key
+                api_key=server_settings.gemini_api_key or ""
             )
         return self._grouping_judge
 
@@ -193,12 +194,12 @@ class ToolingRuntime:
     def routing_judge(self) -> "GeminiRoutingJudge | None":
         if self._routing_judge is None:
             server_settings = get_server_runtime_settings()
-            if server_settings.gemini_api_key is None:
+            if not _semantic_llm_backend_configured(server_settings):
                 return None
             from .gemini_routing import GeminiRoutingJudge
 
             self._routing_judge = GeminiRoutingJudge(
-                api_key=server_settings.gemini_api_key
+                api_key=server_settings.gemini_api_key or ""
             )
         return self._routing_judge
 
@@ -563,6 +564,7 @@ def _run_tool_first_pipeline(
         verified_hypotheses["verified_hypotheses_by_window"]
     )
     state["scene_prompt_candidates"] = dict(verified_hypotheses["prompts_by_scene"])
+    state["region_seeds_by_scene"] = dict(verified_hypotheses["region_seeds_by_scene"])
     state["proposal_provenance_by_window"] = {
         scene_index: {
             **dict(state.get("proposal_provenance_by_window", {})).get(scene_index, {}),
@@ -586,6 +588,10 @@ def _run_tool_first_pipeline(
                 len(prompts)
                 for prompts in state["scene_prompt_candidates"].values()
             ),
+            "region_seed_count": sum(
+                len(seeds)
+                for seeds in state["region_seeds_by_scene"].values()
+            ),
             "uncertain_hypothesis_count": sum(
                 len(payload.get("unresolved_phrases", []))
                 for payload in state["verified_hypotheses_by_window"].values()
@@ -597,6 +603,7 @@ def _run_tool_first_pipeline(
     extraction = registry["extract_entities"].handler(
         frame_batches=frame_batches,
         prompts_by_scene=dict(state["scene_prompt_candidates"]),
+        region_seeds_by_scene=dict(state["region_seeds_by_scene"]),
         storyboard_path=storyboard_path,
         output_root=artifact_run_dir,
     )
@@ -659,7 +666,7 @@ def _run_tool_first_pipeline(
     track_label_candidates = (
         registry["score_track_labels"].handler(
             track_image_paths=track_image_paths,
-            labels=_dynamic_label_vocabulary(
+            labels=dynamic_label_vocabulary(
                 dict(state.get("verified_hypotheses_by_window", {})),
                 dict(state.get("scene_hypotheses_by_window", {})),
             ),
@@ -732,6 +739,7 @@ def _run_tool_first_pipeline(
         "storyboard_path": storyboard_path,
         "sam3_track_set": extraction,
         "scene_prompt_candidates": dict(state.get("scene_prompt_candidates", {})),
+        "region_seeds_by_scene": dict(state.get("region_seeds_by_scene", {})),
         "scene_hypotheses_by_window": dict(state.get("scene_hypotheses_by_window", {})),
         "proposal_provenance_by_window": dict(state.get("proposal_provenance_by_window", {})),
         "verified_hypotheses_by_window": dict(state.get("verified_hypotheses_by_window", {})),
@@ -756,6 +764,7 @@ def _run_tool_first_pipeline(
             f"Tool-first pipeline: built {len(evidence_windows)} evidence windows.",
             f"Tool-first pipeline: sampled {sum(len(batch.frames) for batch in frame_batches)} frames.",
             f"Tool-first pipeline: proposed {sum(len(prompts) for prompts in state.get('scene_prompt_candidates', {}).values())} extraction prompts.",
+            f"Tool-first pipeline: prepared {sum(len(seeds) for seeds in state.get('region_seeds_by_scene', {}).values())} region-grounded SAM seeds.",
             f"Tool-first pipeline: extracted {len(tracks)} source tracks.",
             f"Tool-first pipeline: generated {len(track_crops)} track crops.",
             f"Tool-first pipeline: embedded {len(embeddings)} crop-backed track identities.",
@@ -819,32 +828,6 @@ def _coerce_tracks(extraction_result: object) -> list[object]:
         tracks = getattr(extraction_result, "tracks", [])
     return list(tracks) if isinstance(tracks, list) else list(tracks or [])
 
-
-def _dynamic_label_vocabulary(
-    verified_hypotheses_by_window: Mapping[int, dict[str, object]],
-    scene_hypotheses_by_window: Mapping[int, dict[str, object]],
-) -> list[str]:
-    labels: list[str] = []
-    for payload in verified_hypotheses_by_window.values():
-        labels.extend(list(payload.get("extraction_prompts", [])))
-        labels.extend(list(payload.get("semantic_hints", [])))
-    for payload in scene_hypotheses_by_window.values():
-        labels.extend(list(payload.get("visible_sources", [])))
-        labels.extend(list(payload.get("background_sources", [])))
-        labels.extend(list(payload.get("uncertain_regions", [])))
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for label in labels:
-        if not isinstance(label, str):
-            continue
-        normalized = label.strip().lower()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return deduped
-
-
 def _persist_runtime_bundle(
     bundle: "MultitrackDescriptionBundle", state: InspectState
 ) -> None:
@@ -855,6 +838,13 @@ def _persist_runtime_bundle(
     persist_bundle(bundle, bundle_path)
     state["bundle_path"] = str(bundle_path)
     bundle.artifacts.bundle_path = str(bundle_path)
+
+
+def _semantic_llm_backend_configured(server_settings: object) -> bool:
+    if os.getenv("V2A_LLM_BASE_URL", "").strip():
+        return True
+    gemini_api_key = getattr(server_settings, "gemini_api_key", None)
+    return gemini_api_key is not None
 
 
 def main(argv: list[str] | None = None) -> int:

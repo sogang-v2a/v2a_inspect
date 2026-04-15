@@ -172,7 +172,6 @@ def _build_ui_trace_context(options: InspectOptions) -> WorkflowTraceContext:
         session_id=get_langfuse_session_id(),
         tags=(),
         metadata={
-            "scene_analysis_mode": options.scene_analysis_mode,
             "pipeline_mode": options.pipeline_mode,
             "fps": options.fps,
             "auth_mode": settings.auth_mode,

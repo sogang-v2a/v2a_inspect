@@ -35,6 +35,15 @@ class FrameBatch(BaseModel):
     frames: list[SampledFrame] = Field(default_factory=list)
 
 
+class Sam3RegionSeed(BaseModel):
+    scene_index: int = Field(ge=0)
+    region_index: int = Field(ge=0)
+    bbox_xyxy: list[float] = Field(default_factory=list, min_length=4, max_length=4)
+    label_hint: str | None = None
+    crop_path: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class Sam3VisualFeatures(BaseModel):
     motion_score: float = Field(default=0.0, ge=0.0, le=1.0)
     interaction_score: float = Field(default=0.0, ge=0.0, le=1.0)

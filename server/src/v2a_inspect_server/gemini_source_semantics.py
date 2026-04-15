@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 class SourceSemanticInterpretation(BaseModel):
     canonical_label: str | None = None
     source_kind: str = "unknown"
+    audibility_state: str = "unknown"
     event_label: str | None = None
     material_or_surface: str | None = None
     intensity: str | None = None
@@ -75,8 +76,9 @@ class GeminiSourceSemanticsInterpreter:
                 "type": "text",
                 "text": (
                     "Interpret one provisional physical source for a silent-video Foley pipeline. "
-                    "Decide whether it is foreground, ambience_region, background_region, or unknown. "
-                    "Return a canonical visible source label when possible, and a concise event label only if visually supported."
+                    "Decide whether it is foreground, ambience_region, background_region, or unknown, "
+                    "and separately decide whether it is audible_active, visible_but_silent, background_region, ambience_region, or unknown. "
+                    "Return a canonical visible source label when possible, and a concise event label only if the visual evidence supports an active sound-making event."
                 ),
             },
             {
@@ -175,6 +177,14 @@ def build_source_and_event_semantics(
             "unknown",
         }:
             updated_source.kind = interpretation.source_kind  # type: ignore[assignment]
+        if interpretation is not None and interpretation.audibility_state in {
+            "audible_active",
+            "visible_but_silent",
+            "background_region",
+            "ambience_region",
+            "unknown",
+        }:
+            updated_source.audibility_state = interpretation.audibility_state  # type: ignore[assignment]
         updated_sources.append(updated_source)
 
         if updated_source.kind in {"ambience_region", "background_region"}:
@@ -188,6 +198,9 @@ def build_source_and_event_semantics(
                     confidence=round(interpretation.confidence if interpretation else updated_source.identity_confidence, 4),
                 )
             )
+            continue
+
+        if updated_source.audibility_state != "audible_active":
             continue
 
         for span_index, (span_start, span_end) in enumerate(updated_source.spans):

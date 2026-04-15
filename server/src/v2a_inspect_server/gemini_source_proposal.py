@@ -16,7 +16,21 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
 
+class SourceCard(BaseModel):
+    source_name: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    source_kind_candidate: str = "unknown"
+    sound_relevance: str = "unknown"
+    interaction: str | None = None
+    material_or_surface: str | None = None
+    region_refs: list[int] = Field(default_factory=list)
+    supporting_frame_indices: list[int] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    rationale: str = ""
+
+
 class WindowSourceProposal(BaseModel):
+    source_cards: list[SourceCard] = Field(default_factory=list)
     visible_sources: list[str] = Field(default_factory=list)
     background_sources: list[str] = Field(default_factory=list)
     interactions: list[str] = Field(default_factory=list)
@@ -83,13 +97,16 @@ class GeminiSourceProposer:
                 {
                     "type": "text",
                     "text": (
-                        "Infer visible potential sound-producing sources from this silent-video window. "
-                        "This is open-world: do not restrict yourself to a fixed vocabulary. "
-                        "Use only visible evidence from the provided sampled frames, storyboard, and motion-region crops. "
-                        "Return concrete noun phrases for visible sources, background/environment sources, "
-                        "interactions, material/surface cues, uncertain but plausible regions, and salient regions worth extracting."
-                    ),
-                }
+                    "Infer visible potential sound-producing sources from this silent-video window. "
+                    "This is open-world: do not restrict yourself to a fixed vocabulary. "
+                    "Use only visible evidence from the provided sampled frames, storyboard, and motion-region crops. "
+                    "Return 1-4 source_cards for the best concrete visible candidates. "
+                    "Tie each source_card to numbered motion-region crops via region_refs when possible. "
+                    "Use sound_relevance to distinguish audible_active from visible_but_silent, background_region, ambience_region, or unknown. "
+                    "Also return short supporting lists for visible sources, background/environment sources, "
+                    "interactions, material/surface cues, uncertain but plausible regions, and salient regions worth extracting."
+                ),
+            }
             ]
             if storyboard_block is not None:
                 content.append({"type": "text", "text": "Global storyboard context"})
@@ -108,7 +125,7 @@ class GeminiSourceProposer:
                         {
                             "type": "text",
                             "text": (
-                                f"Motion-region crop {index} from frame {proposal.frame_index} "
+                                f"Motion-region crop #{index} from frame {proposal.frame_index} "
                                 f"motion_score={proposal.motion_score:.3f} bbox={json.dumps(proposal.bbox_xyxy)}"
                             ),
                         }
@@ -133,5 +150,41 @@ class GeminiSourceProposer:
                 continue
             if not isinstance(payload, _WindowSourceProposalPayload):
                 payload = _WindowSourceProposalPayload.model_validate(payload)
-            proposals[batch.scene_index] = WindowSourceProposal.model_validate(payload.model_dump())
+            normalized = WindowSourceProposal.model_validate(payload.model_dump())
+            if not normalized.visible_sources:
+                normalized.visible_sources = _dedupe(
+                    [card.source_name for card in normalized.source_cards]
+                )
+            if not normalized.background_sources:
+                normalized.background_sources = _dedupe(
+                    [
+                        card.source_name
+                        for card in normalized.source_cards
+                        if card.source_kind_candidate in {"background_region", "ambience_region"}
+                    ]
+                )
+            if not normalized.materials_surfaces:
+                normalized.materials_surfaces = _dedupe(
+                    [
+                        card.material_or_surface or ""
+                        for card in normalized.source_cards
+                    ]
+                )
+            if not normalized.interactions:
+                normalized.interactions = _dedupe(
+                    [card.interaction or "" for card in normalized.source_cards]
+                )
+            proposals[batch.scene_index] = normalized
         return proposals
+
+
+def _dedupe(values: Sequence[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
