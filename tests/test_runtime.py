@@ -22,7 +22,7 @@ class _StubChatOpenAI(ChatOpenAI):
 
 
 class RuntimeLlmTests(unittest.TestCase):
-    @patch("v2a_inspect.runtime.ChatOpenAI", return_value="compat-llm")
+    @patch("langchain_openai.ChatOpenAI", return_value="compat-llm")
     def test_build_llm_prefers_chatopenai_when_base_url_is_set(self, mock_builder) -> None:
         with patch.dict(
             os.environ,

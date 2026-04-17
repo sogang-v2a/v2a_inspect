@@ -85,6 +85,7 @@ When Gemini quota is unavailable, the semantic LLM path can be redirected to an
 OpenAI-compatible endpoint via LangChain `ChatOpenAI` for debugging only:
 
 ```bash
+uv sync --extra semantic
 export V2A_LLM_BASE_URL=http://127.0.0.1:8080/v1
 export V2A_LLM_MODEL=gpt-5.4
 ```

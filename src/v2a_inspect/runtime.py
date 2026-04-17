@@ -7,7 +7,6 @@ from typing import Protocol, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
-from langchain_openai import ChatOpenAI
 
 
 StructuredSchemaModel = TypeVar("StructuredSchemaModel")
@@ -39,6 +38,8 @@ def build_llm(
 
     openai_compat_base_url = os.getenv("V2A_LLM_BASE_URL", "").strip()
     if openai_compat_base_url:
+        from langchain_openai import ChatOpenAI
+
         resolved_model = os.getenv("V2A_LLM_MODEL", "").strip() or model
         openai_compat_api_key = os.getenv("V2A_LLM_API_KEY", "").strip()
         return ChatOpenAI(
@@ -67,7 +68,7 @@ def invoke_structured_llm(
     prompt: object,
     method: str = "json_schema",
 ) -> StructuredSchemaModel:
-    if isinstance(llm, ChatOpenAI):
+    if _is_chatopenai_instance(llm):
         response = llm.invoke(_augment_prompt_with_json_schema(prompt, schema_model))
         content = getattr(response, "content", response)
         if not isinstance(content, str):
@@ -100,6 +101,14 @@ def _require_gemini_api_key() -> str:
     raise ValueError(
         "GEMINI_API_KEY must be set for the server-side silent-video Gemini helpers."
     )
+
+
+def _is_chatopenai_instance(llm: object) -> bool:
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        return False
+    return isinstance(llm, ChatOpenAI)
 
 
 def _augment_prompt_with_json_schema(

@@ -2443,7 +2443,6 @@ dependencies = [
     { name = "google-genai" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
-    { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "moviepy" },
     { name = "pydantic" },
@@ -2455,6 +2454,9 @@ dependencies = [
 observability = [
     { name = "langfuse" },
 ]
+semantic = [
+    { name = "langchain-openai" },
+]
 ui = [
     { name = "streamlit" },
     { name = "streamlit-authenticator" },
@@ -2462,6 +2464,7 @@ ui = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "langchain-openai" },
     { name = "pre-commit" },
     { name = "ruff" },
     { name = "ty" },
@@ -2473,7 +2476,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.68.0" },
     { name = "langchain", specifier = ">=1.2.12" },
     { name = "langchain-google-genai", specifier = ">=4.0.0" },
-    { name = "langchain-openai", specifier = ">=1.1.14" },
+    { name = "langchain-openai", marker = "extra == 'semantic'", specifier = ">=1.1.14" },
     { name = "langfuse", marker = "extra == 'observability'", specifier = ">=3.9.0" },
     { name = "langgraph", specifier = ">=1.1.2" },
     { name = "moviepy", specifier = ">=2.2.1" },
@@ -2483,10 +2486,11 @@ requires-dist = [
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.55.0" },
     { name = "streamlit-authenticator", marker = "extra == 'ui'", specifier = ">=0.4.2" },
 ]
-provides-extras = ["observability", "ui"]
+provides-extras = ["observability", "semantic", "ui"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "langchain-openai", specifier = ">=1.1.14" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "ruff", specifier = ">=0.15.6" },
     { name = "ty", specifier = ">=0.0.26" },
