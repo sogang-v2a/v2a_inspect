@@ -116,6 +116,11 @@ def copy_remote_artifacts(
     for key, remote_path in sorted(remote_artifact_paths.items()):
         suffix = Path(remote_path).suffix or ".bin"
         target = output_root / f"{key}{suffix}"
+        local_source = Path(remote_path)
+        if local_source.exists():
+            shutil.copy2(local_source, target)
+            copied[key] = str(target)
+            continue
         subprocess.run(
             ["scp", f"{ssh_host}:{remote_path}", str(target)],
             check=True,

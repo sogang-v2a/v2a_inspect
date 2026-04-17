@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from v2a_inspect.agent import AgentIssue
 from v2a_inspect.contracts import ArtifactRefs, EvidenceWindow, GenerationGroup, MultitrackDescriptionBundle, ValidationIssue, ValidationReport, VideoMeta
-from v2a_inspect_server.agentic import _adjudicate_issue, _build_issues, run_agent_review_pass
-from v2a_inspect_server.runtime import _run_agentic_tool_first_pipeline
+from v2a_inspect.agentic import _adjudicate_issue, _build_issues, run_agent_review_pass
+from v2a_inspect.local_pipeline import _run_agentic_tool_first_pipeline
 from v2a_inspect.workflows import InspectOptions
 
 
@@ -25,9 +25,9 @@ class AgenticIntegrationTests(unittest.TestCase):
             update={"pipeline_metadata": {"agent_review_trace_path": "/tmp/trace.jsonl"}}
         )
         foundation_state = {"multitrack_bundle": interim_bundle, "warnings": [], "progress_messages": []}
-        with patch("v2a_inspect_server.runtime._run_tool_first_pipeline", return_value=foundation_state), \
-             patch("v2a_inspect_server.runtime.run_agentic_tool_loop", return_value=({"multitrack_bundle": final_bundle}, SimpleNamespace(issues=[1], tool_calls=[1, 2]), "/tmp/trace.jsonl")), \
-             patch("v2a_inspect_server.runtime._persist_runtime_bundle", return_value=None):
+        with patch("v2a_inspect.local_pipeline._run_tool_first_pipeline", return_value=foundation_state), \
+             patch("v2a_inspect.local_pipeline.run_agentic_tool_loop", return_value=({"multitrack_bundle": final_bundle}, SimpleNamespace(issues=[1], tool_calls=[1, 2]), "/tmp/trace.jsonl")), \
+             patch("v2a_inspect.local_pipeline._persist_runtime_bundle", return_value=None):
             state = _run_agentic_tool_first_pipeline(
                 video_path="/tmp/video.mp4",
                 options=InspectOptions(pipeline_mode="agentic_tool_first"),

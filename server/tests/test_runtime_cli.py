@@ -39,6 +39,7 @@ class RuntimeCliTests(unittest.TestCase):
             hf_token=None,
         )
         mock_build_tooling_runtime.return_value = SimpleNamespace(
+            artifacts_missing=lambda: [],
             resident_client_names=lambda: [],
             residency_mode="resident",
         )

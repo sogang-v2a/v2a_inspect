@@ -11,13 +11,14 @@ This repository now targets a **silent-video, bundle-first, Gemini-semantic pipe
 
 ## Remote inference policy
 
-- Primary runtime target: **one remote GPU-hosted server runtime**
+- Primary runtime target: **one remote GPU-hosted inference worker**
 - `sogang_gpu` is the default heavy-inference target.
 - Preferred vision backbone: **SAM3**
 - Preferred visual embeddings: **DINOv2**
 - Preferred phrase grounding scorer: **SigLIP2**
 - Gemini is used for **text+image reasoning** only.
 - Gemini must not receive uploaded source videos.
+- The GPU host must not run semantic LLM work, grouping, routing, bundle building, or agent orchestration.
 
 ## Public pipeline policy
 
@@ -33,21 +34,19 @@ Removed:
 
 ## Architecture direction
 
-Deterministic CV handles only geometry and evidence:
+Local orchestration handles geometry, evidence assembly, and all semantics:
 1. probe / silent ingest
 2. candidate cuts / evidence windows
 3. sampled frames / storyboard
 4. motion-region proposals
-5. SAM3 extraction / tracking
-6. crops / embeddings / re-ID
+5. Gemini open-world source proposal from frames + storyboard + motion crops
+6. Gemini grounding / source semantics / grouping / routing / descriptions
+7. re-ID, final bundle assembly, and agentic repair
 
-Gemini handles semantic judgment:
-1. open-world source proposal from frames + storyboard + motion crops
-2. region-grounded source cards and phrase grounding over Gemini-proposed labels
-3. source / event interpretation
-4. generation-group merge / split judgment
-5. routing judgment
-6. canonical description writing
+Remote GPU inference worker handles only:
+1. SAM3 extraction / tracking
+2. crop embedding inference
+3. crop label scoring inference
 
 ## Runtime profile policy
 

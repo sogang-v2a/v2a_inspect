@@ -3,7 +3,8 @@
 Current target runtime is:
 
 - `v2a_inspect` client/UI
-- `v2a_inspect_server` server runtime
+- local orchestration + semantic runtime on the client machine
+- `v2a_inspect_server` remote inference runtime
 - generic remote GPU deployment
 - university-hosted `sogang_gpu` is the default target
 - `runtime_profile=full_gpu` is the default research profile for the A100 10GB MiG slice
@@ -29,17 +30,23 @@ docker compose up --build
 This starts:
 
 - Streamlit client on `http://localhost:8501`
-- server runtime on `http://localhost:8080`
+- inference runtime on `http://localhost:8080`
 
-The client saves uploaded videos into the shared `/data/uploads` volume so the
-server can build a silent analysis copy and analyze the same real files.
+The client owns orchestration and bundle creation. The remote server is used for
+visual inference RPCs only.
 
 ## Remote deployment shape
 
-- Run the server on a remote GPU host
+- Run the server on a remote GPU host as an inference-only worker
 - `sogang_gpu` is the primary deployment target today
 - Use `server/scripts/warmup_university_gpu.sh` or `POST /warmup` for the university warmup path
-- Use `POST /upload` followed by `POST /analyze` for remote client/server runs
+- Remote inference endpoints:
+  - `POST /infer/sam3-extract`
+  - `POST /infer/embed-crops`
+  - `POST /infer/score-labels`
+- Removed from the GPU host:
+  - `POST /upload`
+  - `POST /analyze`
 
 ## Local benchmarking against the remote university server
 
@@ -65,7 +72,7 @@ This will:
 
 - extract `data/video_samples.zip` into `data/video_samples/`
 - warm the forwarded server once
-- run the supported `tool_first_foundation` and `agentic_tool_first` silent-video modes
+- run the supported `tool_first_foundation` and `agentic_tool_first` modes locally while using the forwarded GPU host only for visual inference
 - save local outputs under `data/benchmarks/<run_id>/`
 
 Tracked benchmark metadata for the sample pack lives in:

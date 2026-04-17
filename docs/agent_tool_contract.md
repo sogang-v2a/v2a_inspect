@@ -8,8 +8,9 @@
 - `create_silent_analysis_video(video_path, output_path) -> str`
 - `propose_source_hypotheses(frame_batches, storyboard_path, output_root) -> open-world source hypotheses + provenance`
 - `verify_scene_hypotheses(frame_batches, scene_hypotheses_by_window, moving_regions_by_window, storyboard_path) -> grounded prompts + region seeds + semantic hints`
-- `extract_entities(frame_batches, prompts_by_scene, region_seeds_by_scene) -> Sam3TrackSet`
-- `embed_entities(image_paths_by_track) -> EntityEmbedding[]`
+- `extract_entities(frame_batches, prompts_by_scene, region_seeds_by_scene) -> Sam3TrackSet` via remote GPU inference RPC
+- `embed_entities(image_paths_by_track) -> EntityEmbedding[]` via remote GPU inference RPC
+- `score_track_labels(image_paths, labels) -> LabelScore[]` via remote GPU inference RPC
 - `group_entity_embeddings(embeddings, tracks_by_id) -> CandidateGroupSet`
 - `build_source_semantics(...) -> sources + events + ambience + groups + routes`
 - `rerun_description_writer(...) -> GenerationGroup[]`
@@ -59,6 +60,7 @@ High-value agentic classes are:
 
 - No audio tools
 - No local CUDA/GPU execution
+- No server-side semantic orchestration on the GPU host
 - No Gemini video upload path
 - No legacy compatibility mode
 - No grouped-analysis export shape
