@@ -178,12 +178,16 @@ def _extract_text_content(response_payload: Mapping[str, object]) -> str:
     if not isinstance(choices, list) or not choices:
         raise ValueError("OpenAI-compatible response is missing choices.")
     first_choice = choices[0]
-    message = (
+    choice_payload = (
         {str(key): value for key, value in first_choice.items()}
         if isinstance(first_choice, dict)
         else {}
     )
-    content = message.get("content", "") if isinstance(message, dict) else ""
+    message = choice_payload.get("message", {})
+    if isinstance(message, dict):
+        content = message.get("content", "")
+    else:
+        content = choice_payload.get("content", "")
     if not isinstance(content, str):
         raise TypeError("OpenAI-compatible response content must be a string.")
     return _strip_think_blocks(content).strip()
