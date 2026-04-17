@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field
 
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
+from v2a_inspect.runtime import invoke_structured_llm
 
 if TYPE_CHECKING:
     from v2a_inspect.runtime import StructuredChatModel
@@ -77,11 +78,9 @@ class GeminiIssueJudge:
                 )
             ),
         ]
-        structured_llm = self.llm.with_structured_output(
-            IssueAdjudication,
+        return invoke_structured_llm(
+            llm=self.llm,
+            schema_model=IssueAdjudication,
+            prompt=prompt,
             method="json_schema",
         )
-        result = structured_llm.invoke(prompt)
-        if isinstance(result, IssueAdjudication):
-            return result
-        return IssueAdjudication.model_validate(result)

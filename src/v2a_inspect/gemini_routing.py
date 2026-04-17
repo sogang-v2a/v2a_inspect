@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 from v2a_inspect.contracts import AmbienceBed, GenerationGroup, PhysicalSourceTrack, RoutingDecision, SoundEventSegment
-from v2a_inspect.runtime import build_llm
+from v2a_inspect.runtime import build_llm, invoke_structured_llm
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -58,9 +58,13 @@ class GeminiRoutingJudge:
             ),
             HumanMessage(content=json.dumps(dict(context), indent=2, ensure_ascii=False)),
         ]
-        structured_llm = self.llm.with_structured_output(RoutingJudgment, method="json_schema")
         try:
-            result = structured_llm.invoke(prompt)
+            result = invoke_structured_llm(
+                llm=self.llm,
+                schema_model=RoutingJudgment,
+                prompt=prompt,
+                method="json_schema",
+            )
         except Exception:  # noqa: BLE001
             return None
         if isinstance(result, RoutingJudgment):

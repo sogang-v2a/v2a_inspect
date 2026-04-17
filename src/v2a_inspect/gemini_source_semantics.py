@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
 from v2a_inspect.contracts import AmbienceBed, LabelCandidate, PhysicalSourceTrack, SoundEventSegment, TrackCrop
-from v2a_inspect.runtime import build_llm
+from v2a_inspect.runtime import build_llm, invoke_structured_llm
 from v2a_inspect.tools.types import Sam3EntityTrack
 
 from .scene_hypotheses import _image_block
@@ -122,12 +122,13 @@ class GeminiSourceSemanticsInterpreter:
             ),
             HumanMessage(content=content),
         ]
-        structured_llm = self.llm.with_structured_output(
-            _SourceSemanticPayload,
-            method="json_schema",
-        )
         try:
-            payload = structured_llm.invoke(prompt)
+            payload = invoke_structured_llm(
+                llm=self.llm,
+                schema_model=_SourceSemanticPayload,
+                prompt=prompt,
+                method="json_schema",
+            )
         except Exception:  # noqa: BLE001
             return None
         if not isinstance(payload, _SourceSemanticPayload):

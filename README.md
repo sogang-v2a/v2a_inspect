@@ -82,7 +82,7 @@ Tracked benchmark metadata for the sample pack lives in:
 ## Optional semantic debug harness
 
 When Gemini quota is unavailable, the semantic LLM path can be redirected to an
-OpenAI-compatible endpoint for debugging only:
+OpenAI-compatible endpoint via LangChain `ChatOpenAI` for debugging only:
 
 ```bash
 export V2A_LLM_BASE_URL=http://127.0.0.1:8080/v1

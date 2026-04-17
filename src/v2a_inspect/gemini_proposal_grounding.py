@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from v2a_inspect.constants import DEFAULT_GEMINI_MODEL
-from v2a_inspect.runtime import build_llm
+from v2a_inspect.runtime import build_llm, invoke_structured_llm
 from v2a_inspect.tools.types import Sam3RegionSeed
 from v2a_inspect.tools.types import FrameBatch
 
@@ -102,10 +102,6 @@ class GeminiProposalGrounder:
 
         self.last_error_message = None
         moving_regions_by_scene = moving_regions_by_scene or {}
-        structured_llm = self.llm.with_structured_output(
-            _GroundedWindowProposalPayload,
-            method="json_schema",
-        )
         grounded: dict[int, GroundedWindowProposal] = {}
         storyboard_block = _image_block(storyboard_path) if storyboard_path else None
         for batch in frame_batches:
@@ -199,7 +195,12 @@ class GeminiProposalGrounder:
                 HumanMessage(content=content),
             ]
             try:
-                payload = structured_llm.invoke(prompt)
+                payload = invoke_structured_llm(
+                    llm=self.llm,
+                    schema_model=_GroundedWindowProposalPayload,
+                    prompt=prompt,
+                    method="json_schema",
+                )
             except Exception as exc:  # noqa: BLE001
                 if self.last_error_message is None:
                     self.last_error_message = (

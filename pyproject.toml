@@ -20,6 +20,7 @@ dependencies = [
     "google-genai>=1.68.0",
     "langchain>=1.2.12",
     "langchain-google-genai>=4.0.0",
+    "langchain-openai>=1.1.14",
     "langgraph>=1.1.2",
     "moviepy>=2.2.1",
     "pydantic>=2.12.5",
