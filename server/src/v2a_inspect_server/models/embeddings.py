@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from .common import ImageRef
+from .sam3 import TrackPoint
 
 class TrackImages(BaseModel):
     track_id: str
-    images: list[ImageRef]
+    points: list[TrackPoint]
 
 class EmbedRequest(BaseModel):
+    video_id: str
     tracks: list[TrackImages]
 
 class Embedding(BaseModel):

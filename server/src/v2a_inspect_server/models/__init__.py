@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from .common import ImageRef
 from .sam3 import (
-    RegionSeed,
-    FrameRef,
-    SceneBatch,
+    PointPrompt,
+    VideoSeed,
     Sam3ExtractRequest,
     TrackPoint,
     EntityTrack,
@@ -23,10 +21,8 @@ from .labels import (
 )
 
 __all__ = [
-    "ImageRef",
-    "RegionSeed",
-    "FrameRef",
-    "SceneBatch",
+    "PointPrompt",
+    "VideoSeed",
     "Sam3ExtractRequest",
     "TrackPoint",
     "EntityTrack",

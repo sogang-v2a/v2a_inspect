@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from .common import ImageRef
+from .sam3 import TrackPoint
 
 class LabelScoreRequest(BaseModel):
+    video_id: str
     track_id: str | None = None
+    points: list[TrackPoint]
     labels: list[str]
-    images: list[ImageRef]
 
 class LabelScore(BaseModel):
     label: str
