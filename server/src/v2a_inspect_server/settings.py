@@ -9,6 +9,8 @@ class ServerSettings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8080
     sam3_model_id: str = "facebook/sam3"
+    embedding_model_id: str = "facebook/dinov2-base"
+    label_model_id: str = "google/siglip2-base-patch16-224"
 
     class Config:
         env_prefix = "V2A_SERVER_"
