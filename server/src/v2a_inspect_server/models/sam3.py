@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+from typing_extensions import Self
 
 class PointPrompt(BaseModel):
     x: float
@@ -13,6 +14,18 @@ class VideoSeed(BaseModel):
     points: list[PointPrompt] | None = None
     prompt: str | None = None
     label_hint: str | None = None
+
+    @model_validator(mode='after')
+    def check_exclusivity(self) -> Self:
+        has_spatial = self.bbox_xyxy is not None or (self.points is not None and len(self.points) > 0)
+        has_prompt = self.prompt is not None
+
+        if has_spatial and has_prompt:
+            raise ValueError("Cannot combine text prompt with bbox/points in the same seed.")
+        if not has_spatial and not has_prompt:
+            raise ValueError("Must provide either a text prompt, or spatial inputs (bbox/points).")
+            
+        return self
 
 class Sam3ExtractRequest(BaseModel):
     video_id: str
