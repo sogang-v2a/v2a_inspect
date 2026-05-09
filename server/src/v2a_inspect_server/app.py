@@ -7,7 +7,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from v2a_inspect_server.models import Sam3ExtractRequest
-from v2a_inspect_server.sam3_inference import Sam3InferenceClient
+from v2a_inspect_server.inference.sam3 import Sam3InferenceClient
 from v2a_inspect_server.settings import settings
 
 sam3_client: Sam3InferenceClient | None = None
