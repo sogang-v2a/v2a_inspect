@@ -18,11 +18,13 @@ dependencies = [
   "torch>=2.5.1,<2.6",
   "torchvision>=0.20.1,<0.21",
   "transformers>=5.5.0,<6",
-  "v2a-inspect>=0.1.0",
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.30.1",
+  "python-multipart>=0.0.9",
+  "pillow>=10.2.0",
 ]
 
 [project.scripts]
 v2a-inspect-server = "v2a_inspect_server.runtime:main"
 
-[tool.uv.sources]
-v2a-inspect = { path = ".." }
+
