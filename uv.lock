@@ -2441,6 +2441,7 @@ source = { editable = "." }
 dependencies = [
     { name = "dotenv" },
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
     { name = "langgraph" },
@@ -2474,6 +2475,7 @@ dev = [
 requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "google-genai", specifier = ">=1.68.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "langchain", specifier = ">=1.2.12" },
     { name = "langchain-google-genai", specifier = ">=4.0.0" },
     { name = "langchain-openai", marker = "extra == 'semantic'", specifier = ">=1.1.14" },
