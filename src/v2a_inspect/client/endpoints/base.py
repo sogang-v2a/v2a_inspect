@@ -1,6 +1,6 @@
 import httpx
 from typing import Optional, Dict, Any
-from .config.settings import settings
+from ..config.settings import settings
 
 
 class ClientError(Exception):

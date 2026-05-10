@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from ..base import BaseClient
+from .base import BaseClient
 from ..models.sam3 import (
     PointPrompt,
     VideoSeed,

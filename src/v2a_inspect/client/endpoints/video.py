@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from ..base import BaseClient
+from .base import BaseClient
 from ..models.video import VideoIDResponse
 
 
