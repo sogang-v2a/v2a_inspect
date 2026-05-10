@@ -7,7 +7,7 @@ module-name = ["v2a_inspect"]
 module-root = "src"
 
 [tool.uv-build]
-include = ["src/v2a_inspect/pipeline/prompt_templates/prompts/**/*.txt"]
+include = ["src/v2a_inspect/prompts/files/**/*.txt"]
 
 [project]
 name = "v2a-inspect"
