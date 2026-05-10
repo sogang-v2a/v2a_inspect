@@ -1,0 +1,17 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    server_host: str = "localhost"
+    server_port: int = 8000
+    timeout: float = 30.0
+
+    @property
+    def server_url(self) -> str:
+        return f"http://{self.server_host}:{self.server_port}"
+
+    class Config:
+        env_prefix = "V2A_INSPECT_CLIENT_"
+
+
+settings = Settings()
