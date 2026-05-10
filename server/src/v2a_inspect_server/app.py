@@ -6,7 +6,11 @@ from pathlib import Path
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from v2a_inspect_server.models import Sam3ExtractRequest, EmbedRequest, LabelScoreRequest
+from v2a_inspect_server.models import (
+    Sam3ExtractRequest,
+    EmbedRequest,
+    LabelScoreRequest,
+)
 from v2a_inspect_server.inference.sam3 import Sam3InferenceClient
 from v2a_inspect_server.inference.embed import DinoV2InferenceClient
 from v2a_inspect_server.inference.score import Siglip2InferenceClient
@@ -15,6 +19,7 @@ from v2a_inspect_server.settings import settings
 sam3_client: Sam3InferenceClient | None = None
 embed_client: DinoV2InferenceClient | None = None
 score_client: Siglip2InferenceClient | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,11 +32,14 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     sam3_client = embed_client = score_client = None
 
+
 app = FastAPI(title="v2a-inspect-server", lifespan=lifespan)
+
 
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
 
 @app.post("/videos/upload")
 async def upload_video(file: UploadFile = File(...)):
@@ -54,6 +62,7 @@ async def upload_video(file: UploadFile = File(...)):
 
     return {"video_id": video_id}
 
+
 @app.post("/infer/sam3")
 async def infer_sam3(request: Sam3ExtractRequest):
     if sam3_client is None:
@@ -65,10 +74,13 @@ async def infer_sam3(request: Sam3ExtractRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/infer/embed")
 async def embed_video(request: EmbedRequest):
     if embed_client is None:
-        raise HTTPException(status_code=503, detail="DINOv2 embedding client not initialized")
+        raise HTTPException(
+            status_code=503, detail="DINOv2 embedding client not initialized"
+        )
     try:
         return embed_client.embed(request)
     except FileNotFoundError as e:
@@ -76,10 +88,13 @@ async def embed_video(request: EmbedRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/infer/score")
 async def score_labels(request: LabelScoreRequest):
     if score_client is None:
-        raise HTTPException(status_code=503, detail="SigLIP2 scoring client not initialized")
+        raise HTTPException(
+            status_code=503, detail="SigLIP2 scoring client not initialized"
+        )
     try:
         return score_client.score(request)
     except FileNotFoundError as e:

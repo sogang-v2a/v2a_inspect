@@ -5,6 +5,7 @@ from ..config.settings import settings
 
 class ClientError(Exception):
     """Custom exception for client errors."""
+
     pass
 
 

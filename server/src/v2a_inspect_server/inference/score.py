@@ -7,20 +7,24 @@ from transformers import AutoProcessor, AutoModel
 from ..models import LabelScore, LabelScoreRequest, LabelScoreResponse
 from ..settings import settings
 
-def _box_iou(box1: tuple[float, float, float, float], box2: tuple[float, float, float, float]) -> float:
+
+def _box_iou(
+    box1: tuple[float, float, float, float], box2: tuple[float, float, float, float]
+) -> float:
     x1 = max(box1[0], box2[0])
     y1 = max(box1[1], box2[1])
     x2 = min(box1[2], box2[2])
     y2 = min(box1[3], box2[3])
-    
+
     inter_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
     if inter_area == 0:
         return 0.0
-        
+
     box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
     box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
-    
+
     return float(inter_area / (box1_area + box2_area - inter_area))
+
 
 class Siglip2InferenceClient:
     def __init__(self) -> None:
@@ -58,11 +62,11 @@ class Siglip2InferenceClient:
         # (or over all points? The request has points, which are timestamps with bboxes).
         # We'll extract a frame for each point, run SigLIP on that frame, and then average
         # the scores for each label across all frames.
-        
+
         # We'll accumulate scores per label
         label_scores_sum = {label: 0.0 for label in request.labels}
         label_counts = {label: 0 for label in request.labels}
-        
+
         for point in request.points:
             # Extract the frame at point.timestamp_seconds from the video
             video_exts = [".mp4", ".mov", ".avi", ".mkv"]
@@ -74,7 +78,7 @@ class Siglip2InferenceClient:
                     break
             if not video_path:
                 raise FileNotFoundError(f"Video {request.video_id} not found")
-            
+
             cap = cv2.VideoCapture(str(video_path))
             fps = cap.get(cv2.CAP_PROP_FPS)
             if fps <= 0:
@@ -87,10 +91,10 @@ class Siglip2InferenceClient:
                 continue
             # Convert BGR to RGB
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
+
             # Prepare text inputs: "This is a photo of {label}."
             texts = [f"This is a photo of {label}." for label in request.labels]
-            
+
             # Process with SigLIP
             inputs = self.processor(
                 text=texts,
@@ -100,18 +104,18 @@ class Siglip2InferenceClient:
                 max_length=64,
                 return_tensors="pt",
             ).to(self.device)
-            
+
             with torch.no_grad():
                 outputs = self.model(**inputs)
-            
+
             # SigLIP2 model returns logits_per_image (shape: [1, num_texts])
             logits_per_image = outputs.logits_per_image  # we have one image
             probs = torch.sigmoid(logits_per_image).cpu().numpy().flatten()
-            
+
             for idx, label in enumerate(request.labels):
                 label_scores_sum[label] += float(probs[idx])
                 label_counts[label] += 1
-        
+
         # Compute average scores
         scores = []
         for label in request.labels:
@@ -125,8 +129,8 @@ class Siglip2InferenceClient:
                     score=avg_score,
                 )
             )
-        
+
         # Sort by score descending
         scores.sort(key=lambda x: x.score, reverse=True)
-        
+
         return LabelScoreResponse(track_id=request.track_id, scores=scores)

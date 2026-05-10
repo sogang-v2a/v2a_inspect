@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
+
 class ServerSettings(BaseSettings):
     upload_dir: Path = Path(os.getenv("V2A_UPLOAD_DIR", "/tmp/v2a_uploads"))
     host: str = "127.0.0.1"
@@ -14,6 +15,7 @@ class ServerSettings(BaseSettings):
 
     class Config:
         env_prefix = "V2A_SERVER_"
+
 
 settings = ServerSettings()
 

@@ -52,15 +52,18 @@ class SAM3Client(BaseClient):
         if bbox is not None:
             if len(bbox) != 4:
                 raise ValueError("bbox must be a list of 4 numbers [x1, y1, x2, y2]")
-            seeds.append(VideoSeed(timestamp_seconds=0.0, bbox_xyxy=tuple(bbox)))
+            seeds.append(
+                VideoSeed(
+                    timestamp_seconds=0.0,
+                    bbox_xyxy=(bbox[0], bbox[1], bbox[2], bbox[3]),
+                )
+            )
         if points is not None:
             point_objs = []
             for p in points:
                 if len(p) != 3:
                     raise ValueError("Each point must be [x, y, is_positive]")
-                point_objs.append(
-                    PointPrompt(x=p[0], y=p[1], is_positive=bool(p[2]))
-                )
+                point_objs.append(PointPrompt(x=p[0], y=p[1], is_positive=bool(p[2])))
             seeds.append(VideoSeed(timestamp_seconds=0.0, points=point_objs))
 
         # The VideoSeed model enforces mutual exclusivity, so we can rely on that.
@@ -73,7 +76,5 @@ class SAM3Client(BaseClient):
             match_threshold=match_threshold,
         )
 
-        response = await self._request(
-            "POST", "/infer/sam3", json=request.model_dump()
-        )
+        response = await self._request("POST", "/infer/sam3", json=request.model_dump())
         return Sam3ExtractResponse(**response.json())

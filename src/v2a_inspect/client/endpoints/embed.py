@@ -27,11 +27,17 @@ class EmbeddingClient(BaseClient):
         # Convert tracks to the format expected by EmbedRequest
         track_images = []
         for track in tracks:
-            track_images.append({
-                "track_id": track["track_id"],
-                "points": track["points"]  # Assuming points are already TrackPoint-compatible dicts
-            })
-        
+            track_images.append(
+                {
+                    "track_id": track["track_id"],
+                    "points": track[
+                        "points"
+                    ],  # Assuming points are already TrackPoint-compatible dicts
+                }
+            )
+
         request = EmbedRequest(video_id=video_id, tracks=track_images)
-        response = await self._request("POST", "/infer/embed", json=request.model_dump())
+        response = await self._request(
+            "POST", "/infer/embed", json=request.model_dump()
+        )
         return EmbedResponse(**response.json())

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Optional
 from .base import BaseClient
 from ..models.labels import LabelScoreRequest, LabelScoreResponse
+from ..models.sam3 import TrackPoint
 
 
 class ScoringClient(BaseClient):
@@ -13,7 +14,7 @@ class ScoringClient(BaseClient):
         video_id: str,
         labels: List[str],
         track_id: Optional[str] = None,
-        points: Optional[List[dict]] = None
+        points: Optional[List[TrackPoint]] = None,
     ) -> LabelScoreResponse:
         """
         Score labels for a video or specific track.
@@ -33,10 +34,9 @@ class ScoringClient(BaseClient):
             ClientError: If the request fails.
         """
         request = LabelScoreRequest(
-            video_id=video_id,
-            track_id=track_id,
-            points=points or [],  # Empty list if none provided
-            labels=labels
+            video_id=video_id, track_id=track_id, points=points or [], labels=labels
         )
-        response = await self._request("POST", "/infer/score", json=request.model_dump())
+        response = await self._request(
+            "POST", "/infer/score", json=request.model_dump()
+        )
         return LabelScoreResponse(**response.json())
