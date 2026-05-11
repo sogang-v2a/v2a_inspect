@@ -1,0 +1,46 @@
+from pathlib import Path
+from uuid import UUID, uuid4
+
+from pydantic import Field, computed_field
+
+from .base import SchemaModel
+from .initial_scene import InitialScene
+
+
+class VideoAsset(SchemaModel):
+    """
+    Prepared working video used by the pipeline.
+
+    Assumptions:
+    - The file is already normalized by ffmpeg.
+    - Resolution is fixed to 1280x720.
+    - FPS is fixed to 30.
+    - Audio track is removed.
+    - All downstream references use frame indices.
+    """
+
+    video_id: UUID = Field(default_factory=uuid4)
+    source_path: Path
+
+    frame_count: int = Field(gt=0)
+    initial_scenes: list[InitialScene] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def width(self) -> int:
+        return 1280
+
+    @computed_field
+    @property
+    def height(self) -> int:
+        return 720
+
+    @computed_field
+    @property
+    def fps(self) -> int:
+        return 30
+
+    @computed_field
+    @property
+    def duration_sec(self) -> float:
+        return self.frame_count / self.fps
