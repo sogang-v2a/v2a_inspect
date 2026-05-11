@@ -7,9 +7,10 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from v2a_inspect_server.models import (
-    Sam3ExtractRequest,
-    EmbedRequest,
+    DinoV2EmbedImagesRequest,
     LabelScoreRequest,
+    Sam3SegmentImageRequest,
+    Sam3TrackVideoRequest,
 )
 from v2a_inspect_server.inference.sam3 import Sam3InferenceClient
 from v2a_inspect_server.inference.embed import DinoV2InferenceClient
@@ -63,26 +64,38 @@ async def upload_video(file: UploadFile = File(...)):
     return {"video_id": video_id}
 
 
-@app.post("/infer/sam3")
-async def infer_sam3(request: Sam3ExtractRequest):
+@app.post("/infer/sam3/track-video")
+async def track_video_sam3(request: Sam3TrackVideoRequest):
     if sam3_client is None:
         raise HTTPException(status_code=503, detail="SAM3 client not initialized")
     try:
-        return sam3_client.process(request)
+        return sam3_client.track_video(request)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/infer/embed")
-async def embed_video(request: EmbedRequest):
+@app.post("/infer/sam3/segment-image")
+async def segment_image_sam3(request: Sam3SegmentImageRequest):
+    if sam3_client is None:
+        raise HTTPException(status_code=503, detail="SAM3 client not initialized")
+    try:
+        return sam3_client.segment_image(request)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/infer/dinov2/embed-images")
+async def embed_images_dinov2(request: DinoV2EmbedImagesRequest):
     if embed_client is None:
         raise HTTPException(
             status_code=503, detail="DINOv2 embedding client not initialized"
         )
     try:
-        return embed_client.embed(request)
+        return embed_client.embed_images(request)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

@@ -10,55 +10,82 @@ class PointPrompt(BaseModel):
     is_positive: bool = True
 
 
-class VideoSeed(BaseModel):
-    timestamp_seconds: float
+class Sam3Seed(BaseModel):
+    timestamp_seconds: float | None = None
     bbox_xyxy: tuple[float, float, float, float] | None = None
     points: list[PointPrompt] | None = None
     prompt: str | None = None
     label_hint: str | None = None
 
     @model_validator(mode="after")
-    def check_exclusivity(self) -> Self:
-        has_spatial = self.bbox_xyxy is not None or (
-            self.points is not None and len(self.points) > 0
-        )
+    def check_prompt(self) -> Self:
+        has_spatial = self.bbox_xyxy is not None or bool(self.points)
         has_prompt = self.prompt is not None
 
         if has_spatial and has_prompt:
-            raise ValueError(
-                "Cannot combine text prompt with bbox/points in the same seed."
-            )
+            raise ValueError("Cannot combine text prompt with bbox/points in one seed.")
         if not has_spatial and not has_prompt:
-            raise ValueError(
-                "Must provide either a text prompt, or spatial inputs (bbox/points)."
-            )
-
+            raise ValueError("Must provide either prompt, bbox, or points.")
         return self
 
 
-class Sam3ExtractRequest(BaseModel):
+class Sam3TrackVideoRequest(BaseModel):
     video_id: str
-    seeds: list[VideoSeed]
-
-    # Inference params
+    seeds: list[Sam3Seed]
+    sample_fps: float = 1.0
     score_threshold: float = 0.35
     min_points: int = 2
     high_confidence_threshold: float = 0.45
     match_threshold: float = 0.45
 
 
-class TrackPoint(BaseModel):
+class Sam3SegmentImageRequest(BaseModel):
+    image_path: str | None = None
+    video_id: str | None = None
+    timestamp_seconds: float | None = None
+    seeds: list[Sam3Seed]
+    score_threshold: float = 0.35
+    max_masks: int = 5
+
+    @model_validator(mode="after")
+    def check_image_source(self) -> Self:
+        has_image_path = self.image_path is not None
+        has_video_frame = (
+            self.video_id is not None and self.timestamp_seconds is not None
+        )
+
+        if has_image_path == has_video_frame:
+            raise ValueError(
+                "Provide exactly one image source: image_path or video_id with timestamp_seconds."
+            )
+        return self
+
+
+class Sam3Mask(BaseModel):
+    mask_id: str
+    bbox_xyxy: tuple[float, float, float, float]
+    mask_rle: str | None = None
+    confidence: float
+    source_seed_index: int | None = None
+
+
+class Sam3TrackPoint(BaseModel):
     timestamp_seconds: float
     bbox_xyxy: tuple[float, float, float, float] | None = None
     mask_rle: str | None = None
     confidence: float
 
 
-class EntityTrack(BaseModel):
+class Sam3Track(BaseModel):
     track_id: str
-    points: list[TrackPoint]
+    seed_index: int
+    points: list[Sam3TrackPoint]
     confidence: float
 
 
-class Sam3ExtractResponse(BaseModel):
-    tracks: list[EntityTrack]
+class Sam3TrackVideoResponse(BaseModel):
+    tracks: list[Sam3Track]
+
+
+class Sam3SegmentImageResponse(BaseModel):
+    masks: list[Sam3Mask]
