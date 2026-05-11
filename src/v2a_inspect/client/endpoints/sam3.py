@@ -18,7 +18,6 @@ class SAM3Client(BaseClient):
         self,
         video_id: str,
         seeds: list[Sam3Seed],
-        sample_fps: float = 1.0,
         score_threshold: float = 0.35,
         min_points: int = 2,
         high_confidence_threshold: float = 0.45,
@@ -27,7 +26,6 @@ class SAM3Client(BaseClient):
         request = Sam3TrackVideoRequest(
             video_id=video_id,
             seeds=seeds,
-            sample_fps=sample_fps,
             score_threshold=score_threshold,
             min_points=min_points,
             high_confidence_threshold=high_confidence_threshold,
@@ -43,14 +41,14 @@ class SAM3Client(BaseClient):
         seeds: list[Sam3Seed],
         image_path: str | None = None,
         video_id: str | None = None,
-        timestamp_seconds: float | None = None,
+        frame_index: int | None = None,
         score_threshold: float = 0.35,
         max_masks: int = 5,
     ) -> Sam3SegmentImageResponse:
         request = Sam3SegmentImageRequest(
             image_path=image_path,
             video_id=video_id,
-            timestamp_seconds=timestamp_seconds,
+            frame_index=frame_index,
             seeds=seeds,
             score_threshold=score_threshold,
             max_masks=max_masks,
@@ -62,22 +60,20 @@ class SAM3Client(BaseClient):
 
     @staticmethod
     def seed_from_bbox(
-        bbox: tuple[float, float, float, float], timestamp_seconds: float | None = None
+        bbox: tuple[float, float, float, float], frame_index: int | None = None
     ) -> Sam3Seed:
-        return Sam3Seed(timestamp_seconds=timestamp_seconds, bbox_xyxy=bbox)
+        return Sam3Seed(frame_index=frame_index, bbox_xyxy=bbox)
 
     @staticmethod
-    def seed_from_prompt(
-        prompt: str, timestamp_seconds: float | None = None
-    ) -> Sam3Seed:
-        return Sam3Seed(timestamp_seconds=timestamp_seconds, prompt=prompt)
+    def seed_from_prompt(prompt: str, frame_index: int | None = None) -> Sam3Seed:
+        return Sam3Seed(frame_index=frame_index, prompt=prompt)
 
     @staticmethod
     def seed_from_points(
-        points: list[tuple[float, float, bool]], timestamp_seconds: float | None = None
+        points: list[tuple[float, float, bool]], frame_index: int | None = None
     ) -> Sam3Seed:
         return Sam3Seed(
-            timestamp_seconds=timestamp_seconds,
+            frame_index=frame_index,
             points=[
                 PointPrompt(x=x, y=y, is_positive=is_positive)
                 for x, y, is_positive in points

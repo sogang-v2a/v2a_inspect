@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from .sam3 import Sam3TrackPoint
+
+from .embeddings import EncodedImageInput
 
 
 class LabelScoreRequest(BaseModel):
-    video_id: str
     track_id: str | None = None
-    points: list[Sam3TrackPoint]
+    images: list[EncodedImageInput]
     labels: list[str]
 
 

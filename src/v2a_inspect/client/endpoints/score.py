@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import List, Optional
 from .base import BaseClient
+from ..models.embeddings import EncodedImageInput
 from ..models.labels import LabelScoreRequest, LabelScoreResponse
-from ..models.sam3 import Sam3TrackPoint
 
 
 class ScoringClient(BaseClient):
@@ -11,21 +10,17 @@ class ScoringClient(BaseClient):
 
     async def score(
         self,
-        video_id: str,
-        labels: List[str],
-        track_id: Optional[str] = None,
-        points: Optional[List[Sam3TrackPoint]] = None,
+        images: list[EncodedImageInput],
+        labels: list[str],
+        track_id: str | None = None,
     ) -> LabelScoreResponse:
         """
-        Score labels for a video or specific track.
+        Score labels for encoded images.
 
         Args:
-            video_id: The ID of the video (from upload).
+            images: Encoded images to score.
             labels: List of text labels to score against.
-            track_id: Optional track ID to score (if None, scores whole video).
-            points: Optional list of points (if track_id is None, points for whole video).
-                   Each point should be a dict with keys: timestamp_seconds, bbox_xyxy (optional), mask_rle (optional), confidence.
-                   Note: Sam3TrackPoint has timestamp_seconds, bbox_xyxy, mask_rle, and confidence.
+            track_id: Optional track ID to include in the response.
 
         Returns:
             LabelScoreResponse containing scores per label.
@@ -33,9 +28,7 @@ class ScoringClient(BaseClient):
         Raises:
             ClientError: If the request fails.
         """
-        request = LabelScoreRequest(
-            video_id=video_id, track_id=track_id, points=points or [], labels=labels
-        )
+        request = LabelScoreRequest(track_id=track_id, images=images, labels=labels)
         response = await self._request(
             "POST", "/infer/score", json=request.model_dump()
         )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import base64
 
 import cv2
 import numpy as np
@@ -11,7 +11,7 @@ from ..models import (
     DinoV2Embedding,
     DinoV2EmbedImagesRequest,
     DinoV2EmbedImagesResponse,
-    DinoV2ImageInput,
+    EncodedImageInput,
 )
 from ..settings import settings
 
@@ -32,7 +32,7 @@ class DinoV2InferenceClient:
     ) -> DinoV2EmbedImagesResponse:
         embeddings = []
         for image_input in request.inputs:
-            image = self._load_image_input(image_input)
+            image = self._decode_image(image_input)
             embedding_scope = "frame"
             if image_input.bbox_xyxy is not None:
                 image = self._crop_image(image, image_input.bbox_xyxy)
@@ -48,42 +48,18 @@ class DinoV2InferenceClient:
             )
         return DinoV2EmbedImagesResponse(embeddings=embeddings)
 
-    def _find_video_path(self, video_id: str) -> Path:
-        for ext in [".mp4", ".mov", ".avi", ".mkv"]:
-            path = settings.upload_dir / f"{video_id}{ext}"
-            if path.exists():
-                return path
-        raise FileNotFoundError(f"Video {video_id} not found")
+    def _decode_image(self, image_input: EncodedImageInput) -> np.ndarray:
+        image_bytes = self._decode_base64(image_input.image_base64)
+        array = np.frombuffer(image_bytes, dtype=np.uint8)
+        image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError(f"Could not decode image {image_input.input_id}")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    def _load_image_input(self, image_input: DinoV2ImageInput) -> np.ndarray:
-        if image_input.image_path is not None:
-            image = cv2.imread(image_input.image_path, cv2.IMREAD_COLOR)
-            if image is None:
-                raise FileNotFoundError(f"Image {image_input.image_path} not found")
-            return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        if image_input.video_id is None or image_input.timestamp_seconds is None:
-            raise ValueError(
-                "video_id and timestamp_seconds are required for video frames"
-            )
-        return self._load_video_frame(
-            image_input.video_id, image_input.timestamp_seconds
-        )
-
-    def _load_video_frame(self, video_id: str, timestamp_seconds: float) -> np.ndarray:
-        video_path = self._find_video_path(video_id)
-        cap = cv2.VideoCapture(str(video_path))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            fps = 30.0
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(timestamp_seconds * fps))
-        ret, frame = cap.read()
-        cap.release()
-        if not ret:
-            raise ValueError(
-                f"Could not read frame at {timestamp_seconds} seconds from video {video_id}"
-            )
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    def _decode_base64(self, encoded: str) -> bytes:
+        if "," in encoded and encoded.startswith("data:"):
+            encoded = encoded.split(",", 1)[1]
+        return base64.b64decode(encoded)
 
     def _crop_image(
         self, image: np.ndarray, bbox_xyxy: tuple[float, float, float, float]

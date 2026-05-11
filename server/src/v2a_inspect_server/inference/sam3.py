@@ -50,17 +50,13 @@ class Sam3InferenceClient:
         self.model.eval()
 
     def track_video(self, request: Sam3TrackVideoRequest) -> Sam3TrackVideoResponse:
-        frames, timestamps = self._sample_video_frames(
-            request.video_id, request.sample_fps
-        )
+        frames = self._load_video_frames(request.video_id)
         tracks: list[Sam3Track] = []
 
         for seed_index, seed in enumerate(request.seeds):
             points: list[Sam3TrackPoint] = []
-            start_time = seed.timestamp_seconds or 0.0
-            start_index = min(
-                range(len(timestamps)),
-                key=lambda index: abs(timestamps[index] - start_time),
+            start_index = max(
+                0, seed.frame_index if seed.frame_index is not None else 0
             )
             last_bbox = seed.bbox_xyxy
 
@@ -92,7 +88,7 @@ class Sam3InferenceClient:
 
                 points.append(
                     Sam3TrackPoint(
-                        timestamp_seconds=timestamps[frame_index],
+                        frame_index=frame_index,
                         bbox_xyxy=best_mask.bbox_xyxy,
                         mask_rle=best_mask.mask_rle,
                         confidence=best_mask.confidence,
@@ -119,7 +115,7 @@ class Sam3InferenceClient:
         image = self._load_request_image(
             image_path=request.image_path,
             video_id=request.video_id,
-            timestamp_seconds=request.timestamp_seconds,
+            frame_index=request.frame_index,
         )
         masks = self._segment_image_array(
             image,
@@ -136,43 +132,28 @@ class Sam3InferenceClient:
                 return path
         raise FileNotFoundError(f"Video {video_id} not found")
 
-    def _sample_video_frames(
-        self, video_id: str, sample_fps: float
-    ) -> tuple[list[np.ndarray], list[float]]:
-        if sample_fps <= 0:
-            raise ValueError("sample_fps must be greater than 0")
-
+    def _load_video_frames(self, video_id: str) -> list[np.ndarray]:
         video_path = self._find_video_path(video_id)
         cap = cv2.VideoCapture(str(video_path))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            fps = 30.0
-
-        step = max(1, round(fps / sample_fps))
         frames: list[np.ndarray] = []
-        timestamps: list[float] = []
-        frame_index = 0
 
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-            if frame_index % step == 0:
-                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                timestamps.append(frame_index / fps)
-            frame_index += 1
+            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         cap.release()
 
         if not frames:
-            raise ValueError(f"No frames could be sampled from video {video_id}")
-        return frames, timestamps
+            raise ValueError(f"No frames could be loaded from video {video_id}")
+        return frames
 
     def _load_request_image(
         self,
         *,
         image_path: str | None,
         video_id: str | None,
-        timestamp_seconds: float | None,
+        frame_index: int | None,
     ) -> np.ndarray:
         if image_path is not None:
             image = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -180,24 +161,21 @@ class Sam3InferenceClient:
                 raise FileNotFoundError(f"Image {image_path} not found")
             return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        if video_id is None or timestamp_seconds is None:
-            raise ValueError(
-                "video_id and timestamp_seconds are required for video frames"
-            )
-        return self._load_video_frame(video_id, timestamp_seconds)
+        if video_id is None or frame_index is None:
+            raise ValueError("video_id and frame_index are required for video frames")
+        return self._load_video_frame(video_id, frame_index)
 
-    def _load_video_frame(self, video_id: str, timestamp_seconds: float) -> np.ndarray:
+    def _load_video_frame(self, video_id: str, frame_index: int) -> np.ndarray:
+        if frame_index < 0:
+            raise ValueError("frame_index must be greater than or equal to 0")
         video_path = self._find_video_path(video_id)
         cap = cv2.VideoCapture(str(video_path))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            fps = 30.0
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(timestamp_seconds * fps))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
         ret, frame = cap.read()
         cap.release()
         if not ret:
             raise ValueError(
-                f"Could not read frame at {timestamp_seconds} seconds from video {video_id}"
+                f"Could not read frame {frame_index} from video {video_id}"
             )
         return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 

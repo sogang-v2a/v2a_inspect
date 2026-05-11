@@ -11,7 +11,7 @@ class PointPrompt(BaseModel):
 
 
 class Sam3Seed(BaseModel):
-    timestamp_seconds: float | None = None
+    frame_index: int | None = None
     bbox_xyxy: tuple[float, float, float, float] | None = None
     points: list[PointPrompt] | None = None
     prompt: str | None = None
@@ -32,7 +32,6 @@ class Sam3Seed(BaseModel):
 class Sam3TrackVideoRequest(BaseModel):
     video_id: str
     seeds: list[Sam3Seed]
-    sample_fps: float = 1.0
     score_threshold: float = 0.35
     min_points: int = 2
     high_confidence_threshold: float = 0.45
@@ -42,7 +41,7 @@ class Sam3TrackVideoRequest(BaseModel):
 class Sam3SegmentImageRequest(BaseModel):
     image_path: str | None = None
     video_id: str | None = None
-    timestamp_seconds: float | None = None
+    frame_index: int | None = None
     seeds: list[Sam3Seed]
     score_threshold: float = 0.35
     max_masks: int = 5
@@ -50,13 +49,11 @@ class Sam3SegmentImageRequest(BaseModel):
     @model_validator(mode="after")
     def check_image_source(self) -> Self:
         has_image_path = self.image_path is not None
-        has_video_frame = (
-            self.video_id is not None and self.timestamp_seconds is not None
-        )
+        has_video_frame = self.video_id is not None and self.frame_index is not None
 
         if has_image_path == has_video_frame:
             raise ValueError(
-                "Provide exactly one image source: image_path or video_id with timestamp_seconds."
+                "Provide exactly one image source: image_path or video_id with frame_index."
             )
         return self
 
@@ -70,7 +67,7 @@ class Sam3Mask(BaseModel):
 
 
 class Sam3TrackPoint(BaseModel):
-    timestamp_seconds: float
+    frame_index: int
     bbox_xyxy: tuple[float, float, float, float] | None = None
     mask_rle: str | None = None
     confidence: float

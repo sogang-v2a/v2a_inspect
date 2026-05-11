@@ -5,6 +5,7 @@ from .embeddings import (
     DinoV2EmbedImagesRequest,
     DinoV2EmbedImagesResponse,
     DinoV2ImageInput,
+    EncodedImageInput,
 )
 from .labels import (
     LabelScore,
@@ -28,6 +29,7 @@ __all__ = [
     "DinoV2EmbedImagesRequest",
     "DinoV2EmbedImagesResponse",
     "DinoV2ImageInput",
+    "EncodedImageInput",
     "LabelScore",
     "LabelScoreRequest",
     "LabelScoreResponse",
