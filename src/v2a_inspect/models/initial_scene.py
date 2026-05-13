@@ -5,6 +5,7 @@ from pydantic import Field, computed_field
 from .base import SchemaModel
 from .initial_analysis import InitialSceneAnalysis
 from .keyframe import Keyframe
+from .tracking import SceneTrack
 
 
 class InitialScene(SchemaModel):
@@ -26,6 +27,7 @@ class InitialScene(SchemaModel):
 
     keyframes: list[Keyframe] = Field(default_factory=list)
     initial_analysis: InitialSceneAnalysis | None = None
+    scene_tracks: list[SceneTrack] = Field(default_factory=list)
 
     @computed_field
     @property

@@ -1,6 +1,7 @@
 from .base import SchemaModel
 from .initial_analysis import InitialSceneAnalysis, ObjectSeed
-from .initial_scene import InitialScene, Keyframe
+from .initial_scene import InitialScene
+from .keyframe import Keyframe
 from .tracking import MaskRef, SceneTrack, SceneTrackPoint
 from .video import VideoAsset
 

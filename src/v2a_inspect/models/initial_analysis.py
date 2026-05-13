@@ -3,8 +3,6 @@ from uuid import UUID, uuid4
 from pydantic import Field
 
 from .base import SchemaModel
-from .keyframe import Keyframe
-from .tracking import SceneTrack
 
 
 class ObjectSeed(SchemaModel):
@@ -21,7 +19,6 @@ class ObjectSeed(SchemaModel):
     tracking_prompt: str | None = None
 
     notes: str | None = None
-    scene_tracks: list[SceneTrack] = Field(default_factory=list)
 
 
 class InitialSceneAnalysis(SchemaModel):
@@ -33,8 +30,6 @@ class InitialSceneAnalysis(SchemaModel):
     """
 
     analysis_id: UUID = Field(default_factory=uuid4)
-
-    keyframes: list[Keyframe] = Field(default_factory=list)
 
     rough_description: str
     object_seeds: list[ObjectSeed] = Field(default_factory=list)

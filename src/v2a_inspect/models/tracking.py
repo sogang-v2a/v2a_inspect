@@ -6,6 +6,7 @@ from pydantic import Field, computed_field, model_validator
 from typing_extensions import Self
 
 from .base import SchemaModel
+from .initial_analysis import ObjectSeed
 
 
 class MaskRef(SchemaModel):
@@ -63,13 +64,15 @@ class SceneTrack(SchemaModel):
     SAM3 tracking result inside one InitialScene.
 
     A SceneTrack:
-    - is stored under an ObjectSeed
+    - is owned by InitialScene
+    - is usually produced from one ObjectSeed
     - contains tracking results for every frame in its visible interval
     - is not a global object identity
     """
 
     scene_track_id: UUID = Field(default_factory=uuid4)
 
+    source_object_seed: ObjectSeed | None = None
     tracking_prompt: str
 
     points: list[SceneTrackPoint] = Field(default_factory=list)
