@@ -55,6 +55,8 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
         "0",
         "-crf",
         "24",
+        "-g",
+        str(PREPARED_FPS),
         "-pix_fmt",
         "yuv420p",
         str(output_path),
