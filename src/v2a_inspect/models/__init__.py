@@ -4,6 +4,12 @@ from .initial_scene import InitialScene
 from .keyframe import Keyframe
 from .tracking import MaskRef, SceneTrack, SceneTrackPoint
 from .video import VideoAsset
+from .visual_identity import (
+    TrackLinkCandidate,
+    VisualIdentityLayer,
+    VisualObject,
+    VisualPresence,
+)
 
 __all__ = [
     "SchemaModel",
@@ -15,4 +21,8 @@ __all__ = [
     "MaskRef",
     "SceneTrackPoint",
     "SceneTrack",
+    "TrackLinkCandidate",
+    "VisualPresence",
+    "VisualObject",
+    "VisualIdentityLayer",
 ]
