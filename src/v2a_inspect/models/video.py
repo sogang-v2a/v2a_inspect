@@ -5,6 +5,7 @@ from pydantic import Field, computed_field
 
 from .base import SchemaModel
 from .initial_scene import InitialScene
+from .sound_timeline import SoundTimeline
 from .visual_identity import VisualIdentityLayer
 
 
@@ -26,6 +27,7 @@ class VideoAsset(SchemaModel):
     frame_count: int = Field(gt=0)
     initial_scenes: list[InitialScene] = Field(default_factory=list)
     visual_identity_layer: VisualIdentityLayer | None = None
+    sound_timeline: SoundTimeline | None = None
 
     @computed_field
     @property
