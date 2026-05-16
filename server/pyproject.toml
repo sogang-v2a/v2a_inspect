@@ -23,9 +23,12 @@ dependencies = [
   "pydantic-settings>=2.13.1",
   "fastapi>=0.136.1",
   "uvicorn[standard]>=0.46.0",
-  "opencv-python-headless>=4.13.0.92",
+  "opencv-python-headless>=4.11,<4.12",
+  "sam3 @ git+https://github.com/facebookresearch/sam3.git",
   "transformers>=5.8.1",
   "python-multipart>=0.0.28",
+  "pycocotools>=2.0.11",
+  "psutil>=7.2.2",
 ]
 
 [project.scripts]

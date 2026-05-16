@@ -9,7 +9,11 @@ class ServerSettings(BaseSettings):
     upload_dir: Path = Path(os.getenv("V2A_UPLOAD_DIR", "/tmp/v2a_uploads"))
     host: str = "127.0.0.1"
     port: int = 8080
-    sam3_model_id: str = "facebook/sam3"
+    sam31_max_num_objects: int = 16
+    sam31_use_fa3: bool = True
+    sam31_use_rope_real: bool = True
+    sam31_compile: bool = False
+    sam31_warm_up: bool = False
     embedding_model_id: str = "facebook/dinov2-base"
     label_model_id: str = "google/siglip2-base-patch16-224"
 

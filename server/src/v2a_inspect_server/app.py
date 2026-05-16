@@ -31,6 +31,8 @@ async def lifespan(app: FastAPI):
     score_client = Siglip2InferenceClient()
     yield
     # Cleanup on shutdown
+    if sam3_client is not None:
+        sam3_client.close()
     sam3_client = embed_client = score_client = None
 
 
