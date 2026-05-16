@@ -238,7 +238,7 @@ class Sam3InferenceClient:
                 images=image,
                 input_points=input_points,
                 input_labels=input_labels,
-                input_boxes=[[[list(seed.bbox_xyxy)]]],
+                input_boxes=[[list(seed.bbox_xyxy)]],
                 return_tensors="pt",
             )
         if input_points is not None:
@@ -251,7 +251,7 @@ class Sam3InferenceClient:
         if seed.bbox_xyxy is not None:
             return self.processor(
                 images=image,
-                input_boxes=[[[list(seed.bbox_xyxy)]]],
+                input_boxes=[[list(seed.bbox_xyxy)]],
                 return_tensors="pt",
             )
 
