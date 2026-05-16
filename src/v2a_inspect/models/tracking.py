@@ -14,13 +14,13 @@ class MaskRef(SchemaModel):
     Reference to a segmentation mask for one frame.
 
     The mask can be stored either:
-    - inline as an RLE string
+    - inline as a compressed COCO RLE JSON string
     - externally as a file path
     """
 
     mask_id: UUID = Field(default_factory=uuid4)
 
-    encoding: Literal["rle"] = "rle"
+    encoding: Literal["coco_rle"] = "coco_rle"
     rle: str | None = None
     path: Path | None = None
 
@@ -30,7 +30,7 @@ class MaskRef(SchemaModel):
         has_path = self.path is not None
 
         if has_rle == has_path:
-            raise ValueError("Provide exactly one mask storage: rle or path.")
+            raise ValueError("Provide exactly one mask storage: COCO RLE or path.")
 
         return self
 

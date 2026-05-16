@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
 
@@ -61,7 +61,10 @@ class Sam3SegmentImageRequest(BaseModel):
 class Sam3Mask(BaseModel):
     mask_id: str
     bbox_xyxy: tuple[float, float, float, float]
-    mask_rle: str | None = None
+    mask_rle: str | None = Field(
+        default=None,
+        description="Compressed COCO RLE JSON payload.",
+    )
     confidence: float
     source_seed_index: int | None = None
 
@@ -69,7 +72,10 @@ class Sam3Mask(BaseModel):
 class Sam3TrackPoint(BaseModel):
     frame_index: int
     bbox_xyxy: tuple[float, float, float, float] | None = None
-    mask_rle: str | None = None
+    mask_rle: str | None = Field(
+        default=None,
+        description="Compressed COCO RLE JSON payload.",
+    )
     confidence: float
 
 
