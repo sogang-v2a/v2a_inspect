@@ -14,7 +14,7 @@ name = "v2a-inspect"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<=3.14"
 dependencies = [
     "dotenv>=0.9.9",
     "langchain>=1.2.12",
