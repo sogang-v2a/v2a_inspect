@@ -12,7 +12,7 @@ class ServerSettings(BaseSettings):
     sam31_max_num_objects: int = 4
     sam31_use_fa3: bool = False
     sam31_use_rope_real: bool = True
-    sam31_compile: bool = True
+    sam31_compile: bool = False
     sam31_warm_up: bool = False
     embedding_model_id: str = "facebook/dinov2-base"
     label_model_id: str = "google/siglip2-base-patch16-224"
