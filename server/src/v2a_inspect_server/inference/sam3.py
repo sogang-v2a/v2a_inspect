@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import time
@@ -9,6 +10,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+from pycocotools import mask as mask_utils
 import torch
 from sam3.model_builder import build_sam3_multiplex_video_predictor
 from torchvision.ops import masks_to_boxes
@@ -250,7 +252,7 @@ class Sam3InferenceClient:
         ):
             frame_index = int(response["frame_index"])
             outputs = response["outputs"]
-            for obj_id, bbox_xyxy, confidence in self._iter_output_objects(
+            for obj_id, bbox_xyxy, confidence, mask_rle in self._iter_output_objects(
                 outputs,
                 width=width,
                 height=height,
@@ -259,6 +261,7 @@ class Sam3InferenceClient:
                     Sam3TrackPoint(
                         frame_index=frame_index,
                         bbox_xyxy=bbox_xyxy,
+                        mask_rle=mask_rle,
                         confidence=confidence,
                     )
                 )
@@ -287,7 +290,7 @@ class Sam3InferenceClient:
         max_masks: int,
     ) -> list[Sam3Mask]:
         masks = []
-        for obj_id, bbox_xyxy, confidence in self._iter_output_objects(
+        for obj_id, bbox_xyxy, confidence, mask_rle in self._iter_output_objects(
             outputs,
             width=width,
             height=height,
@@ -296,6 +299,7 @@ class Sam3InferenceClient:
                 Sam3Mask(
                     mask_id=str(obj_id),
                     bbox_xyxy=bbox_xyxy,
+                    mask_rle=mask_rle,
                     confidence=confidence,
                     source_seed_index=obj_id,
                 )
@@ -306,7 +310,7 @@ class Sam3InferenceClient:
 
     def _iter_output_objects(
         self, outputs: dict[str, Any], *, width: int, height: int
-    ) -> list[tuple[int, tuple[float, float, float, float], float]]:
+    ) -> list[tuple[int, tuple[float, float, float, float], float, str | None]]:
         obj_ids = self._to_python_list(outputs.get("out_obj_ids", []))
         boxes_xywh = self._to_python_list(outputs.get("out_boxes_xywh", []))
         probabilities = self._to_python_list(outputs.get("out_probs", []))
@@ -315,6 +319,7 @@ class Sam3InferenceClient:
         objects = []
         for index, obj_id in enumerate(obj_ids):
             bbox_xyxy = None
+            mask_rle = None
             if index < len(boxes_xywh):
                 bbox_xyxy = self._relative_xywh_to_absolute_xyxy(
                     boxes_xywh[index],
@@ -324,6 +329,25 @@ class Sam3InferenceClient:
             elif binary_masks is not None:
                 bbox_xyxy = self._mask_to_bbox_xyxy(binary_masks[index])
 
+            if binary_masks is not None:
+                mask_tensor = binary_masks[index]
+                if not isinstance(mask_tensor, torch.Tensor):
+                    mask_tensor = torch.as_tensor(np.asarray(mask_tensor))
+                mask_array = mask_tensor.detach().cpu().bool().numpy().squeeze()
+                if mask_array.ndim == 2:
+                    encoded_mask = mask_utils.encode(
+                        np.asfortranarray(mask_array.astype(np.uint8))
+                    )
+                    encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
+                    mask_rle = json.dumps(
+                        {
+                            "encoding": "coco_rle",
+                            "size": encoded_mask["size"],
+                            "counts": encoded_mask["counts"],
+                        },
+                        separators=(",", ":"),
+                    )
+
             if bbox_xyxy is None:
                 continue
 
@@ -331,7 +355,7 @@ class Sam3InferenceClient:
             if index < len(probabilities):
                 confidence = float(probabilities[index])
 
-            objects.append((int(obj_id), bbox_xyxy, confidence))
+            objects.append((int(obj_id), bbox_xyxy, confidence, mask_rle))
 
         return objects
 
