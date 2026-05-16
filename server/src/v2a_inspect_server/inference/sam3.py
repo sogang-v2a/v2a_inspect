@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -156,10 +158,26 @@ class Sam3InferenceClient:
         return masks
 
     def _start_session(self, resource_path: Path) -> str:
-        response = self.predictor.handle_request(
-            request={"type": "start_session", "resource_path": str(resource_path)}
-        )
-        return str(response["session_id"])
+        init_kwargs: dict[str, Any] = {
+            "resource_path": str(resource_path),
+            "offload_video_to_cpu": False,
+        }
+        if hasattr(self.predictor, "async_loading_frames"):
+            init_kwargs["async_loading_frames"] = self.predictor.async_loading_frames
+        if hasattr(self.predictor, "video_loader_type"):
+            init_kwargs["video_loader_type"] = self.predictor.video_loader_type
+
+        # The current SAM3.1 request dispatcher passes offload_state_to_cpu to
+        # the multiplex initializer, but that initializer no longer accepts it.
+        inference_state = self.predictor.model.init_state(**init_kwargs)
+        session_id = str(uuid.uuid4())
+        self.predictor._all_inference_states[session_id] = {
+            "state": inference_state,
+            "session_id": session_id,
+            "start_time": time.time(),
+            "last_use_time": time.time(),
+        }
+        return session_id
 
     def _close_session(self, session_id: str) -> None:
         self.predictor.handle_request(
