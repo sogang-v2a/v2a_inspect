@@ -43,6 +43,8 @@ v2a-inspect = "v2a_inspect.cli:main"
 
 [dependency-groups]
 dev = [
+    "ipywidgets>=8.1.8",
+    "jupyter>=1.1.1",
     "pre-commit>=4.5.1",
     "ruff>=0.15.6",
     "ty>=0.0.26",
