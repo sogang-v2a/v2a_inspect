@@ -32,10 +32,34 @@ class Sam3Seed(BaseModel):
 class Sam3TrackVideoRequest(BaseModel):
     video_id: str
     seeds: list[Sam3Seed]
+    start_frame_index: int | None = Field(default=None, ge=0)
+    end_frame_index: int | None = Field(default=None, gt=0)
     score_threshold: float = 0.35
     min_points: int = 2
     high_confidence_threshold: float = 0.45
     match_threshold: float = 0.45
+
+    @model_validator(mode="after")
+    def check_frame_range(self) -> Self:
+        has_start = self.start_frame_index is not None
+        has_end = self.end_frame_index is not None
+        if has_start != has_end:
+            raise ValueError(
+                "Provide both start_frame_index and end_frame_index, or neither."
+            )
+        if self.start_frame_index is None or self.end_frame_index is None:
+            return self
+        if self.end_frame_index <= self.start_frame_index:
+            raise ValueError("end_frame_index must be greater than start_frame_index.")
+        for seed in self.seeds:
+            if seed.frame_index is None:
+                continue
+            if not self.start_frame_index <= seed.frame_index < self.end_frame_index:
+                raise ValueError(
+                    "Seed frame_index must be inside "
+                    "[start_frame_index, end_frame_index)."
+                )
+        return self
 
 
 class Sam3SegmentImageRequest(BaseModel):

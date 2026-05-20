@@ -18,6 +18,8 @@ class SAM3Client(BaseClient):
         self,
         video_id: str,
         seeds: list[Sam3Seed],
+        start_frame_index: int | None = None,
+        end_frame_index: int | None = None,
         score_threshold: float = 0.35,
         min_points: int = 2,
         high_confidence_threshold: float = 0.45,
@@ -26,6 +28,8 @@ class SAM3Client(BaseClient):
         request = Sam3TrackVideoRequest(
             video_id=video_id,
             seeds=seeds,
+            start_frame_index=start_frame_index,
+            end_frame_index=end_frame_index,
             score_threshold=score_threshold,
             min_points=min_points,
             high_confidence_threshold=high_confidence_threshold,

@@ -46,30 +46,77 @@ class Sam3InferenceClient:
 
     def track_video(self, request: Sam3TrackVideoRequest) -> Sam3TrackVideoResponse:
         video_path = self._find_video_path(request.video_id)
-        width, height = self._read_video_size(video_path)
 
+        if (
+            request.start_frame_index is not None
+            and request.end_frame_index is not None
+        ):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                frame_dir = Path(temp_dir)
+                width, height = self._write_video_frame_range_to_directory(
+                    video_path,
+                    start_frame_index=request.start_frame_index,
+                    end_frame_index=request.end_frame_index,
+                    frame_dir=frame_dir,
+                )
+                tracks = self._track_resource(
+                    resource_path=frame_dir,
+                    seeds=self._localize_seed_frame_indexes(
+                        request.seeds,
+                        start_frame_index=request.start_frame_index,
+                    ),
+                    width=width,
+                    height=height,
+                    output_prob_thresh=request.score_threshold,
+                    frame_index_offset=request.start_frame_index,
+                )
+            return Sam3TrackVideoResponse(tracks=tracks)
+
+        width, height = self._read_video_size(video_path)
+        tracks = self._track_resource(
+            resource_path=video_path,
+            seeds=request.seeds,
+            width=width,
+            height=height,
+            output_prob_thresh=request.score_threshold,
+            frame_index_offset=0,
+        )
+
+        return Sam3TrackVideoResponse(tracks=tracks)
+
+    def _track_resource(
+        self,
+        *,
+        resource_path: Path,
+        seeds: list[Sam3Seed],
+        width: int,
+        height: int,
+        output_prob_thresh: float,
+        frame_index_offset: int,
+    ) -> list[Sam3Track]:
         with self._lock:
-            session_id = self._start_session(video_path)
+            session_id = self._start_session(resource_path)
             try:
-                for seed_index, seed in enumerate(request.seeds):
+                for seed_index, seed in enumerate(seeds):
                     self._add_seed_prompt(
                         session_id=session_id,
                         seed=seed,
                         seed_index=seed_index,
                         width=width,
                         height=height,
-                        output_prob_thresh=request.score_threshold,
+                        output_prob_thresh=output_prob_thresh,
                     )
                 tracks = self._propagate_tracks(
                     session_id,
                     width=width,
                     height=height,
-                    output_prob_thresh=request.score_threshold,
+                    output_prob_thresh=output_prob_thresh,
+                    frame_index_offset=frame_index_offset,
                 )
             finally:
                 self._close_session(session_id)
 
-        return Sam3TrackVideoResponse(tracks=tracks)
+        return tracks
 
     def segment_image(
         self, request: Sam3SegmentImageRequest
@@ -240,6 +287,7 @@ class Sam3InferenceClient:
         width: int,
         height: int,
         output_prob_thresh: float,
+        frame_index_offset: int,
     ) -> list[Sam3Track]:
         points_by_obj_id: dict[int, list[Sam3TrackPoint]] = {}
 
@@ -250,7 +298,7 @@ class Sam3InferenceClient:
                 "output_prob_thresh": output_prob_thresh,
             }
         ):
-            frame_index = int(response["frame_index"])
+            frame_index = int(response["frame_index"]) + frame_index_offset
             outputs = response["outputs"]
             for obj_id, bbox_xyxy, confidence, mask_rle in self._iter_output_objects(
                 outputs,
@@ -280,6 +328,24 @@ class Sam3InferenceClient:
                 )
             )
         return tracks
+
+    def _localize_seed_frame_indexes(
+        self,
+        seeds: list[Sam3Seed],
+        *,
+        start_frame_index: int,
+    ) -> list[Sam3Seed]:
+        localized_seeds = []
+        for seed in seeds:
+            if seed.frame_index is None:
+                localized_seeds.append(seed)
+                continue
+            localized_seeds.append(
+                seed.model_copy(
+                    update={"frame_index": seed.frame_index - start_frame_index}
+                )
+            )
+        return localized_seeds
 
     def _outputs_to_masks(
         self,
@@ -396,6 +462,54 @@ class Sam3InferenceClient:
         frame_path = frame_dir / "00000.jpg"
         cv2.imwrite(str(frame_path), frame)
         height, width = frame.shape[:2]
+        return width, height
+
+    def _write_video_frame_range_to_directory(
+        self,
+        video_path: Path,
+        *,
+        start_frame_index: int,
+        end_frame_index: int,
+        frame_dir: Path,
+    ) -> tuple[int, int]:
+        if start_frame_index < 0:
+            raise ValueError("start_frame_index must be greater than or equal to 0")
+        if end_frame_index <= start_frame_index:
+            raise ValueError("end_frame_index must be greater than start_frame_index")
+
+        cap = cv2.VideoCapture(str(video_path))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
+        try:
+            width = 0
+            height = 0
+            written_frame_count = 0
+            frame_index = start_frame_index
+            while frame_index < end_frame_index:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frame_path = frame_dir / f"{written_frame_count:05d}.jpg"
+                if not cv2.imwrite(str(frame_path), frame):
+                    raise ValueError(f"Could not write frame image: {frame_path}")
+
+                if written_frame_count == 0:
+                    height, width = frame.shape[:2]
+
+                written_frame_count += 1
+                frame_index += 1
+        finally:
+            cap.release()
+
+        expected_frame_count = end_frame_index - start_frame_index
+        if written_frame_count != expected_frame_count:
+            raise ValueError(
+                "Could not read requested frame range "
+                f"[{start_frame_index}, {end_frame_index}) from {video_path}; "
+                f"wrote {written_frame_count} of {expected_frame_count} frames"
+            )
+        if width <= 0 or height <= 0:
+            raise ValueError(f"Could not read video dimensions from {video_path}")
         return width, height
 
     def _relative_points(
