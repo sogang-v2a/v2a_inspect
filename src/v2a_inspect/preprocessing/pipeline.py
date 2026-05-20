@@ -6,6 +6,7 @@ from v2a_inspect.models import VideoAsset
 
 from .keyframes import extract_keyframes_for_initial_scenes
 from .scenes import detect_initial_scenes
+from .seed_extraction import analyze_initial_scenes
 from .video import prepare_video
 
 
@@ -14,6 +15,7 @@ def preprocess_video(
     work_dir: Path,
     scene_threshold: float = 27.0,
     max_keyframes_per_scene: int = 20,
+    analyze_scenes: bool = False,
 ) -> VideoAsset:
     """Run the local preprocessing pipeline and return a populated VideoAsset."""
 
@@ -28,4 +30,7 @@ def preprocess_video(
         work_dir,
         max_keyframes_per_scene=max_keyframes_per_scene,
     )
+    if analyze_scenes:
+        initial_scenes = analyze_initial_scenes(initial_scenes)
+
     return video_asset.model_copy(update={"initial_scenes": initial_scenes})
