@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -113,7 +114,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="V2A_INSPECT_",
-        secrets_dir="/run/secrets",
+        secrets_dir="/run/secrets" if os.path.exists("/run/secrets") else None,
     )
 
     @model_validator(mode="after")
