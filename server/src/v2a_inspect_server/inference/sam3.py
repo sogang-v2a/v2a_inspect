@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+from ..settings import settings
+
+if settings.opencv_video_backend.lower() == "ffmpeg":
+    os.environ.setdefault("OPENCV_VIDEOIO_PRIORITY_FFMPEG", "100000")
+if settings.opencv_ffmpeg_capture_options:
+    os.environ.setdefault(
+        "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+        settings.opencv_ffmpeg_capture_options,
+    )
 
 import cv2
 import numpy as np
@@ -26,7 +37,6 @@ from ..models import (
     Sam3TrackVideoRequest,
     Sam3TrackVideoResponse,
 )
-from ..settings import settings
 
 
 class Sam3InferenceClient:
@@ -438,8 +448,39 @@ class Sam3InferenceClient:
                 return path
         raise FileNotFoundError(f"Video {video_id} not found")
 
+    def _open_video_capture(self, video_path: Path) -> cv2.VideoCapture:
+        backend = self._opencv_video_backend()
+        if settings.opencv_ffmpeg_capture_options:
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                settings.opencv_ffmpeg_capture_options
+            )
+
+        if settings.opencv_hw_acceleration:
+            params = [
+                cv2.CAP_PROP_HW_ACCELERATION,
+                cv2.VIDEO_ACCELERATION_ANY,
+                cv2.CAP_PROP_HW_DEVICE,
+                settings.opencv_hw_device,
+            ]
+            cap = cv2.VideoCapture(str(video_path), backend, params)
+            if cap.isOpened():
+                return cap
+            cap.release()
+
+        cap = cv2.VideoCapture(str(video_path), backend)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        raise ValueError(f"Could not open video with OpenCV: {video_path}")
+
+    def _opencv_video_backend(self) -> int:
+        backend = settings.opencv_video_backend.lower()
+        if backend != "ffmpeg":
+            raise ValueError(f"Unsupported OpenCV video backend: {backend}")
+        return cv2.CAP_FFMPEG
+
     def _read_video_size(self, video_path: Path) -> tuple[int, int]:
-        cap = cv2.VideoCapture(str(video_path))
+        cap = self._open_video_capture(video_path)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
@@ -459,7 +500,7 @@ class Sam3InferenceClient:
     ) -> tuple[int, int]:
         if frame_index < 0:
             raise ValueError("frame_index must be greater than or equal to 0")
-        cap = cv2.VideoCapture(str(video_path))
+        cap = self._open_video_capture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
         ret, frame = cap.read()
         cap.release()
@@ -482,7 +523,7 @@ class Sam3InferenceClient:
         if end_frame_index <= start_frame_index:
             raise ValueError("end_frame_index must be greater than start_frame_index")
 
-        cap = cv2.VideoCapture(str(video_path))
+        cap = self._open_video_capture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
         try:
             frames = []
