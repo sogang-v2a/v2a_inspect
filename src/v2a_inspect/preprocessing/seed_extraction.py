@@ -3,10 +3,10 @@ from __future__ import annotations
 import base64
 import mimetypes
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from v2a_inspect.llm import model_manager
 from v2a_inspect.models import InitialScene, InitialSceneAnalysis, Keyframe
@@ -18,39 +18,15 @@ def analyze_initial_scene(
     initial_scene: InitialScene,
     model: BaseChatModel | None = None,
 ) -> InitialScene:
-    prompt = PromptManager().render_prompt(
+    prompt = PromptManager().get_multimodal_prompt(
         "initial_scene_analysis",
-        initial_scene_id=initial_scene.initial_scene_id,
-        start_frame_index=initial_scene.start_frame_index,
-        end_frame_index=initial_scene.end_frame_index,
-        frame_count=initial_scene.frame_count,
-        keyframe_indexes=_keyframe_indexes_text(initial_scene.keyframes),
+        content_blocks=_image_blocks(initial_scene.keyframes),
     )
-    content: list[dict[str, Any]] = [{"type": "text", "text": prompt.user}]
-    for keyframe in initial_scene.keyframes:
-        content.append(_image_block(keyframe.image_path))
-
     chat_model = model or model_manager.large
-    structured_model = chat_model.with_structured_output(InitialSceneAnalysis)
-    messages = [
-        SystemMessage(content=prompt.system),
-        HumanMessage(content=cast(Any, content)),
-    ]
-    config = build_langchain_config(
-        run_name="initial_scene_analysis",
-        tags=["v2a-inspect", "preprocessing", "initial-scene-analysis"],
-        metadata={
-            "initial_scene_id": str(initial_scene.initial_scene_id),
-            "start_frame_index": initial_scene.start_frame_index,
-            "end_frame_index": initial_scene.end_frame_index,
-            "frame_count": initial_scene.frame_count,
-            "keyframe_count": len(initial_scene.keyframes),
-            "keyframe_indexes": _keyframe_indexes(initial_scene.keyframes),
-        },
-    )
-    result = structured_model.invoke(
-        messages,
-        config=config,
+    chain = prompt | chat_model.with_structured_output(InitialSceneAnalysis)
+    result = chain.invoke(
+        _scene_inputs(initial_scene),
+        config=_trace_config(initial_scene),
     )
     analysis = InitialSceneAnalysis.model_validate(result)
     return initial_scene.model_copy(update={"initial_analysis": analysis})
@@ -78,6 +54,38 @@ def _keyframe_indexes(keyframes: list[Keyframe]) -> list[int]:
     for keyframe in keyframes:
         frame_indexes.append(keyframe.frame_index)
     return frame_indexes
+
+
+def _scene_inputs(initial_scene: InitialScene) -> dict[str, Any]:
+    return {
+        "initial_scene_id": initial_scene.initial_scene_id,
+        "start_frame_index": initial_scene.start_frame_index,
+        "end_frame_index": initial_scene.end_frame_index,
+        "frame_count": initial_scene.frame_count,
+        "keyframe_indexes": _keyframe_indexes_text(initial_scene.keyframes),
+    }
+
+
+def _trace_config(initial_scene: InitialScene) -> RunnableConfig | None:
+    return build_langchain_config(
+        run_name="initial_scene_analysis",
+        tags=["v2a-inspect", "preprocessing", "initial-scene-analysis"],
+        metadata={
+            "initial_scene_id": str(initial_scene.initial_scene_id),
+            "start_frame_index": initial_scene.start_frame_index,
+            "end_frame_index": initial_scene.end_frame_index,
+            "frame_count": initial_scene.frame_count,
+            "keyframe_count": len(initial_scene.keyframes),
+            "keyframe_indexes": _keyframe_indexes(initial_scene.keyframes),
+        },
+    )
+
+
+def _image_blocks(keyframes: list[Keyframe]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    for keyframe in keyframes:
+        blocks.append(_image_block(keyframe.image_path))
+    return blocks
 
 
 def _image_block(image_path: Path) -> dict[str, Any]:

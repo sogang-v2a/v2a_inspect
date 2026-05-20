@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from langchain_core.prompts import ChatPromptTemplate
+
 from v2a_inspect.config import settings
-from v2a_inspect.prompts.errors import PromptNotFoundError, PromptRenderError
-
-
-@dataclass(frozen=True)
-class PromptPair:
-    name: str
-    system: str
-    user: str
+from v2a_inspect.prompts.errors import PromptNotFoundError
 
 
 class PromptManager:
@@ -27,32 +21,41 @@ class PromptManager:
     def list_prompts(self) -> list[str]:
         return sorted(self._names_in("system") & self._names_in("user"))
 
-    def get_prompt(self, name: str) -> PromptPair:
+    def get_prompt(self, name: str) -> ChatPromptTemplate:
         normalized = self._normalize_name(name)
         system_path = self._path_for_name("system", normalized)
         user_path = self._path_for_name("user", normalized)
         if not system_path.is_file() or not user_path.is_file():
-            raise PromptNotFoundError(f"Prompt pair not found: {normalized}")
+            raise PromptNotFoundError(f"Prompt template not found: {normalized}")
 
-        return PromptPair(
-            name=normalized,
-            system=system_path.read_text(encoding="utf-8"),
-            user=user_path.read_text(encoding="utf-8"),
+        return ChatPromptTemplate.from_messages(
+            [
+                ("system", system_path.read_text(encoding="utf-8")),
+                ("human", user_path.read_text(encoding="utf-8")),
+            ]
         )
 
-    def render_prompt(self, name: str, **values: Any) -> PromptPair:
-        prompt = self.get_prompt(name)
-        try:
-            return PromptPair(
-                name=prompt.name,
-                system=prompt.system.format(**values),
-                user=prompt.user.format(**values),
-            )
-        except KeyError as exc:
-            missing_key = exc.args[0]
-            raise PromptRenderError(
-                f"Missing value for prompt variable '{missing_key}' in prompt: {name}"
-            ) from exc
+    def get_multimodal_prompt(
+        self,
+        name: str,
+        content_blocks: list[dict[str, Any]],
+    ) -> ChatPromptTemplate:
+        normalized = self._normalize_name(name)
+        system_path = self._path_for_name("system", normalized)
+        user_path = self._path_for_name("user", normalized)
+        if not system_path.is_file() or not user_path.is_file():
+            raise PromptNotFoundError(f"Prompt template not found: {normalized}")
+
+        user_content: list[dict[str, Any]] = [
+            {"type": "text", "text": user_path.read_text(encoding="utf-8")}
+        ]
+        user_content.extend(content_blocks)
+        return ChatPromptTemplate.from_messages(
+            [
+                ("system", system_path.read_text(encoding="utf-8")),
+                ("human", user_content),
+            ]
+        )
 
     def _path_for_name(self, role: str, name: str) -> Path:
         return self.prompts_dir / role / f"{name}{self.file_suffix}"
