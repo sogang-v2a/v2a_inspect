@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from v2a_inspect.llm import model_manager
 from v2a_inspect.models import InitialScene, InitialSceneAnalysis, Keyframe
+from v2a_inspect.observability import build_langchain_config
 from v2a_inspect.prompts.manager import PromptManager
 
 
@@ -31,11 +32,25 @@ def analyze_initial_scene(
 
     chat_model = model or model_manager.large
     structured_model = chat_model.with_structured_output(InitialSceneAnalysis)
+    messages = [
+        SystemMessage(content=prompt.system),
+        HumanMessage(content=cast(Any, content)),
+    ]
+    config = build_langchain_config(
+        run_name="initial_scene_analysis",
+        tags=["v2a-inspect", "preprocessing", "initial-scene-analysis"],
+        metadata={
+            "initial_scene_id": str(initial_scene.initial_scene_id),
+            "start_frame_index": initial_scene.start_frame_index,
+            "end_frame_index": initial_scene.end_frame_index,
+            "frame_count": initial_scene.frame_count,
+            "keyframe_count": len(initial_scene.keyframes),
+            "keyframe_indexes": _keyframe_indexes(initial_scene.keyframes),
+        },
+    )
     result = structured_model.invoke(
-        [
-            SystemMessage(content=prompt.system),
-            HumanMessage(content=cast(Any, content)),
-        ]
+        messages,
+        config=config,
     )
     analysis = InitialSceneAnalysis.model_validate(result)
     return initial_scene.model_copy(update={"initial_analysis": analysis})
@@ -53,9 +68,16 @@ def analyze_initial_scenes(
 
 def _keyframe_indexes_text(keyframes: list[Keyframe]) -> str:
     frame_indexes: list[str] = []
-    for keyframe in keyframes:
-        frame_indexes.append(str(keyframe.frame_index))
+    for frame_index in _keyframe_indexes(keyframes):
+        frame_indexes.append(str(frame_index))
     return ", ".join(frame_indexes)
+
+
+def _keyframe_indexes(keyframes: list[Keyframe]) -> list[int]:
+    frame_indexes: list[int] = []
+    for keyframe in keyframes:
+        frame_indexes.append(keyframe.frame_index)
+    return frame_indexes
 
 
 def _image_block(image_path: Path) -> dict[str, Any]:

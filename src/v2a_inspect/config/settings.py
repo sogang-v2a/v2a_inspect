@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -75,8 +75,54 @@ class Settings(BaseSettings):
             "V2A_LLM_MAX_RETRIES",
         ),
     )
+    langfuse_public_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LANGFUSE_PUBLIC_KEY",
+            "LANGFUSE_PUBLIC_KEY",
+        ),
+    )
+    langfuse_secret_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LANGFUSE_SECRET_KEY",
+            "LANGFUSE_SECRET_KEY",
+        ),
+    )
+    langfuse_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LANGFUSE_BASE_URL",
+            "LANGFUSE_BASE_URL",
+        ),
+    )
+    langfuse_environment: str = Field(
+        default="local",
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LANGFUSE_ENVIRONMENT",
+            "LANGFUSE_ENVIRONMENT",
+        ),
+    )
+    langfuse_release: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LANGFUSE_RELEASE",
+            "LANGFUSE_RELEASE",
+        ),
+    )
 
-    model_config = SettingsConfigDict(env_prefix="V2A_INSPECT_")
+    model_config = SettingsConfigDict(
+        env_prefix="V2A_INSPECT_",
+        secrets_dir="/run/secrets",
+    )
+
+    @model_validator(mode="after")
+    def validate_langfuse_keys(self) -> Settings:
+        if (self.langfuse_public_key is None) != (self.langfuse_secret_key is None):
+            raise ValueError(
+                "Langfuse public and secret keys must either both be set or both be omitted."
+            )
+        return self
 
 
 @lru_cache
