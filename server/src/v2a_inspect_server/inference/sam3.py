@@ -10,6 +10,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+from PIL import Image
 from pycocotools import mask as mask_utils
 import torch
 from sam3.model_builder import build_sam3_multiplex_video_predictor
@@ -51,16 +52,14 @@ class Sam3InferenceClient:
             request.start_frame_index is not None
             and request.end_frame_index is not None
         ):
-            with tempfile.TemporaryDirectory() as temp_dir:
-                frame_dir = Path(temp_dir)
-                width, height = self._write_video_frame_range_to_directory(
-                    video_path,
-                    start_frame_index=request.start_frame_index,
-                    end_frame_index=request.end_frame_index,
-                    frame_dir=frame_dir,
-                )
+            frames, width, height = self._read_video_frame_range(
+                video_path,
+                start_frame_index=request.start_frame_index,
+                end_frame_index=request.end_frame_index,
+            )
+            try:
                 tracks = self._track_resource(
-                    resource_path=frame_dir,
+                    resource_path=frames,
                     seeds=self._localize_seed_frame_indexes(
                         request.seeds,
                         start_frame_index=request.start_frame_index,
@@ -70,6 +69,8 @@ class Sam3InferenceClient:
                     output_prob_thresh=request.score_threshold,
                     frame_index_offset=request.start_frame_index,
                 )
+            finally:
+                self._close_frames(frames)
             return Sam3TrackVideoResponse(tracks=tracks)
 
         width, height = self._read_video_size(video_path)
@@ -87,7 +88,7 @@ class Sam3InferenceClient:
     def _track_resource(
         self,
         *,
-        resource_path: Path,
+        resource_path: Path | list[Image.Image],
         seeds: list[Sam3Seed],
         width: int,
         height: int,
@@ -206,9 +207,14 @@ class Sam3InferenceClient:
 
         return masks
 
-    def _start_session(self, resource_path: Path) -> str:
+    def _start_session(self, resource_path: Path | list[Image.Image]) -> str:
+        if isinstance(resource_path, Path):
+            sam3_resource_path: str | list[Image.Image] = str(resource_path)
+        else:
+            sam3_resource_path = resource_path
+
         init_kwargs: dict[str, Any] = {
-            "resource_path": str(resource_path),
+            "resource_path": sam3_resource_path,
             "offload_video_to_cpu": False,
         }
         if hasattr(self.predictor, "async_loading_frames"):
@@ -464,14 +470,13 @@ class Sam3InferenceClient:
         height, width = frame.shape[:2]
         return width, height
 
-    def _write_video_frame_range_to_directory(
+    def _read_video_frame_range(
         self,
         video_path: Path,
         *,
         start_frame_index: int,
         end_frame_index: int,
-        frame_dir: Path,
-    ) -> tuple[int, int]:
+    ) -> tuple[list[Image.Image], int, int]:
         if start_frame_index < 0:
             raise ValueError("start_frame_index must be greater than or equal to 0")
         if end_frame_index <= start_frame_index:
@@ -480,37 +485,39 @@ class Sam3InferenceClient:
         cap = cv2.VideoCapture(str(video_path))
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
         try:
+            frames = []
             width = 0
             height = 0
-            written_frame_count = 0
             frame_index = start_frame_index
             while frame_index < end_frame_index:
                 ret, frame = cap.read()
                 if not ret:
                     break
 
-                frame_path = frame_dir / f"{written_frame_count:05d}.jpg"
-                if not cv2.imwrite(str(frame_path), frame):
-                    raise ValueError(f"Could not write frame image: {frame_path}")
-
-                if written_frame_count == 0:
+                if not frames:
                     height, width = frame.shape[:2]
 
-                written_frame_count += 1
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(Image.fromarray(frame_rgb))
                 frame_index += 1
         finally:
             cap.release()
 
         expected_frame_count = end_frame_index - start_frame_index
-        if written_frame_count != expected_frame_count:
+        if len(frames) != expected_frame_count:
             raise ValueError(
                 "Could not read requested frame range "
                 f"[{start_frame_index}, {end_frame_index}) from {video_path}; "
-                f"wrote {written_frame_count} of {expected_frame_count} frames"
+                f"read {len(frames)} of {expected_frame_count} frames"
             )
         if width <= 0 or height <= 0:
             raise ValueError(f"Could not read video dimensions from {video_path}")
-        return width, height
+        return frames, width, height
+
+    def _close_frames(self, frames: list[Image.Image]) -> None:
+        for frame in frames:
+            frame.close()
+        frames.clear()
 
     def _relative_points(
         self, seed: Sam3Seed, *, width: int, height: int
