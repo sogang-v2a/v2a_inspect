@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -39,6 +40,9 @@ from ..models import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class Sam3InferenceClient:
     def __init__(self) -> None:
         self.predictor = build_sam3_multiplex_video_predictor(
@@ -56,16 +60,28 @@ class Sam3InferenceClient:
             shutdown()
 
     def track_video(self, request: Sam3TrackVideoRequest) -> Sam3TrackVideoResponse:
+        request_started_at = time.perf_counter()
         video_path = self._find_video_path(request.video_id)
 
         if (
             request.start_frame_index is not None
             and request.end_frame_index is not None
         ):
+            decode_started_at = time.perf_counter()
             frames, width, height = self._read_video_frame_range(
                 video_path,
                 start_frame_index=request.start_frame_index,
                 end_frame_index=request.end_frame_index,
+            )
+            logger.info(
+                "SAM3 decoded frame range video_id=%s range=[%s,%s) frames=%s size=%sx%s elapsed=%.3fs",
+                request.video_id,
+                request.start_frame_index,
+                request.end_frame_index,
+                len(frames),
+                width,
+                height,
+                time.perf_counter() - decode_started_at,
             )
             try:
                 tracks = self._track_resource(
@@ -81,9 +97,25 @@ class Sam3InferenceClient:
                 )
             finally:
                 self._close_frames(frames)
+            logger.info(
+                "SAM3 completed frame-range tracking video_id=%s range=[%s,%s) tracks=%s elapsed=%.3fs",
+                request.video_id,
+                request.start_frame_index,
+                request.end_frame_index,
+                len(tracks),
+                time.perf_counter() - request_started_at,
+            )
             return Sam3TrackVideoResponse(tracks=tracks)
 
+        size_started_at = time.perf_counter()
         width, height = self._read_video_size(video_path)
+        logger.info(
+            "SAM3 read video size video_id=%s size=%sx%s elapsed=%.3fs",
+            request.video_id,
+            width,
+            height,
+            time.perf_counter() - size_started_at,
+        )
         tracks = self._track_resource(
             resource_path=video_path,
             seeds=request.seeds,
@@ -91,6 +123,12 @@ class Sam3InferenceClient:
             height=height,
             output_prob_thresh=request.score_threshold,
             frame_index_offset=0,
+        )
+        logger.info(
+            "SAM3 completed full-video tracking video_id=%s tracks=%s elapsed=%.3fs",
+            request.video_id,
+            len(tracks),
+            time.perf_counter() - request_started_at,
         )
 
         return Sam3TrackVideoResponse(tracks=tracks)
@@ -106,9 +144,17 @@ class Sam3InferenceClient:
         frame_index_offset: int,
     ) -> list[Sam3Track]:
         with self._lock:
+            session_started_at = time.perf_counter()
             session_id = self._start_session(resource_path)
+            logger.info(
+                "SAM3 started tracking session session_id=%s resource=%s elapsed=%.3fs",
+                session_id,
+                _resource_description(resource_path),
+                time.perf_counter() - session_started_at,
+            )
             try:
                 for seed_index, seed in enumerate(seeds):
+                    prompt_started_at = time.perf_counter()
                     self._add_seed_prompt(
                         session_id=session_id,
                         seed=seed,
@@ -117,12 +163,26 @@ class Sam3InferenceClient:
                         height=height,
                         output_prob_thresh=output_prob_thresh,
                     )
+                    logger.info(
+                        "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s elapsed=%.3fs",
+                        session_id,
+                        seed_index,
+                        _seed_type(seed),
+                        time.perf_counter() - prompt_started_at,
+                    )
+                propagate_started_at = time.perf_counter()
                 tracks = self._propagate_tracks(
                     session_id,
                     width=width,
                     height=height,
                     output_prob_thresh=output_prob_thresh,
                     frame_index_offset=frame_index_offset,
+                )
+                logger.info(
+                    "SAM3 propagated tracks session_id=%s tracks=%s elapsed=%.3fs",
+                    session_id,
+                    len(tracks),
+                    time.perf_counter() - propagate_started_at,
                 )
             finally:
                 self._close_session(session_id)
@@ -617,3 +677,19 @@ class Sam3InferenceClient:
         if value is None:
             return []
         return list(value)
+
+
+def _resource_description(resource_path: Path | list[Image.Image]) -> str:
+    if isinstance(resource_path, Path):
+        return str(resource_path)
+    return f"{len(resource_path)} in-memory frames"
+
+
+def _seed_type(seed: Sam3Seed) -> str:
+    if seed.prompt is not None:
+        return "text"
+    if seed.points:
+        return "points"
+    if seed.bbox_xyxy is not None:
+        return "bbox"
+    return "unknown"
