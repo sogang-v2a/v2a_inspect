@@ -22,7 +22,6 @@ if settings.opencv_ffmpeg_capture_options:
 
 import cv2
 import numpy as np
-from PIL import Image
 from pycocotools import mask as mask_utils
 import torch
 from sam3.model_builder import build_sam3_multiplex_video_predictor
@@ -67,25 +66,28 @@ class Sam3InferenceClient:
             request.start_frame_index is not None
             and request.end_frame_index is not None
         ):
-            decode_started_at = time.perf_counter()
-            frames, width, height = self._read_video_frame_range(
-                video_path,
-                start_frame_index=request.start_frame_index,
-                end_frame_index=request.end_frame_index,
-            )
-            logger.info(
-                "SAM3 decoded frame range video_id=%s range=[%s,%s) frames=%s size=%sx%s elapsed=%.3fs",
-                request.video_id,
-                request.start_frame_index,
-                request.end_frame_index,
-                len(frames),
-                width,
-                height,
-                time.perf_counter() - decode_started_at,
-            )
-            try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                frame_dir = Path(temp_dir)
+                write_started_at = time.perf_counter()
+                frame_count, width, height = self._write_video_frame_range_to_directory(
+                    video_path,
+                    frame_dir=frame_dir,
+                    start_frame_index=request.start_frame_index,
+                    end_frame_index=request.end_frame_index,
+                )
+                logger.info(
+                    "SAM3 wrote frame range video_id=%s range=[%s,%s) frames=%s size=%sx%s dir=%s elapsed=%.3fs",
+                    request.video_id,
+                    request.start_frame_index,
+                    request.end_frame_index,
+                    frame_count,
+                    width,
+                    height,
+                    frame_dir,
+                    time.perf_counter() - write_started_at,
+                )
                 tracks = self._track_resource(
-                    resource_path=frames,
+                    resource_path=frame_dir,
                     seeds=self._localize_seed_frame_indexes(
                         request.seeds,
                         start_frame_index=request.start_frame_index,
@@ -95,8 +97,6 @@ class Sam3InferenceClient:
                     output_prob_thresh=request.score_threshold,
                     frame_index_offset=request.start_frame_index,
                 )
-            finally:
-                self._close_frames(frames)
             logger.info(
                 "SAM3 completed frame-range tracking video_id=%s range=[%s,%s) tracks=%s elapsed=%.3fs",
                 request.video_id,
@@ -136,7 +136,7 @@ class Sam3InferenceClient:
     def _track_resource(
         self,
         *,
-        resource_path: Path | list[Image.Image],
+        resource_path: Path,
         seeds: list[Sam3Seed],
         width: int,
         height: int,
@@ -277,14 +277,9 @@ class Sam3InferenceClient:
 
         return masks
 
-    def _start_session(self, resource_path: Path | list[Image.Image]) -> str:
-        if isinstance(resource_path, Path):
-            sam3_resource_path: str | list[Image.Image] = str(resource_path)
-        else:
-            sam3_resource_path = resource_path
-
+    def _start_session(self, resource_path: Path) -> str:
         init_kwargs: dict[str, Any] = {
-            "resource_path": sam3_resource_path,
+            "resource_path": str(resource_path),
             "offload_video_to_cpu": False,
         }
         if hasattr(self.predictor, "async_loading_frames"):
@@ -571,13 +566,14 @@ class Sam3InferenceClient:
         height, width = frame.shape[:2]
         return width, height
 
-    def _read_video_frame_range(
+    def _write_video_frame_range_to_directory(
         self,
         video_path: Path,
         *,
+        frame_dir: Path,
         start_frame_index: int,
         end_frame_index: int,
-    ) -> tuple[list[Image.Image], int, int]:
+    ) -> tuple[int, int, int]:
         if start_frame_index < 0:
             raise ValueError("start_frame_index must be greater than or equal to 0")
         if end_frame_index <= start_frame_index:
@@ -586,7 +582,7 @@ class Sam3InferenceClient:
         cap = self._open_video_capture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
         try:
-            frames = []
+            frame_count = 0
             width = 0
             height = 0
             frame_index = start_frame_index
@@ -595,30 +591,27 @@ class Sam3InferenceClient:
                 if not ret:
                     break
 
-                if not frames:
+                if frame_count == 0:
                     height, width = frame.shape[:2]
 
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(Image.fromarray(frame_rgb))
+                frame_path = frame_dir / f"{frame_count:06d}.jpg"
+                if not cv2.imwrite(str(frame_path), frame):
+                    raise ValueError(f"Could not write frame image: {frame_path}")
+                frame_count += 1
                 frame_index += 1
         finally:
             cap.release()
 
         expected_frame_count = end_frame_index - start_frame_index
-        if len(frames) != expected_frame_count:
+        if frame_count != expected_frame_count:
             raise ValueError(
                 "Could not read requested frame range "
                 f"[{start_frame_index}, {end_frame_index}) from {video_path}; "
-                f"read {len(frames)} of {expected_frame_count} frames"
+                f"read {frame_count} of {expected_frame_count} frames"
             )
         if width <= 0 or height <= 0:
             raise ValueError(f"Could not read video dimensions from {video_path}")
-        return frames, width, height
-
-    def _close_frames(self, frames: list[Image.Image]) -> None:
-        for frame in frames:
-            frame.close()
-        frames.clear()
+        return frame_count, width, height
 
     def _relative_points(
         self, seed: Sam3Seed, *, width: int, height: int
@@ -679,10 +672,8 @@ class Sam3InferenceClient:
         return list(value)
 
 
-def _resource_description(resource_path: Path | list[Image.Image]) -> str:
-    if isinstance(resource_path, Path):
-        return str(resource_path)
-    return f"{len(resource_path)} in-memory frames"
+def _resource_description(resource_path: Path) -> str:
+    return str(resource_path)
 
 
 def _seed_type(seed: Sam3Seed) -> str:
