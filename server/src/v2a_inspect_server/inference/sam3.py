@@ -459,9 +459,9 @@ class Sam3InferenceClient:
             params = [
                 cv2.CAP_PROP_HW_ACCELERATION,
                 cv2.VIDEO_ACCELERATION_ANY,
-                cv2.CAP_PROP_HW_DEVICE,
-                settings.opencv_hw_device,
             ]
+            if settings.opencv_hw_device is not None:
+                params.extend([cv2.CAP_PROP_HW_DEVICE, settings.opencv_hw_device])
             cap = cv2.VideoCapture(str(video_path), backend, params)
             if cap.isOpened():
                 return cap

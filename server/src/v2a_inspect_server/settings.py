@@ -16,7 +16,7 @@ class ServerSettings(BaseSettings):
     sam31_warm_up: bool = False
     opencv_video_backend: str = "ffmpeg"
     opencv_hw_acceleration: bool = True
-    opencv_hw_device: int = 0
+    opencv_hw_device: int | None = None
     opencv_ffmpeg_capture_options: str | None = "hw_decoders_any;cuda"
     embedding_model_id: str = "facebook/dinov2-base"
     label_model_id: str = "google/siglip2-base-patch16-224"
