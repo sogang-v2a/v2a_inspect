@@ -40,7 +40,7 @@ from ..models import (
 )
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 class Sam3InferenceClient:
