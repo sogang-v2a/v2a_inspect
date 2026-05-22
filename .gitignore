@@ -304,3 +304,7 @@ cython_debug/
 
 # Local benchmark media and outputs
 data/
+
+*.mp4
+*.webm
+*.mkv
