@@ -153,9 +153,10 @@ class Sam3InferenceClient:
                 time.perf_counter() - session_started_at,
             )
             try:
+                has_prompt_outputs = False
                 for seed_index, seed in enumerate(seeds):
                     prompt_started_at = time.perf_counter()
-                    self._add_seed_prompt(
+                    outputs = self._add_seed_prompt(
                         session_id=session_id,
                         seed=seed,
                         seed_index=seed_index,
@@ -163,6 +164,20 @@ class Sam3InferenceClient:
                         height=height,
                         output_prob_thresh=output_prob_thresh,
                     )
+                    prompt_objects = self._iter_output_objects(
+                        outputs,
+                        width=width,
+                        height=height,
+                    )
+                    if prompt_objects:
+                        has_prompt_outputs = True
+                    else:
+                        logger.info(
+                            "SAM3 seed prompt produced no objects session_id=%s seed_index=%s seed_type=%s",
+                            session_id,
+                            seed_index,
+                            _seed_type(seed),
+                        )
                     logger.info(
                         "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s elapsed=%.3fs",
                         session_id,
@@ -170,6 +185,13 @@ class Sam3InferenceClient:
                         _seed_type(seed),
                         time.perf_counter() - prompt_started_at,
                     )
+                if not has_prompt_outputs:
+                    logger.info(
+                        "SAM3 skipping propagation because no seed prompts produced objects session_id=%s",
+                        session_id,
+                    )
+                    return []
+
                 propagate_started_at = time.perf_counter()
                 tracks = self._propagate_tracks(
                     session_id,
