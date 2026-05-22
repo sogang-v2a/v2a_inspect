@@ -111,6 +111,13 @@ class Settings(BaseSettings):
             "LANGFUSE_RELEASE",
         ),
     )
+    video_encode_use_nvenc: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_VIDEO_ENCODE_USE_NVENC",
+            "V2A_VIDEO_ENCODE_USE_NVENC",
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_prefix="V2A_INSPECT_",

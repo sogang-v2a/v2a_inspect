@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from v2a_inspect.config import settings
 from v2a_inspect.media_utils import (
     PREPARED_FPS,
     PREPARED_HEIGHT,
@@ -79,16 +80,7 @@ def _normalize_h264_video(
         "-vf",
         video_filter,
         "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        "23",
-        "-g",
-        str(fps),
-        "-pix_fmt",
-        "yuv420p",
+        *_h264_encoder_args(fps),
         str(output_path),
     ]
 
@@ -102,6 +94,39 @@ def _normalize_h264_video(
         raise RuntimeError(f"Could not normalize video: {message}")
 
     return output_path
+
+
+def _h264_encoder_args(fps: int) -> list[str]:
+    if settings.video_encode_use_nvenc:
+        return [
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "p4",
+            "-rc",
+            "vbr",
+            "-cq",
+            "23",
+            "-b:v",
+            "0",
+            "-g",
+            str(fps),
+            "-pix_fmt",
+            "yuv420p",
+        ]
+
+    return [
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-g",
+        str(fps),
+        "-pix_fmt",
+        "yuv420p",
+    ]
 
 
 def prepare_video(raw_video_path: Path, work_dir: Path) -> VideoAsset:
