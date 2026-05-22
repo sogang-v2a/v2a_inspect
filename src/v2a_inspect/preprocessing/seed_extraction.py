@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 
+from v2a_inspect.config import settings
 from v2a_inspect.llm import model_manager
 from v2a_inspect.models import InitialScene, InitialSceneAnalysis, Keyframe
 from v2a_inspect.observability import build_langchain_config
@@ -36,9 +38,21 @@ def analyze_initial_scenes(
     initial_scenes: list[InitialScene],
     model: BaseChatModel | None = None,
 ) -> list[InitialScene]:
-    analyzed_scenes: list[InitialScene] = []
-    for initial_scene in initial_scenes:
-        analyzed_scenes.append(analyze_initial_scene(initial_scene, model=model))
+    if not initial_scenes:
+        return []
+
+    chat_model = model or model_manager.large
+    analyzed_scenes = [analyze_initial_scene(initial_scenes[0], model=chat_model)]
+    batch_size = settings.llm_initial_scene_analysis_batch_size
+    remaining_scenes = initial_scenes[1:]
+
+    def analyze_batch_scene(initial_scene: InitialScene) -> InitialScene:
+        return analyze_initial_scene(initial_scene, model=chat_model)
+
+    for batch_start in range(0, len(remaining_scenes), batch_size):
+        batch = remaining_scenes[batch_start : batch_start + batch_size]
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            analyzed_scenes.extend(executor.map(analyze_batch_scene, batch))
     return analyzed_scenes
 
 

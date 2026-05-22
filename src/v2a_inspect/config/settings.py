@@ -76,6 +76,14 @@ class Settings(BaseSettings):
             "V2A_LLM_MAX_RETRIES",
         ),
     )
+    llm_initial_scene_analysis_batch_size: int = Field(
+        default=8,
+        ge=1,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_INITIAL_SCENE_ANALYSIS_BATCH_SIZE",
+            "V2A_LLM_INITIAL_SCENE_ANALYSIS_BATCH_SIZE",
+        ),
+    )
     langfuse_public_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
