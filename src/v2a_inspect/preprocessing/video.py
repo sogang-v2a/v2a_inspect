@@ -16,7 +16,7 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
     """
     Normalize a raw video into the fixed working-video format.
 
-    The output is 1280x720, 30fps, VP9 WebM, yuv420p, and audio-free.
+    The output is 1280x720, 30fps, H.264 MP4, yuv420p, and audio-free.
     Non-16:9 inputs are aspect-preserved and padded instead of stretched.
     """
 
@@ -50,11 +50,11 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
         video_filter,
         "-an",
         "-c:v",
-        "libvpx-vp9",
-        "-b:v",
-        "0",
+        "libx264",
+        "-preset",
+        "medium",
         "-crf",
-        "24",
+        "23",
         "-g",
         str(PREPARED_FPS),
         "-pix_fmt",
@@ -77,7 +77,7 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
 def prepare_video(raw_video_path: Path, work_dir: Path) -> VideoAsset:
     """Normalize a raw video and return the prepared pipeline VideoAsset."""
 
-    prepared_path = work_dir / f"{raw_video_path.stem}.prepared.webm"
+    prepared_path = work_dir / f"{raw_video_path.stem}.prepared.mp4"
     normalize_video(raw_video_path, prepared_path)
     probe = probe_prepared_video(prepared_path)
     return VideoAsset(source_path=probe.path, frame_count=probe.frame_count)
