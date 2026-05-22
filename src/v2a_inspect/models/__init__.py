@@ -7,6 +7,7 @@ from .tracking import MaskRef, SceneTrack, SceneTrackPoint
 from .video import VideoAsset
 from .visual_identity import (
     TrackLinkCandidate,
+    VisualEvent,
     VisualIdentityLayer,
     VisualObject,
     VisualPresence,
@@ -28,5 +29,6 @@ __all__ = [
     "TrackLinkCandidate",
     "VisualPresence",
     "VisualObject",
+    "VisualEvent",
     "VisualIdentityLayer",
 ]

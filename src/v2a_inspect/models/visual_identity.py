@@ -55,6 +55,38 @@ class VisualObject(SchemaModel):
     notes: str | None = None
 
 
+class VisualEvent(SchemaModel):
+    """
+    Computed visual event derived from track mask/bbox time series.
+
+    This is visual evidence only. Sound semantics are inferred later from
+    VisualObjects, VisualEvents, and scene context.
+    """
+
+    visual_event_id: UUID = Field(default_factory=uuid4)
+
+    visual_object_id: UUID
+
+    start_frame_index: int = Field(ge=0)
+    end_frame_index: int = Field(gt=0)
+
+    event_type: Literal[
+        "appearance",
+        "disappearance",
+        "motion",
+        "fast_motion",
+        "scale_change",
+        "contact",
+        "stationary",
+        "uncertain",
+    ]
+
+    description: str | None = None
+    confidence: float = Field(ge=0, le=1)
+
+    notes: str | None = None
+
+
 class VisualIdentityLayer(SchemaModel):
     """
     Cross-scene visual identity evidence and chosen visual objects.
@@ -62,3 +94,4 @@ class VisualIdentityLayer(SchemaModel):
 
     track_link_candidates: list[TrackLinkCandidate] = Field(default_factory=list)
     visual_objects: list[VisualObject] = Field(default_factory=list)
+    visual_events: list[VisualEvent] = Field(default_factory=list)
