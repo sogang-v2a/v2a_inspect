@@ -72,11 +72,11 @@ def _trace_config(initial_scene: InitialScene) -> RunnableConfig | None:
         tags=["v2a-inspect", "preprocessing", "initial-scene-analysis"],
         metadata={
             "initial_scene_id": str(initial_scene.initial_scene_id),
-            "start_frame_index": initial_scene.start_frame_index,
-            "end_frame_index": initial_scene.end_frame_index,
-            "frame_count": initial_scene.frame_count,
-            "keyframe_count": len(initial_scene.keyframes),
-            "keyframe_indexes": _keyframe_indexes(initial_scene.keyframes),
+            "start_frame_index": str(initial_scene.start_frame_index),
+            "end_frame_index": str(initial_scene.end_frame_index),
+            "frame_count": str(initial_scene.frame_count),
+            "keyframe_count": str(len(initial_scene.keyframes)),
+            "keyframe_indexes": _keyframe_indexes_text(initial_scene.keyframes),
         },
     )
 
