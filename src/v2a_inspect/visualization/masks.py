@@ -1,30 +1,14 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from pycocotools import mask as mask_utils
 
+from v2a_inspect.media_utils import decode_coco_rle
 from v2a_inspect.models import MaskRef
 
 from .colors import Color
-
-
-def decode_coco_rle(mask_rle: str) -> np.ndarray:
-    payload = json.loads(mask_rle)
-    if payload.get("encoding") != "coco_rle":
-        raise ValueError(f"Unsupported mask encoding: {payload.get('encoding')}")
-
-    rle = {
-        "size": payload["size"],
-        "counts": payload["counts"].encode("ascii"),
-    }
-    decoded = mask_utils.decode(rle)
-    if decoded.ndim == 3:
-        decoded = decoded[:, :, 0]
-    return decoded.astype(bool)
 
 
 def decode_mask_ref(mask: MaskRef) -> np.ndarray:

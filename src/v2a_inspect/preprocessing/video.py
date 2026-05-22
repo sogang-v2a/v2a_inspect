@@ -7,7 +7,11 @@ from v2a_inspect.media_utils import (
     PREPARED_FPS,
     PREPARED_HEIGHT,
     PREPARED_WIDTH,
+    SAM3_TRACKING_FPS,
+    SAM3_TRACKING_HEIGHT,
+    SAM3_TRACKING_WIDTH,
     probe_prepared_video,
+    probe_sam3_tracking_video,
 )
 from v2a_inspect.models import VideoAsset
 
@@ -20,21 +24,47 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
     Non-16:9 inputs are aspect-preserved and padded instead of stretched.
     """
 
-    if not raw_video_path.exists():
-        raise FileNotFoundError(f"Video file not found: {raw_video_path}")
-    if not raw_video_path.is_file():
-        raise ValueError(f"Video path is not a file: {raw_video_path}")
+    return _normalize_h264_video(
+        raw_video_path,
+        output_path,
+        width=PREPARED_WIDTH,
+        height=PREPARED_HEIGHT,
+        fps=PREPARED_FPS,
+    )
+
+
+def normalize_sam3_tracking_video(prepared_video_path: Path, output_path: Path) -> Path:
+    """Create the lower-resolution, frame-aligned SAM3 tracking video."""
+
+    return _normalize_h264_video(
+        prepared_video_path,
+        output_path,
+        width=SAM3_TRACKING_WIDTH,
+        height=SAM3_TRACKING_HEIGHT,
+        fps=SAM3_TRACKING_FPS,
+    )
+
+
+def _normalize_h264_video(
+    input_path: Path,
+    output_path: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+) -> Path:
+    if not input_path.exists():
+        raise FileNotFoundError(f"Video file not found: {input_path}")
+    if not input_path.is_file():
+        raise ValueError(f"Video path is not a file: {input_path}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     video_filter = ",".join(
         [
-            f"fps={PREPARED_FPS}",
-            (
-                f"scale={PREPARED_WIDTH}:{PREPARED_HEIGHT}:"
-                "force_original_aspect_ratio=decrease"
-            ),
-            f"pad={PREPARED_WIDTH}:{PREPARED_HEIGHT}:(ow-iw)/2:(oh-ih)/2",
+            f"fps={fps}",
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
             "setsar=1",
         ]
     )
@@ -45,7 +75,7 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
         "error",
         "-y",
         "-i",
-        str(raw_video_path),
+        str(input_path),
         "-vf",
         video_filter,
         "-an",
@@ -56,7 +86,7 @@ def normalize_video(raw_video_path: Path, output_path: Path) -> Path:
         "-crf",
         "23",
         "-g",
-        str(PREPARED_FPS),
+        str(fps),
         "-pix_fmt",
         "yuv420p",
         str(output_path),
@@ -80,4 +110,18 @@ def prepare_video(raw_video_path: Path, work_dir: Path) -> VideoAsset:
     prepared_path = work_dir / f"{raw_video_path.stem}.prepared.mp4"
     normalize_video(raw_video_path, prepared_path)
     probe = probe_prepared_video(prepared_path)
-    return VideoAsset(source_path=probe.path, frame_count=probe.frame_count)
+
+    sam3_tracking_path = work_dir / f"{raw_video_path.stem}.sam3.mp4"
+    normalize_sam3_tracking_video(prepared_path, sam3_tracking_path)
+    sam3_probe = probe_sam3_tracking_video(sam3_tracking_path)
+    if sam3_probe.frame_count != probe.frame_count:
+        raise ValueError(
+            "SAM3 tracking video frame count must match prepared video frame count; "
+            f"got {sam3_probe.frame_count} and {probe.frame_count}"
+        )
+
+    return VideoAsset(
+        source_path=probe.path,
+        sam3_tracking_path=sam3_probe.path,
+        frame_count=probe.frame_count,
+    )

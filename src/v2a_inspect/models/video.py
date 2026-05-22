@@ -23,6 +23,7 @@ class VideoAsset(SchemaModel):
 
     video_id: UUID = Field(default_factory=uuid4)
     source_path: Path
+    sam3_tracking_path: Path | None = None
 
     frame_count: int = Field(gt=0)
     initial_scenes: list[InitialScene] = Field(default_factory=list)
@@ -42,6 +43,21 @@ class VideoAsset(SchemaModel):
     @computed_field
     @property
     def fps(self) -> int:
+        return 30
+
+    @computed_field
+    @property
+    def sam3_tracking_width(self) -> int:
+        return 640
+
+    @computed_field
+    @property
+    def sam3_tracking_height(self) -> int:
+        return 360
+
+    @computed_field
+    @property
+    def sam3_tracking_fps(self) -> int:
         return 30
 
     @computed_field

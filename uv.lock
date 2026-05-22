@@ -3442,6 +3442,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "pillow" },
+    { name = "pycocotools" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "scenedetect" },
@@ -3461,7 +3462,6 @@ dev = [
     { name = "ipywidgets" },
     { name = "jupyter" },
     { name = "pre-commit" },
-    { name = "pycocotools" },
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -3477,6 +3477,7 @@ requires-dist = [
     { name = "langfuse", marker = "extra == 'observability'", specifier = ">=3.9.0" },
     { name = "langgraph", specifier = ">=1.1.2" },
     { name = "pillow", specifier = ">=11.3.0" },
+    { name = "pycocotools", specifier = ">=2.0.11" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "scenedetect", specifier = ">=0.7" },
@@ -3490,7 +3491,6 @@ dev = [
     { name = "ipywidgets", specifier = ">=8.1.8" },
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "pre-commit", specifier = ">=4.5.1" },
-    { name = "pycocotools", specifier = ">=2.0.11" },
     { name = "ruff", specifier = ">=0.15.6" },
     { name = "ty", specifier = ">=0.0.26" },
 ]
