@@ -66,6 +66,10 @@ class VisualEvent(SchemaModel):
     visual_event_id: UUID = Field(default_factory=uuid4)
 
     visual_object_id: UUID
+    related_visual_object_ids: list[UUID] = Field(
+        default_factory=list,
+        description="Other visual objects involved in this event, such as contact targets.",
+    )
 
     start_frame_index: int = Field(ge=0)
     end_frame_index: int = Field(gt=0)

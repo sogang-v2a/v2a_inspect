@@ -12,12 +12,14 @@ from .tracking import (
     track_initial_scenes_object_seeds,
 )
 from .video import normalize_sam3_tracking_video, normalize_video, prepare_video
+from .visual_events import compute_visual_events
 from .visual_identity import build_visual_identity_layer
 
 __all__ = [
     "analyze_initial_scene",
     "analyze_initial_scenes",
     "build_visual_identity_layer",
+    "compute_visual_events",
     "detect_initial_scenes",
     "extract_keyframes_for_initial_scene",
     "extract_keyframes_for_initial_scenes",
