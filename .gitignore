@@ -301,6 +301,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 .omx/
+.agents/
+*.json
 
 # Local benchmark media and outputs
 data/
