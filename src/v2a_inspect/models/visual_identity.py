@@ -6,23 +6,6 @@ from pydantic import Field
 from .base import SchemaModel
 
 
-class TrackLinkCandidate(SchemaModel):
-    """
-    DINO-generated evidence that two SceneTracks may represent the same object.
-
-    This is evidence, not a visual identity decision.
-    """
-
-    track_link_candidate_id: UUID = Field(default_factory=uuid4)
-
-    left_scene_track_id: UUID
-    right_scene_track_id: UUID
-
-    similarity: float = Field(ge=0, le=1)
-
-    notes: str | None = None
-
-
 class VisualPresence(SchemaModel):
     """
     One interval of visual state for a video-global visual object.
@@ -96,6 +79,5 @@ class VisualIdentityLayer(SchemaModel):
     Cross-scene visual identity evidence and chosen visual objects.
     """
 
-    track_link_candidates: list[TrackLinkCandidate] = Field(default_factory=list)
     visual_objects: list[VisualObject] = Field(default_factory=list)
     visual_events: list[VisualEvent] = Field(default_factory=list)

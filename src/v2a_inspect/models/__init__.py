@@ -6,7 +6,6 @@ from .sound_timeline import SoundEvent, SoundSource, SoundTimeline
 from .tracking import MaskRef, SceneTrack, SceneTrackPoint
 from .video import VideoAsset
 from .visual_identity import (
-    TrackLinkCandidate,
     VisualEvent,
     VisualIdentityLayer,
     VisualObject,
@@ -26,7 +25,6 @@ __all__ = [
     "SoundSource",
     "SoundEvent",
     "SoundTimeline",
-    "TrackLinkCandidate",
     "VisualPresence",
     "VisualObject",
     "VisualEvent",
