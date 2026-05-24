@@ -24,7 +24,7 @@ def analyze_initial_scene(
         "initial_scene_analysis",
         content_blocks=_image_blocks(initial_scene.keyframes),
     )
-    chat_model = model or model_manager.large
+    chat_model = model or model_manager.small
     chain = prompt | chat_model.with_structured_output(InitialSceneAnalysis)
     result = chain.invoke(
         _scene_inputs(initial_scene),
@@ -41,7 +41,7 @@ def analyze_initial_scenes(
     if not initial_scenes:
         return []
 
-    chat_model = model or model_manager.large
+    chat_model = model or model_manager.small
     analyzed_scenes = [analyze_initial_scene(initial_scenes[0], model=chat_model)]
     batch_size = settings.llm_initial_scene_analysis_batch_size
     remaining_scenes = initial_scenes[1:]
