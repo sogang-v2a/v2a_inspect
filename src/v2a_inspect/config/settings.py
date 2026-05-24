@@ -32,14 +32,14 @@ class Settings(BaseSettings):
         ),
     )
     llm_small_model: str = Field(
-        default="gemini-3-flash-preview",
+        default="gemini-3.5-flash",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_SMALL_MODEL",
             "V2A_LLM_SMALL_MODEL",
         ),
     )
     llm_medium_model: str = Field(
-        default="gemini-3-pro-preview",
+        default="gemini-3.5-flash",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_MEDIUM_MODEL",
             "V2A_LLM_MEDIUM_MODEL",
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
         ),
     )
     llm_large_model: str = Field(
-        default="gemini-3-pro-preview",
+        default="gemini-3.5-flash",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_LARGE_MODEL",
             "V2A_LLM_LARGE_MODEL",
