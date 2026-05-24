@@ -1,13 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
+from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
-from v2a_inspect.models import SoundTimeline, VideoAsset
+from v2a_inspect.models import SoundEvent, SoundSource, SoundTimeline, VideoAsset
 
 from .langchain import build_sound_timeline_tools
 from .read_tools import SoundTimelineReadTools
+from .schemas import (
+    AnnotatedFrameOutput,
+    DeleteSoundEventOutput,
+    DeleteSoundSourceOutput,
+    ListScenesOutput,
+    ListTracksOutput,
+    SceneSummaryOutput,
+    SoundGenerationMode,
+    SoundSourceType,
+    SoundTrackType,
+    VisualEventsOutput,
+)
 from .write_tools import SoundTimelineWriteTools
 
 
@@ -19,36 +31,36 @@ class SoundTimelineEditor:
         self.read = SoundTimelineReadTools(self)
         self.write = SoundTimelineWriteTools(self)
 
-    def list_scenes(self) -> dict[str, Any]:
+    def list_scenes(self) -> ListScenesOutput:
         return self.read.list_scenes()
 
-    def get_scene_summary(self, scene_index: int) -> dict[str, Any]:
+    def get_scene_summary(self, scene_index: int) -> SceneSummaryOutput:
         return self.read.get_scene_summary(scene_index)
 
-    def get_annotated_frame(self, frame_index: int) -> dict[str, Any]:
+    def get_annotated_frame(self, frame_index: int) -> AnnotatedFrameOutput:
         return self.read.get_annotated_frame(frame_index)
 
-    def list_tracks(self, scene_index: int) -> dict[str, Any]:
+    def list_tracks(self, scene_index: int) -> ListTracksOutput:
         return self.read.list_tracks(scene_index)
 
     def get_visual_events(
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> VisualEventsOutput:
         return self.read.get_visual_events(start_frame_index, end_frame_index)
 
-    def get_sound_timeline(self) -> dict[str, Any]:
+    def get_sound_timeline(self) -> SoundTimeline:
         return self.read.get_sound_timeline()
 
     def upsert_sound_source(
         self,
-        source_type: str,
+        source_type: SoundSourceType,
         label: str,
-        sound_source_id: str | None = None,
-        visual_object_id: str | None = None,
+        sound_source_id: UUID | None = None,
+        visual_object_id: UUID | None = None,
         notes: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> SoundSource:
         return self.write.upsert_sound_source(
             source_type=source_type,
             label=label,
@@ -57,7 +69,7 @@ class SoundTimelineEditor:
             notes=notes,
         )
 
-    def delete_sound_source(self, sound_source_id: str) -> dict[str, Any]:
+    def delete_sound_source(self, sound_source_id: UUID) -> DeleteSoundSourceOutput:
         return self.write.delete_sound_source(sound_source_id)
 
     def upsert_sound_event(
@@ -65,12 +77,12 @@ class SoundTimelineEditor:
         start_frame_index: int,
         end_frame_index: int,
         description: str,
-        track_type: str,
-        sound_event_id: str | None = None,
-        sound_source_id: str | None = None,
-        generation_mode: str = "unknown",
+        track_type: SoundTrackType,
+        sound_event_id: UUID | None = None,
+        sound_source_id: UUID | None = None,
+        generation_mode: SoundGenerationMode = "unknown",
         notes: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> SoundEvent:
         return self.write.upsert_sound_event(
             start_frame_index=start_frame_index,
             end_frame_index=end_frame_index,
@@ -82,7 +94,7 @@ class SoundTimelineEditor:
             notes=notes,
         )
 
-    def delete_sound_event(self, sound_event_id: str) -> dict[str, Any]:
+    def delete_sound_event(self, sound_event_id: UUID) -> DeleteSoundEventOutput:
         return self.write.delete_sound_event(sound_event_id)
 
     def tools(self) -> list[StructuredTool]:
