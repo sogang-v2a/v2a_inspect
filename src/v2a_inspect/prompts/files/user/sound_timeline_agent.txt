@@ -1,2 +1,8 @@
 Objective:
 {objective}
+
+Execute by mutating the current VideoAsset.sound_timeline with tools.
+Use visual events and scene summaries before frame images.
+Create sources and events throughout the run.
+Use global frame ranges.
+Return only a short completion summary after get_sound_timeline confirms edits.
