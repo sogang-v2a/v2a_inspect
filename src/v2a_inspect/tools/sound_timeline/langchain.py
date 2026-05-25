@@ -28,19 +28,26 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
         StructuredTool.from_function(
             editor.list_scenes,
             args_schema=NoArgs,
-            description="List all initial scenes, frame ranges, keyframes, and counts.",
+            description=(
+                "List all initial scenes, frame ranges, keyframes, and counts. "
+                "Use once at the start to plan scene-by-scene work."
+            ),
         ),
         StructuredTool.from_function(
             editor.get_scene_summary,
             args_schema=SceneIndexArgs,
-            description="Get one scene's frame range, object seeds, keyframes, and tracks.",
+            description=(
+                "Primary per-scene inspection tool. Get frame range, object seeds, "
+                "keyframes, and tracks before using frame images."
+            ),
         ),
         StructuredTool.from_function(
             _make_annotated_frame_tool(editor),
             args_schema=FrameIndexArgs,
             description=(
-                "Get a video frame as LangChain message blocks: text, image, "
-                "and JSON track metadata."
+                "Targeted visual confirmation only. Returns LangChain message "
+                "blocks: text, image, and JSON track metadata. Use sparingly "
+                "after scene summary and visual events."
             ),
         ),
         StructuredTool.from_function(
@@ -51,17 +58,23 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
         StructuredTool.from_function(
             editor.get_visual_events,
             args_schema=VisualEventsArgs,
-            description="List computed visual events, optionally filtered by frame interval.",
+            description=(
+                "Primary visual event timeline. List computed visual events, "
+                "optionally filtered by frame interval. Use before frame images."
+            ),
         ),
         StructuredTool.from_function(
             editor.get_sound_timeline,
             args_schema=NoArgs,
-            description="Read the current SoundTimeline.",
+            description="Read the current SoundTimeline. Call before final response.",
         ),
         StructuredTool.from_function(
             editor.upsert_sound_source,
             args_schema=UpsertSoundSourceArgs,
-            description="Create or update a SoundSource in the SoundTimeline.",
+            description=(
+                "Create or update a SoundSource in the SoundTimeline. Use as soon "
+                "as a recurring sound emitter is known."
+            ),
         ),
         StructuredTool.from_function(
             editor.delete_sound_source,
@@ -71,7 +84,10 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
         StructuredTool.from_function(
             editor.upsert_sound_event,
             args_schema=UpsertSoundEventArgs,
-            description="Create or update a SoundEvent in the SoundTimeline.",
+            description=(
+                "Create or update a SoundEvent in the SoundTimeline. Use as soon "
+                "as a sound interval is known."
+            ),
         ),
         StructuredTool.from_function(
             editor.delete_sound_event,
