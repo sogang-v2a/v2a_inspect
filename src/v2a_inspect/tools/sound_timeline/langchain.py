@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from langchain_core.tools import StructuredTool
 
 from .schemas import (
+    AnnotatedFrameOutput,
     DeleteSoundEventArgs,
     DeleteSoundSourceArgs,
     FrameIndexArgs,
@@ -17,6 +19,8 @@ from .schemas import (
 
 if TYPE_CHECKING:
     from .editor import SoundTimelineEditor
+
+ToolMessageContentBlock = str | dict[str, object]
 
 
 def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTool]:
@@ -32,9 +36,12 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
             description="Get one scene's frame range, object seeds, keyframes, and tracks.",
         ),
         StructuredTool.from_function(
-            editor.get_annotated_frame,
+            _make_annotated_frame_tool(editor),
             args_schema=FrameIndexArgs,
-            description="Get a video frame as a JPEG data URL with track boxes and labels.",
+            description=(
+                "Get a video frame as LangChain message blocks: text, image, "
+                "and JSON track metadata."
+            ),
         ),
         StructuredTool.from_function(
             editor.list_tracks,
@@ -71,4 +78,40 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
             args_schema=DeleteSoundEventArgs,
             description="Delete a SoundEvent from the SoundTimeline.",
         ),
+    ]
+
+
+def _make_annotated_frame_tool(
+    editor: SoundTimelineEditor,
+) -> Callable[[int], list[ToolMessageContentBlock]]:
+    def get_annotated_frame_message(
+        frame_index: int,
+    ) -> list[ToolMessageContentBlock]:
+        output = editor.get_annotated_frame(frame_index)
+        return _to_annotated_frame_message_blocks(output)
+
+    return get_annotated_frame_message
+
+
+def _to_annotated_frame_message_blocks(
+    output: AnnotatedFrameOutput,
+) -> list[ToolMessageContentBlock]:
+    track_count = len(output.tracks)
+    return [
+        {
+            "type": "text",
+            "text": (
+                f"Annotated frame {output.frame_index} with "
+                f"{track_count} visible tracks."
+            ),
+        },
+        {
+            "type": "image",
+            "base64": output.image,
+            "mime_type": "image/jpeg",
+        },
+        {
+            "type": "json",
+            "json": output.model_dump(mode="json", exclude={"image"}),
+        },
     ]

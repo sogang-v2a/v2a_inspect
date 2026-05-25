@@ -100,7 +100,7 @@ class SoundTimelineReadTools:
         draw_frame_index(image, frame_index)
         return AnnotatedFrameOutput(
             frame_index=frame_index,
-            image=_image_data_url(image),
+            image=_image_base64(image),
             tracks=tracks,
         )
 
@@ -184,8 +184,7 @@ class SoundTimelineReadTools:
         return tracks
 
 
-def _image_data_url(image: Image.Image) -> str:
+def _image_base64(image: Image.Image) -> str:
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=90)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
