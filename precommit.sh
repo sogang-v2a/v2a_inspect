@@ -2,6 +2,6 @@
 
 set -euo pipefail
 
-uv run ruff check --fix src/
-uv run ruff format src/
+uv run ruff check --fix src/ server/src/
+uv run ruff format src/ server/src/
 uv run ty check src/
