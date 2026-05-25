@@ -15,6 +15,7 @@ from v2a_inspect.visualization.drawing import draw_bbox, draw_frame_index, draw_
 from .schemas import (
     AnnotatedFrameOutput,
     AnnotatedFrameTrackView,
+    FrameResolutionMode,
     ListScenesOutput,
     ListTracksOutput,
     ObjectSeedView,
@@ -26,6 +27,10 @@ from .schemas import (
 
 if TYPE_CHECKING:
     from .editor import SoundTimelineEditor
+
+LOW_RES_WIDTH = 640
+LOW_RES_JPEG_QUALITY = 75
+HIGH_RES_JPEG_QUALITY = 90
 
 
 class SoundTimelineReadTools:
@@ -79,7 +84,11 @@ class SoundTimelineReadTools:
             tracks=self.list_tracks(scene_index).tracks,
         )
 
-    def get_annotated_frame(self, frame_index: int) -> AnnotatedFrameOutput:
+    def get_annotated_frame(
+        self,
+        frame_index: int,
+        resolution_mode: FrameResolutionMode = "low",
+    ) -> AnnotatedFrameOutput:
         self.editor.check_frame_index(frame_index, allow_end=False)
         image = extract_frame(Path(self.editor.video_asset.source_path), frame_index)
         tracks = self._tracks_at_frame(frame_index)
@@ -98,9 +107,13 @@ class SoundTimelineReadTools:
                 color,
             )
         draw_frame_index(image, frame_index)
+        image = _render_output_image(image, resolution_mode)
         return AnnotatedFrameOutput(
             frame_index=frame_index,
-            image=_image_base64(image),
+            resolution_mode=resolution_mode,
+            width=image.width,
+            height=image.height,
+            image=_image_base64(image, quality=_jpeg_quality(resolution_mode)),
             tracks=tracks,
         )
 
@@ -184,7 +197,27 @@ class SoundTimelineReadTools:
         return tracks
 
 
-def _image_base64(image: Image.Image) -> str:
+def _render_output_image(
+    image: Image.Image,
+    resolution_mode: FrameResolutionMode,
+) -> Image.Image:
+    if resolution_mode == "high":
+        return image
+
+    if image.width <= LOW_RES_WIDTH:
+        return image
+
+    height = round(image.height * (LOW_RES_WIDTH / image.width))
+    return image.resize((LOW_RES_WIDTH, height), Image.Resampling.LANCZOS)
+
+
+def _jpeg_quality(resolution_mode: FrameResolutionMode) -> int:
+    if resolution_mode == "high":
+        return HIGH_RES_JPEG_QUALITY
+    return LOW_RES_JPEG_QUALITY
+
+
+def _image_base64(image: Image.Image, *, quality: int) -> str:
     buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=90)
+    image.save(buffer, format="JPEG", quality=quality)
     return base64.b64encode(buffer.getvalue()).decode("ascii")

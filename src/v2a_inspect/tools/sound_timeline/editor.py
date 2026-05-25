@@ -12,6 +12,7 @@ from .schemas import (
     AnnotatedFrameOutput,
     DeleteSoundEventOutput,
     DeleteSoundSourceOutput,
+    FrameResolutionMode,
     ListScenesOutput,
     ListTracksOutput,
     SceneSummaryOutput,
@@ -37,8 +38,12 @@ class SoundTimelineEditor:
     def get_scene_summary(self, scene_index: int) -> SceneSummaryOutput:
         return self.read.get_scene_summary(scene_index)
 
-    def get_annotated_frame(self, frame_index: int) -> AnnotatedFrameOutput:
-        return self.read.get_annotated_frame(frame_index)
+    def get_annotated_frame(
+        self,
+        frame_index: int,
+        resolution_mode: FrameResolutionMode = "low",
+    ) -> AnnotatedFrameOutput:
+        return self.read.get_annotated_frame(frame_index, resolution_mode)
 
     def list_tracks(self, scene_index: int) -> ListTracksOutput:
         return self.read.list_tracks(scene_index)

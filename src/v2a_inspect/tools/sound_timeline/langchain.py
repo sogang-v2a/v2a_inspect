@@ -10,6 +10,7 @@ from .schemas import (
     DeleteSoundEventArgs,
     DeleteSoundSourceArgs,
     FrameIndexArgs,
+    FrameResolutionMode,
     NoArgs,
     SceneIndexArgs,
     UpsertSoundEventArgs,
@@ -47,7 +48,8 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
             description=(
                 "Targeted visual confirmation only. Returns LangChain message "
                 "blocks: text, image, and JSON track metadata. Use sparingly "
-                "after scene summary and visual events."
+                "after scene summary and visual events. Use resolution_mode='low' "
+                "by default; use 'high' only when low-res lacks needed detail."
             ),
         ),
         StructuredTool.from_function(
@@ -99,11 +101,12 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
 
 def _make_annotated_frame_tool(
     editor: SoundTimelineEditor,
-) -> Callable[[int], list[ToolMessageContentBlock]]:
+) -> Callable[[int, FrameResolutionMode], list[ToolMessageContentBlock]]:
     def get_annotated_frame_message(
         frame_index: int,
+        resolution_mode: FrameResolutionMode = "low",
     ) -> list[ToolMessageContentBlock]:
-        output = editor.get_annotated_frame(frame_index)
+        output = editor.get_annotated_frame(frame_index, resolution_mode)
         return _to_annotated_frame_message_blocks(output)
 
     return get_annotated_frame_message

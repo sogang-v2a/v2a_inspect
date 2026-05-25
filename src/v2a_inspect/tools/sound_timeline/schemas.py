@@ -17,6 +17,7 @@ SoundSourceType = Literal[
 ]
 SoundTrackType = Literal["dialogue", "sfx", "music", "ambience"]
 SoundGenerationMode = Literal["tta", "vta", "hybrid", "unknown"]
+FrameResolutionMode = Literal["low", "high"]
 
 
 class NoArgs(SchemaModel):
@@ -29,6 +30,7 @@ class SceneIndexArgs(SchemaModel):
 
 class FrameIndexArgs(SchemaModel):
     frame_index: int = Field(ge=0)
+    resolution_mode: FrameResolutionMode = "low"
 
 
 class VisualEventsArgs(SchemaModel):
@@ -124,6 +126,9 @@ class AnnotatedFrameTrackView(SchemaModel):
 
 class AnnotatedFrameOutput(SchemaModel):
     frame_index: int
+    resolution_mode: FrameResolutionMode
+    width: int
+    height: int
     image: str
     tracks: list[AnnotatedFrameTrackView]
 

@@ -22,6 +22,8 @@ Rules:
 - Revisit and refine existing events when needed.
 - Do not scan frame-by-frame.
 - Do not call get_annotated_frame_message repeatedly without writing events.
+- When using frame images, start with resolution_mode="low"; retry with
+  resolution_mode="high" only for ambiguous small details.
 - If uncertain after scene summary, visual events, and a small number of frame
   checks, write a best-effort event with generation_mode="unknown" and notes.
 - Finish only after the full video is covered enough for a usable audio plan.
