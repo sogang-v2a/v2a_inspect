@@ -18,6 +18,7 @@ from .schemas import (
     SceneSummaryOutput,
     SoundGenerationMode,
     SoundSourceType,
+    SoundTimelineViewOutput,
     SoundTrackType,
     VisualEventsOutput,
 )
@@ -32,8 +33,12 @@ class SoundTimelineEditor:
         self.read = SoundTimelineReadTools(self)
         self.write = SoundTimelineWriteTools(self)
 
-    def list_scenes(self) -> ListScenesOutput:
-        return self.read.list_scenes()
+    def list_scenes(
+        self,
+        start_scene_index: int = 0,
+        limit: int = 25,
+    ) -> ListScenesOutput:
+        return self.read.list_scenes(start_scene_index, limit)
 
     def get_scene_summary(self, scene_index: int) -> SceneSummaryOutput:
         return self.read.get_scene_summary(scene_index)
@@ -52,11 +57,25 @@ class SoundTimelineEditor:
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
+        limit: int = 50,
     ) -> VisualEventsOutput:
-        return self.read.get_visual_events(start_frame_index, end_frame_index)
+        return self.read.get_visual_events(
+            start_frame_index,
+            end_frame_index,
+            limit,
+        )
 
-    def get_sound_timeline(self) -> SoundTimeline:
-        return self.read.get_sound_timeline()
+    def get_sound_timeline(
+        self,
+        start_frame_index: int | None = None,
+        end_frame_index: int | None = None,
+        limit: int = 50,
+    ) -> SoundTimelineViewOutput:
+        return self.read.get_sound_timeline(
+            start_frame_index,
+            end_frame_index,
+            limit,
+        )
 
     def upsert_sound_source(
         self,

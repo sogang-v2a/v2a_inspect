@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from v2a_inspect.media_utils.video import extract_frame
-from v2a_inspect.models import SoundTimeline
 from v2a_inspect.visualization.colors import color_for_index
 from v2a_inspect.visualization.drawing import draw_bbox, draw_frame_index, draw_label
 
@@ -21,6 +20,7 @@ from .schemas import (
     ObjectSeedView,
     SceneListItem,
     SceneSummaryOutput,
+    SoundTimelineViewOutput,
     TrackSummary,
     VisualEventsOutput,
 )
@@ -37,14 +37,29 @@ class SoundTimelineReadTools:
     def __init__(self, editor: SoundTimelineEditor) -> None:
         self.editor = editor
 
-    def list_scenes(self) -> ListScenesOutput:
+    def list_scenes(
+        self,
+        start_scene_index: int = 0,
+        limit: int = 25,
+    ) -> ListScenesOutput:
         video_asset = self.editor.video_asset
+        scenes = video_asset.initial_scenes
+        if start_scene_index > len(scenes):
+            raise ValueError(f"start_scene_index out of range: {start_scene_index}")
+        selected_scenes = scenes[start_scene_index : start_scene_index + limit]
+        next_scene_index = start_scene_index + len(selected_scenes)
+        if next_scene_index >= len(scenes):
+            next_scene_index = None
         return ListScenesOutput(
             frame_count=video_asset.frame_count,
             fps=video_asset.fps,
+            total_scene_count=len(scenes),
+            start_scene_index=start_scene_index,
+            returned_scene_count=len(selected_scenes),
+            next_scene_index=next_scene_index,
             scenes=[
                 SceneListItem(
-                    scene_index=scene_index,
+                    scene_index=start_scene_index + scene_offset,
                     initial_scene_id=scene.initial_scene_id,
                     start_frame_index=scene.start_frame_index,
                     end_frame_index=scene.end_frame_index,
@@ -57,7 +72,7 @@ class SoundTimelineReadTools:
                     if scene.initial_analysis is None
                     else len(scene.initial_analysis.object_seeds),
                 )
-                for scene_index, scene in enumerate(video_asset.initial_scenes)
+                for scene_offset, scene in enumerate(selected_scenes)
             ],
         )
 
@@ -142,10 +157,24 @@ class SoundTimelineReadTools:
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
+        limit: int = 50,
     ) -> VisualEventsOutput:
+        if (
+            start_frame_index is not None
+            and end_frame_index is not None
+            and end_frame_index <= start_frame_index
+        ):
+            raise ValueError("end_frame_index must be greater than start_frame_index")
         layer = self.editor.video_asset.visual_identity_layer
         if layer is None:
-            return VisualEventsOutput(visual_events=[])
+            return VisualEventsOutput(
+                total_matching_event_count=0,
+                start_frame_index=start_frame_index,
+                end_frame_index=end_frame_index,
+                limit=limit,
+                returned_event_count=0,
+                visual_events=[],
+            )
         events = []
         for event in layer.visual_events:
             if (
@@ -159,13 +188,81 @@ class SoundTimelineReadTools:
             ):
                 continue
             events.append(event)
-        return VisualEventsOutput(visual_events=events)
+        events = sorted(
+            events,
+            key=lambda event: (
+                event.start_frame_index,
+                event.end_frame_index,
+                event.event_type,
+                str(event.visual_event_id),
+            ),
+        )
+        paged_events = events[:limit]
+        return VisualEventsOutput(
+            total_matching_event_count=len(events),
+            start_frame_index=start_frame_index,
+            end_frame_index=end_frame_index,
+            limit=limit,
+            returned_event_count=len(paged_events),
+            visual_events=paged_events,
+        )
 
-    def get_sound_timeline(self) -> SoundTimeline:
+    def get_sound_timeline(
+        self,
+        start_frame_index: int | None = None,
+        end_frame_index: int | None = None,
+        limit: int = 50,
+    ) -> SoundTimelineViewOutput:
+        if (
+            start_frame_index is not None
+            and end_frame_index is not None
+            and end_frame_index <= start_frame_index
+        ):
+            raise ValueError("end_frame_index must be greater than start_frame_index")
         timeline = self.editor.video_asset.sound_timeline
         if timeline is None:
-            return SoundTimeline()
-        return timeline
+            return SoundTimelineViewOutput(
+                sound_sources=[],
+                sound_events=[],
+                total_matching_event_count=0,
+                start_frame_index=start_frame_index,
+                end_frame_index=end_frame_index,
+                limit=limit,
+                returned_event_count=0,
+            )
+        events = []
+        for event in timeline.sound_events:
+            if (
+                start_frame_index is not None
+                and event.end_frame_index <= start_frame_index
+            ):
+                continue
+            if (
+                end_frame_index is not None
+                and event.start_frame_index >= end_frame_index
+            ):
+                continue
+            events.append(event)
+        events = sorted(
+            events,
+            key=lambda event: (
+                event.start_frame_index,
+                event.end_frame_index,
+                event.track_type,
+                str(event.sound_event_id),
+            ),
+        )
+        paged_events = events[:limit]
+        return SoundTimelineViewOutput(
+            sound_sources=timeline.sound_sources,
+            sound_events=paged_events,
+            total_matching_event_count=len(events),
+            start_frame_index=start_frame_index,
+            end_frame_index=end_frame_index,
+            limit=limit,
+            returned_event_count=len(paged_events),
+            notes=timeline.notes,
+        )
 
     def _scene(self, scene_index: int):
         scenes = self.editor.video_asset.initial_scenes

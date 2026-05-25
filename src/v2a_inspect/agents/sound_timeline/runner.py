@@ -4,6 +4,7 @@ from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langchain.agents.middleware import ToolRetryMiddleware
 
 from v2a_inspect.config import settings
 from v2a_inspect.llm import model_manager
@@ -37,11 +38,16 @@ def run_agent_loop(
 ) -> dict:
     resolved_max_iterations = _resolve_max_iterations(max_iterations)
     system_prompt, user_message = _prompt_messages(objective)
+    retry_middleware = ToolRetryMiddleware(
+        max_retries=5,
+        retry_on=(Exception,),
+    )
     agent = create_agent(
         model=model or model_manager.large,
         tools=editor.tools(),
         system_prompt=str(system_prompt.content),
         name="sound_timeline_agent",
+        middleware=[retry_middleware],
     )
     try:
         return agent.invoke(
