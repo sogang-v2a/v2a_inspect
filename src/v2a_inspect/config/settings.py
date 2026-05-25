@@ -84,6 +84,13 @@ class Settings(BaseSettings):
             "V2A_LLM_INITIAL_SCENE_ANALYSIS_BATCH_SIZE",
         ),
     )
+    agent_sound_timeline_recursion_limit: int = Field(
+        default=100,
+        ge=1,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_AGENT_SOUND_TIMELINE_RECURSION_LIMIT",
+        ),
+    )
     langfuse_public_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
