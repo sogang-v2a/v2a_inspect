@@ -7,7 +7,7 @@ from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
-from v2a_inspect.models import SchemaModel
+from v2a_inspect.models import SchemaModel, SoundEvent, SoundSource
 
 from .schemas import (
     AnnotatedFrameOutput,
@@ -114,6 +114,15 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
 
 
 def _tool_string(value: object) -> str:
+    if isinstance(value, SoundSource):
+        return f"sound_source {value.source_type} label={value.label}"
+    if isinstance(value, SoundEvent):
+        source = "" if value.sound_source_id is None else " source=linked"
+        return (
+            f"sound_event {value.start_frame_index}-{value.end_frame_index} "
+            f"{value.track_type} mode={value.generation_mode}{source} "
+            f"description={value.description}"
+        )
     if isinstance(value, SchemaModel):
         return value.to_tool_string()
     return json.dumps(value, indent=2, default=str)
@@ -293,6 +302,12 @@ def _to_annotated_frame_message_blocks(
         },
         {
             "type": "json",
-            "json": output.model_dump(mode="json", exclude={"image"}),
+            "json": output.model_dump(
+                mode="json",
+                exclude={
+                    "image": True,
+                    "tracks": {"__all__": {"scene_track_id"}},
+                },
+            ),
         },
     ]

@@ -22,6 +22,7 @@ from .schemas import (
     SceneSummaryOutput,
     SoundTimelineViewOutput,
     TrackSummary,
+    VisualEventView,
     VisualEventsOutput,
 )
 
@@ -71,6 +72,9 @@ class SoundTimelineReadTools:
                     object_seed_count=0
                     if scene.initial_analysis is None
                     else len(scene.initial_analysis.object_seeds),
+                    object_labels=[]
+                    if scene.initial_analysis is None
+                    else [seed.label for seed in scene.initial_analysis.object_seeds],
                 )
                 for scene_offset, scene in enumerate(selected_scenes)
             ],
@@ -118,7 +122,7 @@ class SoundTimelineReadTools:
             draw_label(
                 image,
                 label_position,
-                f"{str(track_view.scene_track_id)[:8]} {track_view.confidence:.2f}",
+                f"{track_view.display_label} {track_view.confidence:.2f}",
                 color,
             )
         draw_frame_index(image, frame_index)
@@ -175,6 +179,10 @@ class SoundTimelineReadTools:
                 returned_event_count=0,
                 visual_events=[],
             )
+        object_labels = {
+            visual_object.visual_object_id: visual_object.label or "unknown object"
+            for visual_object in layer.visual_objects
+        }
         events = []
         for event in layer.visual_events:
             if (
@@ -204,7 +212,25 @@ class SoundTimelineReadTools:
             end_frame_index=end_frame_index,
             limit=limit,
             returned_event_count=len(paged_events),
-            visual_events=paged_events,
+            visual_events=[
+                VisualEventView(
+                    object_label=object_labels.get(
+                        event.visual_object_id,
+                        "unknown object",
+                    ),
+                    related_object_labels=[
+                        object_labels.get(related_object_id, "unknown object")
+                        for related_object_id in event.related_visual_object_ids
+                    ],
+                    start_frame_index=event.start_frame_index,
+                    end_frame_index=event.end_frame_index,
+                    event_type=event.event_type,
+                    description=event.description,
+                    confidence=event.confidence,
+                    notes=event.notes,
+                )
+                for event in paged_events
+            ],
         )
 
     def get_sound_timeline(
