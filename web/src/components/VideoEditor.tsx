@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Inspector from "./Inspector";
 import Timeline from "./Timeline";
 import type { AssetResponse } from "../types";
@@ -11,10 +11,13 @@ interface VideoEditorProps {
 
 export default function VideoEditor({ state, submitError, onSubmit }: VideoEditorProps) {
   const [frame, setFrame] = useState(0);
+  const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const asset = state.asset;
+  const fps = 30;
   const maxFrame = Math.max(0, (asset?.frame_count ?? 1) - 1);
-  const selectedFrame = Math.min(frame, maxFrame);
-  const timeSec = selectedFrame / 30;
+  const selectedFrame = clamp(frame, 0, maxFrame);
+  const timeSec = selectedFrame / fps;
   const counts = useMemo(() => {
     const scenes = asset?.initial_scenes.length ?? 0;
     const tracks =
@@ -26,6 +29,36 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
     const soundEvents = asset?.sound_timeline?.sound_events.length ?? 0;
     return { scenes, tracks, visualEvents, soundEvents };
   }, [asset]);
+  const selectFrame = useCallback(
+    (nextFrame: number) => {
+      setFrame(clamp(nextFrame, 0, maxFrame));
+    },
+    [maxFrame],
+  );
+
+  useEffect(() => {
+    if (frame !== selectedFrame) {
+      setFrame(selectedFrame);
+    }
+  }, [frame, selectedFrame]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !asset) {
+      return;
+    }
+    if (Math.abs(video.currentTime - timeSec) > 0.04) {
+      video.currentTime = timeSec;
+    }
+  }, [asset, timeSec]);
+
+  function syncFrameFromVideo() {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    selectFrame(Math.round(video.currentTime * fps));
+  }
 
   return (
     <main className="editor-shell">
@@ -120,8 +153,33 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
         <section className="editor">
           <div className="preview-grid">
             <div className="video-panel">
+              <div className="preview-toolbar">
+                <button
+                  className={showTrackingOverlay ? "toggle active" : "toggle"}
+                  disabled={!asset}
+                  onClick={() => setShowTrackingOverlay((value) => !value)}
+                  type="button"
+                >
+                  Tracking
+                </button>
+              </div>
               {asset ? (
-                <video src="/api/video" controls />
+                <div className="video-frame">
+                  <video
+                    ref={videoRef}
+                    src={`/api/video?asset_version=${state.asset_version}`}
+                    controls
+                    onSeeked={syncFrameFromVideo}
+                    onTimeUpdate={syncFrameFromVideo}
+                  />
+                  {showTrackingOverlay ? (
+                    <img
+                      alt=""
+                      className="tracking-overlay"
+                      src={`/api/frames/tracking-overlay?frame=${selectedFrame}&asset_version=${state.asset_version}`}
+                    />
+                  ) : null}
+                </div>
               ) : (
                 <div className="empty-video">Upload a video to start</div>
               )}
@@ -135,20 +193,29 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
                   max={maxFrame}
                   step="1"
                   value={selectedFrame}
-                  onChange={(event) => setFrame(Number(event.target.value))}
+                  onChange={(event) => selectFrame(Number(event.target.value))}
                   disabled={!asset}
                 />
               </label>
             </div>
-            <Inspector asset={asset} frame={selectedFrame} version={state.version} />
+            <Inspector
+              asset={asset}
+              frame={selectedFrame}
+              assetVersion={state.asset_version}
+            />
           </div>
           <Timeline
             rows={state.timeline_rows}
             frame={selectedFrame}
             frameCount={asset?.frame_count ?? 0}
+            onSelectFrame={selectFrame}
           />
         </section>
       </section>
     </main>
   );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

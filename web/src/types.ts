@@ -5,9 +5,18 @@ export interface AssetResponse {
   stage: string | null;
   error: string | null;
   version: number;
+  asset_version: number;
   updated_at: string;
   asset: VideoAsset | null;
   timeline_rows: TimelineRow[];
+}
+
+export interface AssetUpdateEvent {
+  status: RunStatus;
+  stage: string | null;
+  error: string | null;
+  version: number;
+  asset_version: number;
 }
 
 export interface VideoAsset {
@@ -71,8 +80,47 @@ export interface TimelineRow {
 }
 
 export interface CurrentFrameRows {
-  scene: Record<string, unknown> | null;
-  tracks: Record<string, unknown>[];
-  visual_events: Record<string, unknown>[];
-  sound_events: Record<string, unknown>[];
+  scene: SceneFrameRow | null;
+  tracks: TrackFrameRow[];
+  visual_events: VisualEventFrameRow[];
+  sound_events: SoundEventFrameRow[];
+}
+
+export interface SceneFrameRow {
+  scene: number;
+  start_frame: number;
+  end_frame: number;
+  duration_sec: number;
+}
+
+export interface TrackFrameRow {
+  scene: number;
+  track: number;
+  label: string;
+  bbox: number[] | null;
+  confidence: number;
+  has_mask: boolean;
+}
+
+export interface VisualEventFrameRow {
+  object: string;
+  related: string;
+  event_type: string;
+  start_frame: number;
+  end_frame: number;
+  duration_sec: number;
+  confidence: number;
+  description: string;
+  notes: string | null;
+}
+
+export interface SoundEventFrameRow {
+  track_type: string;
+  source: string | null;
+  start_frame: number;
+  end_frame: number;
+  duration_sec: number;
+  generation_mode: string;
+  description: string;
+  notes: string | null;
 }

@@ -14,6 +14,7 @@ RunStatus = Literal["idle", "running", "complete", "failed"]
 class VideoAssetSnapshot:
     asset: VideoAsset | None
     version: int
+    asset_version: int
     status: RunStatus
     current_stage: str | None
     error: str | None
@@ -26,6 +27,7 @@ class VideoAssetStore:
     def __init__(self) -> None:
         self._asset: VideoAsset | None = None
         self._version = 0
+        self._asset_version = 0
         self._status: RunStatus = "idle"
         self._current_stage: str | None = None
         self._error: str | None = None
@@ -40,6 +42,7 @@ class VideoAssetStore:
             self._status = "running"
             self._current_stage = stage
             self._error = None
+            self._asset_version += 1
             self._bump_locked()
 
     async def set_running(self, *, stage: str) -> None:
@@ -86,6 +89,7 @@ class VideoAssetStore:
         return VideoAssetSnapshot(
             asset=self._asset,
             version=self._version,
+            asset_version=self._asset_version,
             status=self._status,
             current_stage=self._current_stage,
             error=self._error,

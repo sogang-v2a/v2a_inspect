@@ -1,13 +1,14 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { fetchAsset, startRun } from "./api";
 import VideoEditor from "./components/VideoEditor";
-import type { AssetResponse } from "./types";
+import type { AssetResponse, AssetUpdateEvent } from "./types";
 
 const emptyAsset: AssetResponse = {
   status: "idle",
   stage: null,
   error: null,
   version: 0,
+  asset_version: 0,
   updated_at: "",
   asset: null,
   timeline_rows: [],
@@ -16,18 +17,34 @@ const emptyAsset: AssetResponse = {
 export default function App() {
   const [state, setState] = useState<AssetResponse>(emptyAsset);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const assetVersionRef = useRef(0);
 
   useEffect(() => {
     void refreshAsset();
     const events = new EventSource("/events");
-    events.addEventListener("asset_update", () => {
-      void refreshAsset();
+    events.addEventListener("asset_update", (event) => {
+      const update = JSON.parse((event as MessageEvent).data) as AssetUpdateEvent;
+      if (update.asset_version !== assetVersionRef.current) {
+        void refreshAsset();
+        return;
+      }
+      setState((current) => {
+        return {
+          ...current,
+          status: update.status,
+          stage: update.stage,
+          error: update.error,
+          version: update.version,
+        };
+      });
     });
     return () => events.close();
   }, []);
 
   async function refreshAsset() {
-    setState(await fetchAsset());
+    const nextState = await fetchAsset();
+    assetVersionRef.current = nextState.asset_version;
+    setState(nextState);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

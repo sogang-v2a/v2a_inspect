@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from .overlays import render_tracking_overlay
 from .pipeline import PipelineOptions, run_uploaded_video_pipeline
 from .rows import current_frame_rows, timeline_rows
 from .store import VideoAssetSnapshot, VideoAssetStore
@@ -54,6 +55,19 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             "frame": frame,
             "rows": current_frame_rows(snapshot.asset, frame),
         }
+
+    @router.get("/api/frames/tracking-overlay")
+    async def get_tracking_overlay(frame: int) -> Response:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            raise HTTPException(status_code=404, detail="No video asset loaded")
+        if frame < 0 or frame >= snapshot.asset.frame_count:
+            raise HTTPException(status_code=400, detail="Frame out of range")
+        return Response(
+            render_tracking_overlay(snapshot.asset, frame),
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @router.post("/api/runs")
     async def start_run(
@@ -114,6 +128,7 @@ def _snapshot_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
         "stage": snapshot.current_stage,
         "error": snapshot.error,
         "version": snapshot.version,
+        "asset_version": snapshot.asset_version,
         "updated_at": snapshot.updated_at.isoformat(),
         "asset": None
         if snapshot.asset is None
@@ -127,6 +142,7 @@ def _snapshot_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
 def _sse(snapshot: VideoAssetSnapshot) -> str:
     data = {
         "version": snapshot.version,
+        "asset_version": snapshot.asset_version,
         "status": snapshot.status,
         "stage": snapshot.current_stage,
         "error": snapshot.error,
