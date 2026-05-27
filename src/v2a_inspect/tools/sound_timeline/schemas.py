@@ -112,7 +112,7 @@ class ListScenesOutput(SchemaModel):
                 f"start_scene_index={self.next_scene_index}) for later scenes"
             )
         for scene in self.scenes:
-            labels = _compact_list(scene.object_labels)
+            labels = _compact_list(disambiguate_labels(scene.object_labels))
             lines.append(
                 f"- scene {scene.scene_index}: frames "
                 f"{scene.start_frame_index}-{scene.end_frame_index}; "
@@ -150,8 +150,15 @@ class ListTracksOutput(SchemaModel):
 
     def to_tool_string(self) -> str:
         lines = [f"scene {self.scene_index} tracks={len(self.tracks)}"]
-        for track_number, track in enumerate(self.tracks, start=1):
-            lines.append(_track_line(track_number, track))
+        for track_number, (label, track) in enumerate(
+            zip(
+                disambiguate_labels([track.display_label for track in self.tracks]),
+                self.tracks,
+                strict=True,
+            ),
+            start=1,
+        ):
+            lines.append(_track_line(track_number, label, track))
         return "\n".join(lines)
 
 
@@ -174,17 +181,31 @@ class SceneSummaryOutput(SchemaModel):
             )
         ]
         if self.object_seeds:
-            labels = _compact_list([seed.label for seed in self.object_seeds])
+            seed_labels = disambiguate_labels(
+                [seed.label for seed in self.object_seeds]
+            )
+            labels = _compact_list(seed_labels)
             lines.append(f"objects={labels}")
-            for seed in self.object_seeds:
-                detail = f"- object {seed.label}: prompt={seed.tracking_prompt}"
+            for label, seed in zip(
+                seed_labels,
+                self.object_seeds,
+                strict=True,
+            ):
+                detail = f"- object {label}: prompt={seed.tracking_prompt}"
                 if seed.notes:
                     detail += f"; notes={seed.notes}"
                 lines.append(detail)
         if self.tracks:
             lines.append(f"tracks={len(self.tracks)}")
-            for track_number, track in enumerate(self.tracks, start=1):
-                lines.append(_track_line(track_number, track))
+            for track_number, (label, track) in enumerate(
+                zip(
+                    disambiguate_labels([track.display_label for track in self.tracks]),
+                    self.tracks,
+                    strict=True,
+                ),
+                start=1,
+            ):
+                lines.append(_track_line(track_number, label, track))
         return "\n".join(lines)
 
 
@@ -248,7 +269,7 @@ class VisualEventsOutput(SchemaModel):
             lines.append(
                 f"- {event.start_frame_index}-{event.end_frame_index} "
                 f"{event.event_type} object={event.object_label} "
-                f"confidence={event.confidence:g}"
+                f"confidence={event.confidence:.2f}"
                 + (f" related={related}" if related else "")
                 + (f" description={event.description}" if event.description else "")
             )
@@ -316,15 +337,24 @@ class DeleteSoundEventOutput(SchemaModel):
         return "deleted sound event"
 
 
-def _track_line(track_number: int, track: TrackSummary) -> str:
+def _track_line(track_number: int, label: str, track: TrackSummary) -> str:
     line = (
-        f"- track {track_number}: {track.display_label}; "
+        f"- track {track_number}: {label}; "
         f"frames={track.start_frame_index}-{track.end_frame_index}; "
-        f"confidence={track.confidence:g}"
+        f"confidence={track.confidence:.2f}"
     )
     if track.notes:
         line += f"; notes={track.notes}"
     return line
+
+
+def disambiguate_labels(labels: list[str]) -> list[str]:
+    seen: dict[str, int] = {}
+    output: list[str] = []
+    for label in labels:
+        seen[label] = seen.get(label, 0) + 1
+        output.append(f"{label} #{seen[label]}" if labels.count(label) > 1 else label)
+    return output
 
 
 def _compact_list(items: list[str]) -> str:

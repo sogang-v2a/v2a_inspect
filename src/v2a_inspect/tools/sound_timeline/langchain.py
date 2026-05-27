@@ -24,6 +24,7 @@ from .schemas import (
     UpsertSoundEventArgs,
     UpsertSoundSourceArgs,
     VisualEventsArgs,
+    disambiguate_labels,
 )
 
 if TYPE_CHECKING:
@@ -287,6 +288,7 @@ def _to_annotated_frame_message_blocks(
     output: AnnotatedFrameOutput,
 ) -> list[ToolMessageContentBlock]:
     track_count = len(output.tracks)
+    track_labels = disambiguate_labels([track.display_label for track in output.tracks])
     return [
         {
             "type": "text",
@@ -302,12 +304,37 @@ def _to_annotated_frame_message_blocks(
         },
         {
             "type": "json",
-            "json": output.model_dump(
-                mode="json",
-                exclude={
-                    "image": True,
-                    "tracks": {"__all__": {"scene_track_id"}},
-                },
-            ),
+            "json": {
+                "frame_index": output.frame_index,
+                "resolution_mode": output.resolution_mode,
+                "width": output.width,
+                "height": output.height,
+                "tracks": [
+                    {
+                        "scene_index": track.scene_index,
+                        "label": label,
+                        "bbox_xyxy": _rounded_bbox(track.bbox_xyxy),
+                        "confidence": round(track.confidence, 2),
+                    }
+                    for label, track in zip(
+                        track_labels,
+                        output.tracks,
+                        strict=True,
+                    )
+                ],
+            },
         },
     ]
+
+
+def _rounded_bbox(
+    bbox_xyxy: tuple[float, float, float, float] | None,
+) -> tuple[int, int, int, int] | None:
+    if bbox_xyxy is None:
+        return None
+    return (
+        round(bbox_xyxy[0]),
+        round(bbox_xyxy[1]),
+        round(bbox_xyxy[2]),
+        round(bbox_xyxy[3]),
+    )

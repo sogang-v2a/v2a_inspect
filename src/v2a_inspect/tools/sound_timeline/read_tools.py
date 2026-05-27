@@ -24,6 +24,7 @@ from .schemas import (
     TrackSummary,
     VisualEventView,
     VisualEventsOutput,
+    disambiguate_labels,
 )
 
 if TYPE_CHECKING:
@@ -111,6 +112,7 @@ class SoundTimelineReadTools:
         self.editor.check_frame_index(frame_index, allow_end=False)
         image = extract_frame(Path(self.editor.video_asset.source_path), frame_index)
         tracks = self._tracks_at_frame(frame_index)
+        track_labels = disambiguate_labels([track.display_label for track in tracks])
         for track_index, track_view in enumerate(tracks):
             color = color_for_index(track_index)
             bbox = track_view.bbox_xyxy
@@ -122,7 +124,7 @@ class SoundTimelineReadTools:
             draw_label(
                 image,
                 label_position,
-                f"{track_view.display_label} {track_view.confidence:.2f}",
+                f"{track_labels[track_index]} {track_view.confidence:.2f}",
                 color,
             )
         draw_frame_index(image, frame_index)
@@ -179,9 +181,19 @@ class SoundTimelineReadTools:
                 returned_event_count=0,
                 visual_events=[],
             )
+        visual_object_labels = disambiguate_labels(
+            [
+                visual_object.label or "unknown object"
+                for visual_object in layer.visual_objects
+            ]
+        )
         object_labels = {
-            visual_object.visual_object_id: visual_object.label or "unknown object"
-            for visual_object in layer.visual_objects
+            visual_object.visual_object_id: object_label
+            for visual_object, object_label in zip(
+                layer.visual_objects,
+                visual_object_labels,
+                strict=True,
+            )
         }
         events = []
         for event in layer.visual_events:
