@@ -1,20 +1,38 @@
-import type { AssetResponse, CurrentFrameRows } from "./types";
+import type { AssetResponse, CurrentFrameRows, TrackWindowResponse } from "./types";
 
-export async function fetchAsset(): Promise<AssetResponse> {
-  const response = await fetch("/api/asset");
+export async function fetchAssetSummary(): Promise<AssetResponse> {
+  const response = await fetch("/api/asset-summary");
   if (!response.ok) {
-    throw new Error(`Failed to fetch asset: ${response.status}`);
+    throw new Error(`Failed to fetch asset summary: ${response.status}`);
   }
   return response.json();
 }
 
-export async function fetchCurrentFrame(frame: number): Promise<CurrentFrameRows | null> {
-  const response = await fetch(`/api/rows/current-frame?frame=${frame}`);
+export async function fetchCurrentFrame(
+  frame: number,
+  signal?: AbortSignal,
+): Promise<CurrentFrameRows | null> {
+  const response = await fetch(`/api/rows/current-frame?frame=${frame}`, { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch frame rows: ${response.status}`);
   }
   const payload = await response.json();
   return payload.rows;
+}
+
+export async function fetchTrackingWindow(
+  startFrame: number,
+  endFrame: number,
+): Promise<TrackWindowResponse> {
+  const params = new URLSearchParams({
+    start_frame: String(startFrame),
+    end_frame: String(endFrame),
+  });
+  const response = await fetch(`/api/tracks/window?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch tracking window: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function startRun(form: HTMLFormElement): Promise<void> {

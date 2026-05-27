@@ -4,17 +4,19 @@ import type {
   CurrentFrameRows,
   SceneFrameRow,
   SoundEventFrameRow,
+  TimelineRow,
   TrackFrameRow,
-  VideoAsset,
+  VideoSummary,
   VisualEventFrameRow,
 } from "../types";
 
 type InspectorTab = "scene" | "tracks" | "visual" | "sound";
 
 interface InspectorProps {
-  asset: VideoAsset | null;
+  video: VideoSummary | null;
   frame: number;
-  assetVersion: number;
+  timelineRows: TimelineRow[];
+  version: number;
 }
 
 const tabs: { id: InspectorTab; label: string }[] = [
@@ -24,17 +26,31 @@ const tabs: { id: InspectorTab; label: string }[] = [
   { id: "sound", label: "Sound" },
 ];
 
-export default function Inspector({ asset, frame, assetVersion }: InspectorProps) {
+export default function Inspector({
+  video,
+  frame,
+  timelineRows,
+  version,
+}: InspectorProps) {
   const [rows, setRows] = useState<CurrentFrameRows | null>(null);
   const [activeTab, setActiveTab] = useState<InspectorTab>("scene");
+  const sceneRow = activeSceneRow(timelineRows, frame, video?.fps ?? 30);
 
   useEffect(() => {
-    if (!asset) {
+    if (!video) {
       setRows(null);
       return;
     }
-    void fetchCurrentFrame(frame).then(setRows);
-  }, [asset, frame, assetVersion]);
+    const controller = new AbortController();
+    void fetchCurrentFrame(frame, controller.signal)
+      .then(setRows)
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setRows(null);
+        }
+      });
+    return () => controller.abort();
+  }, [video, frame, version]);
 
   return (
     <aside className="inspector">
@@ -42,7 +58,7 @@ export default function Inspector({ asset, frame, assetVersion }: InspectorProps
         <h2>At Frame</h2>
         <span>{frame}</span>
       </div>
-      {asset ? (
+      {video ? (
         <>
           <div className="inspector-tabs" role="tablist">
             {tabs.map((tab) => (
@@ -58,7 +74,9 @@ export default function Inspector({ asset, frame, assetVersion }: InspectorProps
             ))}
           </div>
           <div className="inspector-body">
-            {activeTab === "scene" ? <SceneDetails row={rows?.scene ?? null} /> : null}
+            {activeTab === "scene" ? (
+              <SceneDetails row={sceneRow ?? rows?.scene ?? null} />
+            ) : null}
             {activeTab === "tracks" ? (
               <TrackDetails rows={rows?.tracks ?? []} />
             ) : null}
@@ -194,4 +212,27 @@ function formatBbox(bbox: number[] | null): string {
     return "-";
   }
   return bbox.map((value) => value.toFixed(1)).join(", ");
+}
+
+function activeSceneRow(
+  rows: TimelineRow[],
+  frame: number,
+  fps: number,
+): SceneFrameRow | null {
+  const scene = rows.find(
+    (row) =>
+      row.kind === "scene" &&
+      row.start_frame <= frame &&
+      frame < row.end_frame,
+  );
+  if (!scene) {
+    return null;
+  }
+  const match = /^scene (?<scene>\d+)$/.exec(scene.label);
+  return {
+    scene: match?.groups?.scene ? Number(match.groups.scene) : 0,
+    start_frame: scene.start_frame,
+    end_frame: scene.end_frame,
+    duration_sec: Number(((scene.end_frame - scene.start_frame) / fps).toFixed(2)),
+  };
 }

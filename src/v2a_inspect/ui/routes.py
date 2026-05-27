@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from .overlays import render_tracking_overlay
 from .pipeline import PipelineOptions, run_uploaded_video_pipeline
-from .rows import current_frame_rows, timeline_rows
+from .rows import current_frame_rows, timeline_rows, tracking_window_rows
 from .store import VideoAssetSnapshot, VideoAssetStore
 
 
@@ -30,7 +30,12 @@ def create_router(store: VideoAssetStore) -> APIRouter:
     @router.get("/api/asset")
     async def get_asset() -> dict[str, object]:
         snapshot = await store.snapshot()
-        return _snapshot_payload(snapshot)
+        return _full_snapshot_payload(snapshot)
+
+    @router.get("/api/asset-summary")
+    async def get_asset_summary() -> dict[str, object]:
+        snapshot = await store.snapshot()
+        return _summary_payload(snapshot)
 
     @router.get("/api/video")
     async def get_video() -> FileResponse:
@@ -54,6 +59,29 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             "version": snapshot.version,
             "frame": frame,
             "rows": current_frame_rows(snapshot.asset, frame),
+        }
+
+    @router.get("/api/tracks/window")
+    async def get_tracking_window(
+        start_frame: int, end_frame: int
+    ) -> dict[str, object]:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            return {
+                "version": snapshot.version,
+                "start_frame": start_frame,
+                "end_frame": end_frame,
+                "tracks": [],
+            }
+        start = max(0, start_frame)
+        end = min(snapshot.asset.frame_count - 1, end_frame)
+        if end < start:
+            raise HTTPException(status_code=400, detail="Invalid frame window")
+        return {
+            "version": snapshot.version,
+            "start_frame": start,
+            "end_frame": end,
+            "tracks": tracking_window_rows(snapshot.asset, start, end),
         }
 
     @router.get("/api/frames/tracking-overlay")
@@ -122,7 +150,8 @@ def create_router(store: VideoAssetStore) -> APIRouter:
     return router
 
 
-def _snapshot_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
+def _summary_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
+    asset = snapshot.asset
     return {
         "status": snapshot.status,
         "stage": snapshot.current_stage,
@@ -130,13 +159,28 @@ def _snapshot_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
         "version": snapshot.version,
         "asset_version": snapshot.asset_version,
         "updated_at": snapshot.updated_at.isoformat(),
-        "asset": None
-        if snapshot.asset is None
-        else snapshot.asset.model_dump(mode="json", exclude_computed_fields=True),
-        "timeline_rows": []
-        if snapshot.asset is None
-        else timeline_rows(snapshot.asset),
+        "video": None
+        if asset is None
+        else {
+            "video_id": str(asset.video_id),
+            "frame_count": asset.frame_count,
+            "fps": asset.fps,
+            "duration_sec": asset.duration_sec,
+            "width": asset.width,
+            "height": asset.height,
+        },
+        "timeline_rows": [] if asset is None else timeline_rows(asset),
     }
+
+
+def _full_snapshot_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
+    payload = _summary_payload(snapshot)
+    payload["asset"] = (
+        None
+        if snapshot.asset is None
+        else snapshot.asset.model_dump(mode="json", exclude_computed_fields=True)
+    )
+    return payload
 
 
 def _sse(snapshot: VideoAssetSnapshot) -> str:

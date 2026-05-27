@@ -228,8 +228,8 @@ def timeline_rows(video_asset: VideoAsset) -> list[TableRow]:
     for row in visual_event_rows(video_asset):
         rows.append(
             {
-                "lane": "visual events",
-                "label": f"{row['event_type']}: {row['object']}",
+                "lane": f"visual: {row['object']}",
+                "label": f"{row['event_type']}: {row['description']}",
                 "start_frame": row["start_frame"],
                 "end_frame": row["end_frame"],
                 "kind": row["event_type"],
@@ -255,6 +255,45 @@ def current_frame_rows(video_asset: VideoAsset, frame_index: int) -> dict[str, o
         "visual_events": active_visual_event_rows(video_asset, frame_index),
         "sound_events": active_sound_event_rows(video_asset, frame_index),
     }
+
+
+def tracking_window_rows(
+    video_asset: VideoAsset, start_frame: int, end_frame: int
+) -> list[TableRow]:
+    rows: list[TableRow] = []
+    for scene_index, scene in enumerate(video_asset.initial_scenes):
+        if scene.end_frame_index < start_frame or scene.start_frame_index > end_frame:
+            continue
+        for track_index, track in enumerate(scene.scene_tracks):
+            if (
+                track.end_frame_index < start_frame
+                or track.start_frame_index > end_frame
+            ):
+                continue
+            points = [
+                {
+                    "frame_index": point.frame_index,
+                    "bbox_xyxy": point.bbox_xyxy,
+                    "confidence": round(point.confidence, 3),
+                }
+                for point in track.points
+                if start_frame <= point.frame_index <= end_frame
+                and point.bbox_xyxy is not None
+            ]
+            if not points:
+                continue
+            rows.append(
+                {
+                    "scene": scene_index,
+                    "track": track_index,
+                    "label": _track_label(track),
+                    "start_frame": track.start_frame_index,
+                    "end_frame": track.end_frame_index,
+                    "confidence": round(track.confidence, 3),
+                    "points": points,
+                }
+            )
+    return rows
 
 
 def _visual_event_row(

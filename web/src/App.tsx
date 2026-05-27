@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { fetchAsset, startRun } from "./api";
+import { fetchAssetSummary, startRun } from "./api";
 import VideoEditor from "./components/VideoEditor";
 import type { AssetResponse } from "./types";
 
@@ -10,7 +10,7 @@ const emptyAsset: AssetResponse = {
   version: 0,
   asset_version: 0,
   updated_at: "",
-  asset: null,
+  video: null,
   timeline_rows: [],
 };
 
@@ -19,16 +19,16 @@ export default function App() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    void refreshAsset();
+    void refreshAssetSummary();
     const events = new EventSource("/events");
     events.addEventListener("asset_update", () => {
-      void refreshAsset();
+      void refreshAssetSummary();
     });
     return () => events.close();
   }, []);
 
-  async function refreshAsset() {
-    const nextState = await fetchAsset();
+  async function refreshAssetSummary() {
+    const nextState = await fetchAssetSummary();
     setState(nextState);
   }
 
@@ -37,7 +37,7 @@ export default function App() {
     setSubmitError(null);
     try {
       await startRun(event.currentTarget);
-      await refreshAsset();
+      await refreshAssetSummary();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
     }

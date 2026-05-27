@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
-import type { SceneTrack, SceneTrackPoint, VideoAsset } from "../types";
+import { useEffect, useMemo, useRef } from "react";
+import type { TrackWindowTrack, VideoSummary } from "../types";
 
 interface TrackingOverlayProps {
-  asset: VideoAsset;
+  video: VideoSummary;
+  tracks: TrackWindowTrack[];
   frame: number;
   enabled: boolean;
 }
@@ -11,11 +12,13 @@ const SOURCE_WIDTH = 1280;
 const SOURCE_HEIGHT = 720;
 
 export default function TrackingOverlay({
-  asset,
+  video,
+  tracks,
   frame,
   enabled,
 }: TrackingOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pointIndex = useMemo(() => indexTrackPoints(tracks), [tracks]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -39,18 +42,18 @@ export default function TrackingOverlay({
       return;
     }
 
-    const sourceWidth = asset.width ?? SOURCE_WIDTH;
-    const sourceHeight = asset.height ?? SOURCE_HEIGHT;
+    const sourceWidth = video.width ?? SOURCE_WIDTH;
+    const sourceHeight = video.height ?? SOURCE_HEIGHT;
     const scale = Math.min(rect.width / sourceWidth, rect.height / sourceHeight);
     const offsetX = (rect.width - sourceWidth * scale) / 2;
     const offsetY = (rect.height - sourceHeight * scale) / 2;
-    const tracks = activeTrackPoints(asset, frame);
+    const activePoints = pointIndex.get(frame) ?? [];
 
     context.lineWidth = 2;
     context.font = "12px Inter, system-ui, sans-serif";
     context.textBaseline = "top";
 
-    tracks.forEach(({ track, point }, index) => {
+    activePoints.forEach(({ track, point }, index) => {
       if (!point.bbox_xyxy) {
         return;
       }
@@ -72,32 +75,33 @@ export default function TrackingOverlay({
         color,
       );
     });
-  }, [asset, enabled, frame]);
+  }, [enabled, frame, pointIndex, video.height, video.width]);
 
   return <canvas aria-hidden="true" className="tracking-overlay" ref={canvasRef} />;
 }
 
-function activeTrackPoints(
-  asset: VideoAsset,
-  frame: number,
-): { track: SceneTrack; point: SceneTrackPoint }[] {
-  const points: { track: SceneTrack; point: SceneTrackPoint }[] = [];
-  for (const scene of asset.initial_scenes) {
-    if (frame < scene.start_frame_index || frame >= scene.end_frame_index) {
-      continue;
-    }
-    for (const track of scene.scene_tracks) {
-      const point = track.points.find((item) => item.frame_index === frame);
-      if (point) {
-        points.push({ track, point });
-      }
+function indexTrackPoints(
+  tracks: TrackWindowTrack[],
+): Map<
+  number,
+  { track: TrackWindowTrack; point: TrackWindowTrack["points"][number] }[]
+> {
+  const index = new Map<
+    number,
+    { track: TrackWindowTrack; point: TrackWindowTrack["points"][number] }[]
+  >();
+  for (const track of tracks) {
+    for (const point of track.points) {
+      const framePoints = index.get(point.frame_index) ?? [];
+      framePoints.push({ track, point });
+      index.set(point.frame_index, framePoints);
     }
   }
-  return points;
+  return index;
 }
 
-function trackLabel(track: SceneTrack, index: number): string {
-  return track.source_object_seed?.label || track.tracking_prompt || `track ${index + 1}`;
+function trackLabel(track: TrackWindowTrack, index: number): string {
+  return track.label || `track ${index + 1}`;
 }
 
 function drawLabel(

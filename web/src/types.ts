@@ -7,7 +7,7 @@ export interface AssetResponse {
   version: number;
   asset_version: number;
   updated_at: string;
-  asset: VideoAsset | null;
+  video: VideoSummary | null;
   timeline_rows: TimelineRow[];
 }
 
@@ -29,6 +29,15 @@ export interface VideoAsset {
   initial_scenes: InitialScene[];
   visual_identity_layer?: VisualIdentityLayer | null;
   sound_timeline?: SoundTimeline | null;
+}
+
+export interface VideoSummary {
+  video_id: string;
+  frame_count: number;
+  fps: number;
+  duration_sec: number;
+  width: number;
+  height: number;
 }
 
 export interface InitialScene {
@@ -54,6 +63,29 @@ export interface SceneTrackPoint {
   bbox_xyxy: [number, number, number, number] | null;
   confidence: number;
   mask?: unknown | null;
+}
+
+export interface TrackWindowResponse {
+  version: number;
+  start_frame: number;
+  end_frame: number;
+  tracks: TrackWindowTrack[];
+}
+
+export interface TrackWindowTrack {
+  scene: number;
+  track: number;
+  label: string;
+  start_frame: number;
+  end_frame: number;
+  confidence: number;
+  points: TrackWindowPoint[];
+}
+
+export interface TrackWindowPoint {
+  frame_index: number;
+  bbox_xyxy: [number, number, number, number];
+  confidence: number;
 }
 
 export interface VisualIdentityLayer {

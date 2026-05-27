@@ -2,7 +2,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import Inspector from "./Inspector";
 import Timeline from "./Timeline";
 import TrackingOverlay from "./TrackingOverlay";
-import type { AssetResponse } from "../types";
+import { fetchTrackingWindow } from "../api";
+import type { AssetResponse, TrackWindowResponse } from "../types";
 
 interface VideoEditorProps {
   state: AssetResponse;
@@ -14,29 +15,37 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
   const [frame, setFrame] = useState(0);
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [trackWindow, setTrackWindow] = useState<TrackWindowResponse | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const asset = state.asset;
-  const fps = 30;
-  const maxFrame = Math.max(0, (asset?.frame_count ?? 1) - 1);
+  const animationRef = useRef<number | null>(null);
+  const trackWindowRequestRef = useRef<string | null>(null);
+  const video = state.video;
+  const fps = video?.fps || 30;
+  const maxFrame = Math.max(0, (video?.frame_count ?? 1) - 1);
   const selectedFrame = clamp(frame, 0, maxFrame);
   const timeSec = selectedFrame / fps;
   const counts = useMemo(() => {
-    const scenes = asset?.initial_scenes.length ?? 0;
-    const tracks =
-      asset?.initial_scenes.reduce(
-        (total, scene) => total + scene.scene_tracks.length,
-        0,
-      ) ?? 0;
-    const visualEvents = asset?.visual_identity_layer?.visual_events.length ?? 0;
-    const soundTracks = asset?.sound_timeline?.sound_tracks.length ?? 0;
-    const soundEvents = asset?.sound_timeline?.sound_events.length ?? 0;
+    const scenes = countRows(state.timeline_rows, "scene");
+    const tracks = countRows(state.timeline_rows, "track");
+    const visualEvents = state.timeline_rows.filter((row) =>
+      row.lane.startsWith("visual: "),
+    ).length;
+    const soundEvents = state.timeline_rows.filter(isSoundRow).length;
+    const soundTracks = new Set(
+      state.timeline_rows.filter(isSoundRow).map((row) => row.lane),
+    ).size;
     return { scenes, tracks, visualEvents, soundTracks, soundEvents };
-  }, [asset]);
+  }, [state.timeline_rows]);
   const selectFrame = useCallback(
     (nextFrame: number) => {
-      setFrame(clamp(nextFrame, 0, maxFrame));
+      const next = clamp(nextFrame, 0, maxFrame);
+      setFrame(next);
+      const videoElement = videoRef.current;
+      if (videoElement) {
+        videoElement.currentTime = next / fps;
+      }
     },
-    [maxFrame],
+    [fps, maxFrame],
   );
 
   useEffect(() => {
@@ -46,21 +55,61 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
   }, [frame, selectedFrame]);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !asset) {
+    if (!showTrackingOverlay || !video) {
       return;
     }
-    if (Math.abs(video.currentTime - timeSec) > 0.04) {
-      video.currentTime = timeSec;
+    if (
+      trackWindow &&
+      trackWindow.version === state.version &&
+      selectedFrame >= trackWindow.start_frame + 60 &&
+      selectedFrame <= trackWindow.end_frame - 60
+    ) {
+      return;
     }
-  }, [asset, timeSec]);
+    const startFrame = Math.max(0, selectedFrame - 300);
+    const endFrame = Math.min(maxFrame, selectedFrame + 300);
+    const requestKey = `${state.version}:${startFrame}:${endFrame}`;
+    if (trackWindowRequestRef.current === requestKey) {
+      return;
+    }
+    trackWindowRequestRef.current = requestKey;
+    void fetchTrackingWindow(startFrame, endFrame)
+      .then(setTrackWindow)
+      .finally(() => {
+        trackWindowRequestRef.current = null;
+      });
+  }, [maxFrame, selectedFrame, showTrackingOverlay, state.version, trackWindow, video]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      if (animationRef.current !== null) {
+        window.cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      return;
+    }
+    const sync = () => {
+      const videoElement = videoRef.current;
+      if (videoElement) {
+        setFrame(clamp(Math.round(videoElement.currentTime * fps), 0, maxFrame));
+      }
+      animationRef.current = window.requestAnimationFrame(sync);
+    };
+    animationRef.current = window.requestAnimationFrame(sync);
+    return () => {
+      if (animationRef.current !== null) {
+        window.cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, [fps, isPlaying, maxFrame]);
 
   function syncFrameFromVideo() {
     const video = videoRef.current;
     if (!video) {
       return;
     }
-    selectFrame(Math.round(video.currentTime * fps));
+    setFrame(clamp(Math.round(video.currentTime * fps), 0, maxFrame));
   }
 
   function togglePlayback() {
@@ -144,7 +193,7 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
             </div>
             <div>
               <dt>Frames</dt>
-              <dd>{asset?.frame_count ?? "-"}</dd>
+              <dd>{video?.frame_count ?? "-"}</dd>
             </div>
             <div>
               <dt>Scenes</dt>
@@ -173,7 +222,7 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
               <div className="preview-toolbar">
                 <button
                   className="toggle"
-                  disabled={!asset}
+                  disabled={!video}
                   onClick={togglePlayback}
                   type="button"
                 >
@@ -181,14 +230,14 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
                 </button>
                 <button
                   className={showTrackingOverlay ? "toggle active" : "toggle"}
-                  disabled={!asset}
+                  disabled={!video}
                   onClick={() => setShowTrackingOverlay((value) => !value)}
                   type="button"
                 >
                   Tracking
                 </button>
               </div>
-              {asset ? (
+              {video ? (
                 <div className="video-frame">
                   <video
                     ref={videoRef}
@@ -199,7 +248,8 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
                     onTimeUpdate={syncFrameFromVideo}
                   />
                   <TrackingOverlay
-                    asset={asset}
+                    video={video}
+                    tracks={trackWindow?.tracks ?? []}
                     enabled={showTrackingOverlay}
                     frame={selectedFrame}
                   />
@@ -218,20 +268,21 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
                   step="1"
                   value={selectedFrame}
                   onChange={(event) => selectFrame(Number(event.target.value))}
-                  disabled={!asset}
+                  disabled={!video}
                 />
               </label>
             </div>
             <Inspector
-              asset={asset}
+              video={video}
               frame={selectedFrame}
-              assetVersion={state.asset_version}
+              timelineRows={state.timeline_rows}
+              version={state.version}
             />
           </div>
           <Timeline
             rows={state.timeline_rows}
             frame={selectedFrame}
-            frameCount={asset?.frame_count ?? 0}
+            frameCount={video?.frame_count ?? 0}
             onSelectFrame={selectFrame}
           />
         </section>
@@ -242,4 +293,16 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function countRows(rows: AssetResponse["timeline_rows"], kind: string): number {
+  return rows.filter((row) => row.kind === kind).length;
+}
+
+function isSoundRow(row: AssetResponse["timeline_rows"][number]): boolean {
+  return (
+    row.kind !== "scene" &&
+    row.kind !== "track" &&
+    !row.lane.startsWith("visual: ")
+  );
 }
