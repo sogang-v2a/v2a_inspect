@@ -303,6 +303,9 @@ cython_debug/
 .omx/
 .agents/
 *.json
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
 
 # Local benchmark media and outputs
 data/
