@@ -105,6 +105,7 @@ def _trace_metadata(
         "frame_count": video_asset.frame_count,
         "initial_scene_count": len(video_asset.initial_scenes),
         "sound_source_count": 0 if timeline is None else len(timeline.sound_sources),
+        "sound_track_count": 0 if timeline is None else len(timeline.sound_tracks),
         "sound_event_count": 0 if timeline is None else len(timeline.sound_events),
         "objective": objective,
         "max_iterations": max_iterations,

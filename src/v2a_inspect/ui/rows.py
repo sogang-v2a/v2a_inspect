@@ -7,6 +7,7 @@ from v2a_inspect.models import (
     SceneTrack,
     SoundEvent,
     SoundSource,
+    SoundTrack,
     VideoAsset,
     VisualEvent,
     VisualObject,
@@ -114,22 +115,24 @@ def sound_event_rows(video_asset: VideoAsset) -> list[TableRow]:
     sources_by_id = {
         source.sound_source_id: source for source in timeline.sound_sources
     }
+    track_by_id = {track.sound_track_id: track for track in timeline.sound_tracks}
     rows: list[TableRow] = []
     for event in sorted(
         timeline.sound_events,
         key=lambda item: (
-            item.track_type,
+            track_by_id[item.sound_track_id].track_type,
             item.start_frame_index,
             item.end_frame_index,
             item.description,
         ),
     ):
+        track = track_by_id[event.sound_track_id]
         source = (
             None
-            if event.sound_source_id is None
-            else sources_by_id.get(event.sound_source_id)
+            if track.sound_source_id is None
+            else sources_by_id.get(track.sound_source_id)
         )
-        rows.append(_sound_event_row(event, source, video_asset.fps))
+        rows.append(_sound_event_row(event, track, source, video_asset.fps))
     return rows
 
 
@@ -273,18 +276,19 @@ def _visual_event_row(
 
 def _sound_event_row(
     event: SoundEvent,
+    track: SoundTrack,
     source: SoundSource | None,
     fps: int,
 ) -> TableRow:
     return {
-        "track_type": event.track_type,
+        "track_type": track.track_type,
         "source": None if source is None else source.label,
         "start_frame": event.start_frame_index,
         "end_frame": event.end_frame_index,
         "duration_sec": round(
             (event.end_frame_index - event.start_frame_index) / fps, 2
         ),
-        "generation_mode": event.generation_mode,
+        "generation_mode": track.generation_mode,
         "description": event.description,
         "notes": event.notes,
     }

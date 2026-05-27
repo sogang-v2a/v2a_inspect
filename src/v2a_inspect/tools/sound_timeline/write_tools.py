@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from v2a_inspect.models import SoundEvent, SoundSource
+from v2a_inspect.models import SoundEvent, SoundSource, SoundTrack
 
 from .schemas import (
     DeleteSoundEventOutput,
     DeleteSoundSourceOutput,
+    DeleteSoundTrackOutput,
     SoundGenerationMode,
     SoundSourceType,
     SoundTrackType,
@@ -61,43 +62,96 @@ class SoundTimelineWriteTools:
         ]
         if len(sources) == len(timeline.sound_sources):
             raise ValueError(f"Unknown sound_source_id: {sound_source_id}")
-        events = [
-            event.model_copy(update={"sound_source_id": None})
-            if event.sound_source_id == sound_source_id
-            else event
-            for event in timeline.sound_events
+        tracks = [
+            track.model_copy(update={"sound_source_id": None})
+            if track.sound_source_id == sound_source_id
+            else track
+            for track in timeline.sound_tracks
         ]
         self.editor.video_asset.sound_timeline = timeline.model_copy(
-            update={"sound_sources": sources, "sound_events": events}
+            update={"sound_sources": sources, "sound_tracks": tracks}
         )
         return DeleteSoundSourceOutput(deleted_sound_source_id=sound_source_id)
 
-    def upsert_sound_event(
+    def upsert_sound_track(
         self,
-        start_frame_index: int,
-        end_frame_index: int,
-        description: str,
         track_type: SoundTrackType,
-        sound_event_id: UUID | None = None,
+        label: str,
+        sound_track_id: UUID | None = None,
         sound_source_id: UUID | None = None,
         generation_mode: SoundGenerationMode = "unknown",
         notes: str | None = None,
-    ) -> SoundEvent:
-        self.editor.check_frame_range(start_frame_index, end_frame_index)
+    ) -> SoundTrack:
         timeline = self.editor.ensure_sound_timeline()
         if sound_source_id is not None and not any(
             source.sound_source_id == sound_source_id
             for source in timeline.sound_sources
         ):
             raise ValueError(f"Unknown sound_source_id: {sound_source_id}")
+        track = SoundTrack(
+            sound_track_id=sound_track_id or uuid4(),
+            track_type=track_type,
+            label=label,
+            sound_source_id=sound_source_id,
+            generation_mode=generation_mode,
+            notes=notes,
+        )
+        tracks = list(timeline.sound_tracks)
+        if sound_track_id is None:
+            tracks.append(track)
+        else:
+            for index, existing in enumerate(tracks):
+                if existing.sound_track_id == sound_track_id:
+                    tracks[index] = track
+                    break
+            else:
+                raise ValueError(f"Unknown sound_track_id: {sound_track_id}")
+        self.editor.video_asset.sound_timeline = timeline.model_copy(
+            update={"sound_tracks": tracks}
+        )
+        return track
+
+    def delete_sound_track(self, sound_track_id: UUID) -> DeleteSoundTrackOutput:
+        timeline = self.editor.ensure_sound_timeline()
+        if any(
+            event.sound_track_id == sound_track_id for event in timeline.sound_events
+        ):
+            raise ValueError(
+                f"Cannot delete sound_track_id with existing events: {sound_track_id}"
+            )
+        tracks = [
+            track
+            for track in timeline.sound_tracks
+            if track.sound_track_id != sound_track_id
+        ]
+        if len(tracks) == len(timeline.sound_tracks):
+            raise ValueError(f"Unknown sound_track_id: {sound_track_id}")
+        self.editor.video_asset.sound_timeline = timeline.model_copy(
+            update={"sound_tracks": tracks}
+        )
+        return DeleteSoundTrackOutput(deleted_sound_track_id=sound_track_id)
+
+    def upsert_sound_event(
+        self,
+        start_frame_index: int,
+        end_frame_index: int,
+        description: str,
+        sound_track_id: UUID,
+        sound_event_id: UUID | None = None,
+        notes: str | None = None,
+    ) -> SoundEvent:
+        self.editor.check_frame_range(start_frame_index, end_frame_index)
+        timeline = self.editor.ensure_sound_timeline()
+        if not any(
+            track.sound_track_id == sound_track_id for track in timeline.sound_tracks
+        ):
+            raise ValueError(f"Unknown sound_track_id: {sound_track_id}")
         event = SoundEvent(
             sound_event_id=sound_event_id or uuid4(),
+            sound_track_id=sound_track_id,
             start_frame_index=start_frame_index,
             end_frame_index=end_frame_index,
             description=description,
-            track_type=track_type,
-            sound_source_id=sound_source_id,
-            generation_mode=generation_mode,
             notes=notes,
         )
         events = list(timeline.sound_events)

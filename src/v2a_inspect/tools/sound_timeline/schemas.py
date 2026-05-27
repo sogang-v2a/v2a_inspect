@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from v2a_inspect.models import SoundEvent, SoundSource
+from v2a_inspect.models import SoundEvent, SoundSource, SoundTrack
 from v2a_inspect.models.base import SchemaModel
 
 
@@ -62,14 +62,25 @@ class DeleteSoundSourceArgs(SchemaModel):
     sound_source_id: UUID
 
 
+class UpsertSoundTrackArgs(SchemaModel):
+    track_type: SoundTrackType
+    label: str = Field(min_length=1)
+    sound_track_id: UUID | None = None
+    sound_source_id: UUID | None = None
+    generation_mode: SoundGenerationMode = "unknown"
+    notes: str | None = None
+
+
+class DeleteSoundTrackArgs(SchemaModel):
+    sound_track_id: UUID
+
+
 class UpsertSoundEventArgs(SchemaModel):
     start_frame_index: int = Field(ge=0)
     end_frame_index: int = Field(gt=0)
     description: str = Field(min_length=1)
-    track_type: SoundTrackType
+    sound_track_id: UUID
     sound_event_id: UUID | None = None
-    sound_source_id: UUID | None = None
-    generation_mode: SoundGenerationMode = "unknown"
     notes: str | None = None
 
 
@@ -278,6 +289,7 @@ class VisualEventsOutput(SchemaModel):
 
 class SoundTimelineViewOutput(SchemaModel):
     sound_sources: list[SoundSource]
+    sound_tracks: list[SoundTrack]
     sound_events: list[SoundEvent]
     total_matching_event_count: int
     start_frame_index: int | None = None
@@ -292,6 +304,7 @@ class SoundTimelineViewOutput(SchemaModel):
             (
                 f"sound_timeline frame_range={frame_range} "
                 f"sources={len(self.sound_sources)} "
+                f"tracks={len(self.sound_tracks)} "
                 f"matching_events={self.total_matching_event_count} "
                 f"shown_events={self.returned_event_count}"
             )
@@ -309,14 +322,29 @@ class SoundTimelineViewOutput(SchemaModel):
                 lines.append(
                     f"- source {source_number}: {source.source_type} label={source.label}"
                 )
+        if self.sound_tracks:
+            lines.append("tracks:")
+            for track in self.sound_tracks:
+                source_text = (
+                    ""
+                    if track.sound_source_id is None
+                    else f" source={track.sound_source_id}"
+                )
+                lines.append(
+                    f"- {track.sound_track_id} {track.track_type} "
+                    f"mode={track.generation_mode}{source_text} label={track.label}"
+                )
         if self.sound_events:
             lines.append("events:")
+            track_by_id = {track.sound_track_id: track for track in self.sound_tracks}
             for event_number, event in enumerate(self.sound_events, start=1):
-                source_label = _sound_source_label(event, self.sound_sources)
+                track = track_by_id[event.sound_track_id]
+                source_label = _sound_source_label(track, self.sound_sources)
                 lines.append(
                     f"- event {event_number}: {event.start_frame_index}-"
-                    f"{event.end_frame_index} {event.track_type} "
-                    f"mode={event.generation_mode}"
+                    f"{event.end_frame_index} {track.track_type} "
+                    f"mode={track.generation_mode} "
+                    f"track={track.label}"
                     + (f" source={source_label}" if source_label else "")
                     + f" description={event.description}"
                 )
@@ -328,6 +356,10 @@ class DeleteSoundSourceOutput(SchemaModel):
 
     def to_tool_string(self) -> str:
         return "deleted sound source"
+
+
+class DeleteSoundTrackOutput(SchemaModel):
+    deleted_sound_track_id: UUID
 
 
 class DeleteSoundEventOutput(SchemaModel):
@@ -363,13 +395,13 @@ def _compact_list(items: list[str]) -> str:
 
 
 def _sound_source_label(
-    event: SoundEvent,
+    track: SoundTrack,
     sound_sources: list[SoundSource],
 ) -> str | None:
-    if event.sound_source_id is None:
+    if track.sound_source_id is None:
         return None
     for source in sound_sources:
-        if source.sound_source_id == event.sound_source_id:
+        if source.sound_source_id == track.sound_source_id:
             return source.label
     return None
 

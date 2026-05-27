@@ -7,12 +7,13 @@ from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
-from v2a_inspect.models import SchemaModel, SoundEvent, SoundSource
+from v2a_inspect.models import SchemaModel, SoundEvent, SoundSource, SoundTrack
 
 from .schemas import (
     AnnotatedFrameOutput,
     DeleteSoundEventArgs,
     DeleteSoundSourceArgs,
+    DeleteSoundTrackArgs,
     FrameIndexArgs,
     FrameResolutionMode,
     ListScenesArgs,
@@ -23,6 +24,7 @@ from .schemas import (
     SoundTrackType,
     UpsertSoundEventArgs,
     UpsertSoundSourceArgs,
+    UpsertSoundTrackArgs,
     VisualEventsArgs,
     disambiguate_labels,
 )
@@ -96,14 +98,29 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
         StructuredTool.from_function(
             _make_delete_sound_source_tool(editor),
             args_schema=DeleteSoundSourceArgs,
-            description="Delete a SoundSource and detach events that referenced it.",
+            description="Delete a SoundSource and detach tracks that referenced it.",
+        ),
+        StructuredTool.from_function(
+            _make_upsert_sound_track_tool(editor),
+            args_schema=UpsertSoundTrackArgs,
+            description=(
+                "Create or update a SoundTrack, the reusable audible layer / "
+                "timeline lane. Reuse an existing track for the same sound identity."
+            ),
+        ),
+        StructuredTool.from_function(
+            _make_delete_sound_track_tool(editor),
+            args_schema=DeleteSoundTrackArgs,
+            description=(
+                "Delete a SoundTrack. Fails while SoundEvents still reference it."
+            ),
         ),
         StructuredTool.from_function(
             _make_upsert_sound_event_tool(editor),
             args_schema=UpsertSoundEventArgs,
             description=(
-                "Create or update a SoundEvent in the SoundTimeline. Use as soon "
-                "as a sound interval is known and before moving to later scenes."
+                "Create or update a SoundEvent on an existing SoundTrack. Use as "
+                "soon as a sound interval is known and before moving to later scenes."
             ),
         ),
         StructuredTool.from_function(
@@ -118,15 +135,23 @@ def _tool_string(value: object) -> str:
     if isinstance(value, SoundSource):
         return f"sound_source {value.source_type} label={value.label}"
     if isinstance(value, SoundEvent):
+        return _sound_event_tool_string(value)
+    if isinstance(value, SoundTrack):
         source = "" if value.sound_source_id is None else " source=linked"
         return (
-            f"sound_event {value.start_frame_index}-{value.end_frame_index} "
-            f"{value.track_type} mode={value.generation_mode}{source} "
-            f"description={value.description}"
+            f"sound_track {value.track_type} mode={value.generation_mode}{source} "
+            f"label={value.label}"
         )
     if isinstance(value, SchemaModel):
         return value.to_tool_string()
     return json.dumps(value, indent=2, default=str)
+
+
+def _sound_event_tool_string(event: SoundEvent) -> str:
+    return (
+        f"sound_event {event.start_frame_index}-{event.end_frame_index} "
+        f"description={event.description}"
+    )
 
 
 def _make_list_scenes_tool(editor: SoundTimelineEditor) -> Callable[[int, int], str]:
@@ -223,29 +248,50 @@ def _make_delete_sound_source_tool(
     return delete_sound_source
 
 
-def _make_upsert_sound_event_tool(
+def _make_upsert_sound_track_tool(
     editor: SoundTimelineEditor,
 ) -> Callable[
-    [
-        int,
-        int,
-        str,
-        SoundTrackType,
-        UUID | None,
-        UUID | None,
-        SoundGenerationMode,
-        str | None,
-    ],
+    [SoundTrackType, str, UUID | None, UUID | None, SoundGenerationMode, str | None],
     str,
 ]:
+    def upsert_sound_track(
+        track_type: SoundTrackType,
+        label: str,
+        sound_track_id: UUID | None = None,
+        sound_source_id: UUID | None = None,
+        generation_mode: SoundGenerationMode = "unknown",
+        notes: str | None = None,
+    ) -> str:
+        return _tool_string(
+            editor.upsert_sound_track(
+                track_type=track_type,
+                label=label,
+                sound_track_id=sound_track_id,
+                sound_source_id=sound_source_id,
+                generation_mode=generation_mode,
+                notes=notes,
+            )
+        )
+
+    return upsert_sound_track
+
+
+def _make_delete_sound_track_tool(editor: SoundTimelineEditor) -> Callable[[UUID], str]:
+    def delete_sound_track(sound_track_id: UUID) -> str:
+        return _tool_string(editor.delete_sound_track(sound_track_id))
+
+    return delete_sound_track
+
+
+def _make_upsert_sound_event_tool(
+    editor: SoundTimelineEditor,
+) -> Callable[[int, int, str, UUID, UUID | None, str | None], str]:
     def upsert_sound_event(
         start_frame_index: int,
         end_frame_index: int,
         description: str,
-        track_type: SoundTrackType,
+        sound_track_id: UUID,
         sound_event_id: UUID | None = None,
-        sound_source_id: UUID | None = None,
-        generation_mode: SoundGenerationMode = "unknown",
         notes: str | None = None,
     ) -> str:
         return _tool_string(
@@ -253,10 +299,8 @@ def _make_upsert_sound_event_tool(
                 start_frame_index=start_frame_index,
                 end_frame_index=end_frame_index,
                 description=description,
-                track_type=track_type,
+                sound_track_id=sound_track_id,
                 sound_event_id=sound_event_id,
-                sound_source_id=sound_source_id,
-                generation_mode=generation_mode,
                 notes=notes,
             )
         )
