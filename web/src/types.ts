@@ -24,6 +24,8 @@ export interface VideoAsset {
   source_path: string;
   sam3_tracking_path?: string | null;
   frame_count: number;
+  width?: number;
+  height?: number;
   initial_scenes: InitialScene[];
   visual_identity_layer?: VisualIdentityLayer | null;
   sound_timeline?: SoundTimeline | null;
@@ -42,9 +44,16 @@ export interface SceneTrack {
   start_frame_index: number;
   end_frame_index: number;
   confidence: number;
-  points: unknown[];
+  points: SceneTrackPoint[];
   source_object_seed?: { label?: string | null } | null;
   tracking_prompt?: string | null;
+}
+
+export interface SceneTrackPoint {
+  frame_index: number;
+  bbox_xyxy: [number, number, number, number] | null;
+  confidence: number;
+  mask?: unknown | null;
 }
 
 export interface VisualIdentityLayer {

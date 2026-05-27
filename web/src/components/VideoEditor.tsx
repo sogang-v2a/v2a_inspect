@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Inspector from "./Inspector";
 import Timeline from "./Timeline";
+import TrackingOverlay from "./TrackingOverlay";
 import type { AssetResponse } from "../types";
 
 interface VideoEditorProps {
@@ -12,6 +13,7 @@ interface VideoEditorProps {
 export default function VideoEditor({ state, submitError, onSubmit }: VideoEditorProps) {
   const [frame, setFrame] = useState(0);
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const asset = state.asset;
   const fps = 30;
@@ -59,6 +61,18 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
       return;
     }
     selectFrame(Math.round(video.currentTime * fps));
+  }
+
+  function togglePlayback() {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    if (video.paused) {
+      void video.play();
+      return;
+    }
+    video.pause();
   }
 
   return (
@@ -158,6 +172,14 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
             <div className="video-panel">
               <div className="preview-toolbar">
                 <button
+                  className="toggle"
+                  disabled={!asset}
+                  onClick={togglePlayback}
+                  type="button"
+                >
+                  {isPlaying ? "Pause" : "Play"}
+                </button>
+                <button
                   className={showTrackingOverlay ? "toggle active" : "toggle"}
                   disabled={!asset}
                   onClick={() => setShowTrackingOverlay((value) => !value)}
@@ -171,17 +193,16 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
                   <video
                     ref={videoRef}
                     src={`/api/video?asset_version=${state.asset_version}`}
-                    controls
+                    onPause={() => setIsPlaying(false)}
+                    onPlay={() => setIsPlaying(true)}
                     onSeeked={syncFrameFromVideo}
                     onTimeUpdate={syncFrameFromVideo}
                   />
-                  {showTrackingOverlay ? (
-                    <img
-                      alt=""
-                      className="tracking-overlay"
-                      src={`/api/frames/tracking-overlay?frame=${selectedFrame}&asset_version=${state.asset_version}`}
-                    />
-                  ) : null}
+                  <TrackingOverlay
+                    asset={asset}
+                    enabled={showTrackingOverlay}
+                    frame={selectedFrame}
+                  />
                 </div>
               ) : (
                 <div className="empty-video">Upload a video to start</div>
