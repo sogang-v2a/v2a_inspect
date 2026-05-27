@@ -150,6 +150,25 @@ button:disabled {
   padding: 9px;
 }
 
+.export-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.download-link {
+  background: #242832;
+  border: 1px solid #3a4050;
+  border-radius: 5px;
+  color: #d8dde6;
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 9px 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
 .asset-stats {
   display: grid;
   gap: 8px;

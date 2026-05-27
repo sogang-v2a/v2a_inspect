@@ -32,6 +32,22 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         snapshot = await store.snapshot()
         return _full_snapshot_payload(snapshot)
 
+    @router.get("/api/asset/export")
+    async def export_asset() -> Response:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            raise HTTPException(status_code=404, detail="No video asset loaded")
+        return Response(
+            snapshot.asset.model_dump_json(
+                indent=2,
+                exclude_computed_fields=True,
+            ),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": 'attachment; filename="video-asset.json"',
+            },
+        )
+
     @router.get("/api/asset-summary")
     async def get_asset_summary() -> dict[str, object]:
         snapshot = await store.snapshot()

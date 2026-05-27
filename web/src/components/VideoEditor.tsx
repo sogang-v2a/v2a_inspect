@@ -14,6 +14,7 @@ interface VideoEditorProps {
 export default function VideoEditor({ state, submitError, onSubmit }: VideoEditorProps) {
   const [frame, setFrame] = useState(0);
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackWindow, setTrackWindow] = useState<TrackWindowResponse | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -186,6 +187,30 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
           </form>
           {submitError ? <p className="error">{submitError}</p> : null}
           {state.error ? <p className="error">{state.error}</p> : null}
+          <section className="export-panel">
+            <button
+              className={showExport ? "toggle active" : "toggle"}
+              onClick={() => setShowExport((value) => !value)}
+              type="button"
+            >
+              Export
+            </button>
+            {showExport ? (
+              video ? (
+                <a
+                  className="download-link"
+                  href={`/api/asset/export?asset_version=${state.asset_version}`}
+                  download="video-asset.json"
+                >
+                  Download VideoAsset JSON
+                </a>
+              ) : (
+                <button className="download-link" disabled type="button">
+                  Download VideoAsset JSON
+                </button>
+              )
+            ) : null}
+          </section>
           <dl className="asset-stats">
             <div>
               <dt>Version</dt>
