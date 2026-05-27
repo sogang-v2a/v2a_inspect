@@ -119,8 +119,11 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
             _make_upsert_sound_event_tool(editor),
             args_schema=UpsertSoundEventArgs,
             description=(
-                "Create or update a SoundEvent on an existing SoundTrack. Use as "
-                "soon as a sound interval is known and before moving to later scenes."
+                "Create or update one audible occurrence on an existing "
+                "SoundTrack. For discrete contacts or transients, write one "
+                "tight SoundEvent per beat instead of one broad repeated-action "
+                "summary. Use as soon as a sound interval is known and before "
+                "moving to later scenes."
             ),
         ),
         StructuredTool.from_function(

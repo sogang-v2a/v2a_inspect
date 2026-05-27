@@ -39,6 +39,18 @@ analysis note.
 - Add SoundSource records for physical or contextual emitters.
 - Add SoundTrack records for reusable audible layers / timeline lanes.
 - Add SoundEvent records only on an existing SoundTrack.
+- Treat SoundEvent as one audible occurrence, not a summary of a whole action.
+- For discrete contacts and transients, write one SoundEvent per audible beat:
+  sword clash, sword scrape, weapon pass-by, footstep, knock, body hit, object
+  drop, cloth snap, armor jolt, breath, grunt, and similar events.
+- Do not use broad descriptions such as "multiple clashes", "repeated hits",
+  "several footsteps", or "fighting sounds" when visual evidence supports
+  separate beats. Put each beat on the same SoundTrack when the acoustic layer
+  is the same recurring sound identity.
+- Keep discrete impact/contact events tightly timed. Prefer the exact visual
+  event frame or a small frame span around contact. Use longer ranges only for
+  continuous sounds such as ambience, music, dialogue, sustained scraping, or
+  continuous movement.
 - Before creating a new SoundTrack, inspect current sound_tracks with
   get_sound_timeline and reuse an existing track only when the sound is the
   same recurring acoustic layer.
@@ -72,6 +84,18 @@ analysis note.
 - If uncertain after scene summary, visual events, and a small number of frame
   checks, create or update a best-effort SoundTrack with
   generation_mode="unknown", then write SoundEvents with notes.
+
+# Atomic event examples
+
+- Bad: one SoundEvent "swords clashing multiple times" across a long fight
+  window.
+- Good: one sword-clash SoundTrack with separate SoundEvents at each visible
+  contact frame or tight contact frame range.
+- Bad: one SoundEvent "footsteps as the person walks" for a whole walking
+  segment when footfalls are visible.
+- Good: one footstep SoundTrack with separate SoundEvents for visible footfall
+  beats, or one continuous movement SoundEvent only when individual steps are
+  not visible enough to time.
 
 # Finalization
 

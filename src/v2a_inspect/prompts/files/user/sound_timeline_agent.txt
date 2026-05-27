@@ -11,6 +11,12 @@ Do not create duplicate tracks for the same recurring sound category, but do
 create separate tracks when the sound class changes, even if the source or
 action context stays the same.
 Prefer narrower, semantically clean tracks over broad omnibus tracks.
+Create one SoundEvent per discrete audible beat when visual timing supports it.
+Do not collapse visible repeated contacts into "multiple", "repeated", or
+"several" summary events.
+Use tight global frame ranges for impacts, clashes, footfalls, hits, drops,
+scrapes, pass-bys, breaths, and vocal exertions.
+Reuse the same SoundTrack for repeated beats of the same sound identity.
 Do not build a full mental map first.
 Make incremental edits after each small scene batch.
 After each batch, check the timeline window and continue.
