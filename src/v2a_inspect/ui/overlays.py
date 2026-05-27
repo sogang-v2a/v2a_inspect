@@ -10,6 +10,8 @@ from v2a_inspect.visualization.colors import color_for_index
 from v2a_inspect.visualization.drawing import draw_bbox, draw_label
 from v2a_inspect.visualization.masks import decode_mask_ref
 
+from .rows import track_display_label
+
 OVERLAY_SIZE = (1280, 720)
 
 
@@ -31,7 +33,7 @@ def render_tracking_overlay(video_asset: VideoAsset, frame_index: int) -> bytes:
         if point.bbox_xyxy is not None:
             draw_bbox(image, point.bbox_xyxy, color, width=3)
 
-        label = _track_label(track)
+        label = track_display_label(track, track_index)
         if point.bbox_xyxy is None:
             position = (10, 24 + (track_index * 18))
         else:
@@ -50,12 +52,6 @@ def _tracks(video_asset: VideoAsset) -> list[SceneTrack]:
     return [
         track for scene in video_asset.initial_scenes for track in scene.scene_tracks
     ]
-
-
-def _track_label(track: SceneTrack) -> str:
-    if track.source_object_seed is not None:
-        return track.source_object_seed.label
-    return track.tracking_prompt
 
 
 def _overlay_mask(

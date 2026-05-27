@@ -162,19 +162,29 @@ async def _track_objects(
 ) -> VideoAsset:
     tracking_video_path = sam3_tracking_video_path(video_asset)
     async with VideoClient(base_url=server_url) as video_client:
-        upload_response = await video_client.upload(str(tracking_video_path))
+        try:
+            upload_response = await video_client.upload(str(tracking_video_path))
+        except Exception as exc:
+            raise RuntimeError(f"upload tracking video failed: {exc}") from exc
     async with SAM3Client(base_url=server_url) as sam_client:
         for scene_index in range(len(video_asset.initial_scenes)):
-            video_asset = await track_initial_scenes_object_seeds(
-                video_asset,
-                video_id=upload_response.video_id,
-                sam_client=sam_client,
-                scene_indexes=[scene_index],
-            )
+            scene_number = scene_index + 1
+            scene_count = len(video_asset.initial_scenes)
+            try:
+                video_asset = await track_initial_scenes_object_seeds(
+                    video_asset,
+                    video_id=upload_response.video_id,
+                    sam_client=sam_client,
+                    scene_indexes=[scene_index],
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"track objects scene {scene_number}/{scene_count} failed: {exc}"
+                ) from exc
             video_asset = await _rebuild_visual_layers(video_asset)
             await store.publish_asset_mutation(
                 video_asset,
-                stage=f"tracked objects {scene_index + 1}/{len(video_asset.initial_scenes)}",
+                stage=f"tracked objects {scene_number}/{scene_count}",
             )
     return video_asset
 

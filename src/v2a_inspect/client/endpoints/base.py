@@ -1,5 +1,7 @@
+from typing import Any, Optional
+
 import httpx
-from typing import Optional, Dict, Any
+
 from ..config.settings import settings
 
 
@@ -30,19 +32,20 @@ class BaseClient:
         method: str,
         endpoint: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        json: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+        json: Optional[dict[str, Any]] = None,
+        files: Optional[dict[str, Any]] = None,
+        data: Optional[dict[str, Any]] = None,
     ) -> httpx.Response:
         """Make an HTTP request and handle errors."""
         if not self._client:
             raise RuntimeError("Client must be used as an async context manager")
 
+        method_name = method.upper()
         url = f"{self.base_url}{endpoint}"
         try:
             response = await self._client.request(
-                method,
+                method_name,
                 url,
                 params=params,
                 json=json,
@@ -58,7 +61,10 @@ class BaseClient:
             except Exception:
                 error_detail = exc.response.text
             raise ClientError(
-                f"HTTP {exc.response.status_code} error: {error_detail}"
+                f"{method_name} {endpoint} failed with "
+                f"HTTP {exc.response.status_code}: {error_detail}"
             ) from exc
         except httpx.RequestError as exc:
-            raise ClientError(f"Request failed: {exc}") from exc
+            raise ClientError(
+                f"{method_name} {endpoint} failed with {type(exc).__name__}: {exc}"
+            ) from exc

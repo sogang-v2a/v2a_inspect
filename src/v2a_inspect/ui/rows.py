@@ -14,6 +14,15 @@ from v2a_inspect.models import (
 )
 
 TableRow = dict[str, object]
+_GENERIC_TRACK_LABELS = {
+    "",
+    "object",
+    "thing",
+    "item",
+    "track",
+    "unknown",
+    "unknown object",
+}
 
 
 def overview_rows(video_asset: VideoAsset) -> dict[str, int | float | str]:
@@ -341,10 +350,30 @@ def _sound_event_row(
     }
 
 
-def _track_label(track: SceneTrack) -> str:
+def track_display_label(track: SceneTrack, fallback_index: int | None = None) -> str:
     if track.source_object_seed is not None:
-        return track.source_object_seed.label
-    return track.tracking_prompt
+        seed_label = _useful_label(track.source_object_seed.label)
+        if seed_label is not None:
+            return seed_label
+    prompt_label = _useful_label(track.tracking_prompt)
+    if prompt_label is not None:
+        return prompt_label
+    if fallback_index is not None:
+        return f"track {fallback_index + 1}"
+    return "track"
+
+
+def _track_label(track: SceneTrack) -> str:
+    return track_display_label(track)
+
+
+def _useful_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    label = value.strip()
+    if label.lower() in _GENERIC_TRACK_LABELS:
+        return None
+    return label
 
 
 def _visual_object_labels(visual_objects: list[VisualObject]) -> dict[UUID, str]:
