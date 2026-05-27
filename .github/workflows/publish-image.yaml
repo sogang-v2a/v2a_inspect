@@ -75,4 +75,4 @@ jobs:
           tags: |
             ${{ env.SERVER_IMAGE_NAME }}:${{ steps.meta.outputs.ref_slug }}
             ${{ env.SERVER_IMAGE_NAME }}:sha-${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.SERVER_IMAGE_NAME }}:latest
