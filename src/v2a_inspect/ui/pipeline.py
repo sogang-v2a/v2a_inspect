@@ -7,7 +7,8 @@ from typing import Callable
 
 from v2a_inspect.agents.sound_timeline import run_sound_timeline_agent
 from v2a_inspect.client import SAM3Client, VideoClient
-from v2a_inspect.models import VideoAsset
+from v2a_inspect.config import settings
+from v2a_inspect.models import InitialScene, VideoAsset
 from v2a_inspect.preprocessing import (
     analyze_initial_scene,
     build_visual_identity_layer,
@@ -124,17 +125,34 @@ async def _analyze_scenes_incrementally(
     store: VideoAssetStore,
 ) -> VideoAsset:
     updated_scenes = list(video_asset.initial_scenes)
-    for scene_index, scene in enumerate(video_asset.initial_scenes):
-        updated_scenes[scene_index] = await asyncio.to_thread(
-            analyze_initial_scene,
-            scene,
-        )
-        video_asset = video_asset.model_copy(update={"initial_scenes": updated_scenes})
-        await store.publish_asset_mutation(
-            video_asset,
-            stage=f"analyzed scenes {scene_index + 1}/{len(updated_scenes)}",
-        )
+    completed = 0
+    batch_size = settings.llm_initial_scene_analysis_batch_size
+    for batch_start in range(0, len(updated_scenes), batch_size):
+        batch = updated_scenes[batch_start : batch_start + batch_size]
+        tasks = [
+            asyncio.create_task(_analyze_scene(batch_start + offset, scene))
+            for offset, scene in enumerate(batch)
+        ]
+        for task in asyncio.as_completed(tasks):
+            scene_index, analyzed_scene = await task
+            updated_scenes[scene_index] = analyzed_scene
+            completed += 1
+            video_asset = video_asset.model_copy(
+                update={"initial_scenes": updated_scenes}
+            )
+            await store.publish_asset_mutation(
+                video_asset,
+                stage=f"analyzed scenes {completed}/{len(updated_scenes)}",
+            )
     return video_asset
+
+
+async def _analyze_scene(
+    scene_index: int,
+    scene: InitialScene,
+) -> tuple[int, InitialScene]:
+    analyzed_scene = await asyncio.to_thread(analyze_initial_scene, scene)
+    return scene_index, analyzed_scene
 
 
 async def _track_objects(
