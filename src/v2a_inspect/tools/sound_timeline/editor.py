@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID
 
 from langchain_core.tools import StructuredTool
@@ -35,8 +36,13 @@ from .write_tools import SoundTimelineWriteTools
 class SoundTimelineEditor:
     """Tool-backed editor for one mutable VideoAsset.sound_timeline."""
 
-    def __init__(self, video_asset: VideoAsset) -> None:
+    def __init__(
+        self,
+        video_asset: VideoAsset,
+        on_change: Callable[[str], None] | None = None,
+    ) -> None:
         self.video_asset = video_asset
+        self._on_change = on_change
         self.read = SoundTimelineReadTools(self)
         self.write = SoundTimelineWriteTools(self)
 
@@ -152,6 +158,10 @@ class SoundTimelineEditor:
         if self.video_asset.sound_timeline is None:
             self.video_asset.sound_timeline = SoundTimeline()
         return self.video_asset.sound_timeline
+
+    def notify_changed(self, stage: str) -> None:
+        if self._on_change is not None:
+            self._on_change(stage)
 
     def check_frame_index(self, frame_index: int, *, allow_end: bool) -> None:
         upper = (

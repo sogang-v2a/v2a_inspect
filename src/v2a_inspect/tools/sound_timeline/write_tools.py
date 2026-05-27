@@ -51,6 +51,7 @@ class SoundTimelineWriteTools:
         self.editor.video_asset.sound_timeline = timeline.model_copy(
             update={"sound_sources": sources}
         )
+        self.editor.notify_changed("updated sound source")
         return source
 
     def delete_sound_source(self, sound_source_id: UUID) -> DeleteSoundSourceOutput:
@@ -71,6 +72,7 @@ class SoundTimelineWriteTools:
         self.editor.video_asset.sound_timeline = timeline.model_copy(
             update={"sound_sources": sources, "sound_tracks": tracks}
         )
+        self.editor.notify_changed("deleted sound source")
         return DeleteSoundSourceOutput(deleted_sound_source_id=sound_source_id)
 
     def upsert_sound_track(
@@ -109,6 +111,7 @@ class SoundTimelineWriteTools:
         self.editor.video_asset.sound_timeline = timeline.model_copy(
             update={"sound_tracks": tracks}
         )
+        self.editor.notify_changed("updated sound track")
         return track
 
     def delete_sound_track(self, sound_track_id: UUID) -> DeleteSoundTrackOutput:
@@ -129,6 +132,7 @@ class SoundTimelineWriteTools:
         self.editor.video_asset.sound_timeline = timeline.model_copy(
             update={"sound_tracks": tracks}
         )
+        self.editor.notify_changed("deleted sound track")
         return DeleteSoundTrackOutput(deleted_sound_track_id=sound_track_id)
 
     def upsert_sound_event(
@@ -167,6 +171,7 @@ class SoundTimelineWriteTools:
         self.editor.video_asset.sound_timeline = timeline.model_copy(
             update={"sound_events": events}
         )
+        self.editor.notify_changed("updated sound event")
         return event
 
     def delete_sound_event(self, sound_event_id: UUID) -> DeleteSoundEventOutput:
@@ -181,4 +186,5 @@ class SoundTimelineWriteTools:
         self.editor.video_asset.sound_timeline = timeline.model_copy(
             update={"sound_events": events}
         )
+        self.editor.notify_changed("deleted sound event")
         return DeleteSoundEventOutput(deleted_sound_event_id=sound_event_id)

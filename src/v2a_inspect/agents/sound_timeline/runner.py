@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -20,10 +22,11 @@ def run_sound_timeline_agent(
     objective: str = "Build a complete SoundTimeline for the full video.",
     model: BaseChatModel | None = None,
     max_iterations: int | None = None,
+    on_change: Callable[[str], None] | None = None,
 ) -> None:
     """Mutate video_asset.sound_timeline by running the sound timeline agent."""
 
-    editor = SoundTimelineEditor(video_asset)
+    editor = SoundTimelineEditor(video_asset, on_change=on_change)
     run_agent_loop(
         editor, objective=objective, model=model, max_iterations=max_iterations
     )

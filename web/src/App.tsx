@@ -1,7 +1,7 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { fetchAsset, startRun } from "./api";
 import VideoEditor from "./components/VideoEditor";
-import type { AssetResponse, AssetUpdateEvent } from "./types";
+import type { AssetResponse } from "./types";
 
 const emptyAsset: AssetResponse = {
   status: "idle",
@@ -17,33 +17,18 @@ const emptyAsset: AssetResponse = {
 export default function App() {
   const [state, setState] = useState<AssetResponse>(emptyAsset);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const assetVersionRef = useRef(0);
 
   useEffect(() => {
     void refreshAsset();
     const events = new EventSource("/events");
-    events.addEventListener("asset_update", (event) => {
-      const update = JSON.parse((event as MessageEvent).data) as AssetUpdateEvent;
-      if (update.asset_version !== assetVersionRef.current) {
-        void refreshAsset();
-        return;
-      }
-      setState((current) => {
-        return {
-          ...current,
-          status: update.status,
-          stage: update.stage,
-          error: update.error,
-          version: update.version,
-        };
-      });
+    events.addEventListener("asset_update", () => {
+      void refreshAsset();
     });
     return () => events.close();
   }, []);
 
   async function refreshAsset() {
     const nextState = await fetchAsset();
-    assetVersionRef.current = nextState.asset_version;
     setState(nextState);
   }
 

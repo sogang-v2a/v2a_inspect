@@ -16,12 +16,10 @@ export default function Timeline({
 }: TimelineProps) {
   const lanes = groupRows(rows);
   const maxPlaybackFrame = Math.max(0, frameCount - 1);
-  const maxFrame = Math.max(maxPlaybackFrame, ...rows.map((row) => row.end_frame), 1);
+  const maxFrame = Math.max(maxPlaybackFrame, 1);
   const clampedFrame = clamp(frame, 0, maxFrame);
   const playheadRatio = clampedFrame / maxFrame;
-  const playheadLeft = `calc(${playheadRatio * 100}% + ${
-    150 * (1 - playheadRatio) - 2 * playheadRatio
-  }px)`;
+  const playheadLeft = `${playheadRatio * 100}%`;
 
   function selectFrame(event: PointerEvent<HTMLElement>) {
     if (maxPlaybackFrame <= 0) {
@@ -39,51 +37,58 @@ export default function Timeline({
         <span>{rows.length} items</span>
       </div>
       <div className="timeline">
-        <div className="playhead-line" style={{ left: playheadLeft }} />
-        <div
-          className="timeline-ruler"
-          onPointerDown={selectFrame}
-          onPointerMove={(event) => {
-            if (event.buttons === 1) {
-              selectFrame(event);
-            }
-          }}
-        />
-        {lanes.length === 0 ? (
-          <div className="empty-lane">Pipeline lanes will appear here.</div>
-        ) : (
-          lanes.map(([lane, laneRows]) => (
-            <div className="lane" key={lane}>
-              <div className="lane-label">{lane}</div>
-              <div
-                className="lane-track"
-                onPointerDown={selectFrame}
-                onPointerMove={(event) => {
-                  if (event.buttons === 1) {
-                    selectFrame(event);
-                  }
-                }}
-              >
-                {laneRows.map((row, index) => {
-                  const bar = barStyle(row, maxFrame);
-                  return (
-                    <div
-                      className={`bar bar-${safeClass(row.kind)}`}
-                      key={`${lane}-${row.start_frame}-${row.end_frame}-${index}`}
-                      style={{
-                        left: `${bar.left}%`,
-                        width: `${bar.width}%`,
-                      }}
-                      title={`${row.label}: ${row.start_frame}-${row.end_frame}`}
-                    >
-                      {row.label}
-                    </div>
-                  );
-                })}
+        <div className="timeline-content">
+          <div className="timeline-playhead-area">
+            <div className="playhead-line" style={{ left: playheadLeft }} />
+          </div>
+          <div className="timeline-ruler-row">
+            <div className="timeline-label-spacer" />
+            <div
+              className="timeline-ruler"
+              onPointerDown={selectFrame}
+              onPointerMove={(event) => {
+                if (event.buttons === 1) {
+                  selectFrame(event);
+                }
+              }}
+            />
+          </div>
+          {lanes.length === 0 ? (
+            <div className="empty-lane">Pipeline lanes will appear here.</div>
+          ) : (
+            lanes.map(([lane, laneRows]) => (
+              <div className="lane" key={lane}>
+                <div className="lane-label">{lane}</div>
+                <div
+                  className="lane-track"
+                  onPointerDown={selectFrame}
+                  onPointerMove={(event) => {
+                    if (event.buttons === 1) {
+                      selectFrame(event);
+                    }
+                  }}
+                >
+                  {laneRows.map((row, index) => {
+                    const bar = barStyle(row, maxFrame);
+                    return (
+                      <div
+                        className={`bar bar-${safeClass(row.kind)}`}
+                        key={`${lane}-${row.start_frame}-${row.end_frame}-${index}`}
+                        style={{
+                          left: `${bar.left}%`,
+                          width: `${bar.width}%`,
+                        }}
+                        title={`${row.label}: ${row.start_frame}-${row.end_frame}`}
+                      >
+                        {row.label}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))
-        )}
+            ))
+          )}
+        </div>
       </div>
     </section>
   );
