@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import install_auth
 from .routes import create_router
 from .store import VideoAssetStore
 
@@ -14,6 +15,7 @@ from .store import VideoAssetStore
 def create_app() -> FastAPI:
     store = VideoAssetStore()
     app = FastAPI(title="v2a-inspect-ui")
+    install_auth(app)
     app.state.video_asset_store = store
     app.include_router(create_router(store))
 

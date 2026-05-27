@@ -16,6 +16,8 @@ services:
       V2A_INSPECT_UI_PORT: 8501
       V2A_INSPECT_UI_WORK_DIR: /data/work
       V2A_INSPECT_UI_STATIC_DIR: /app/web/dist
+      V2A_INSPECT_AUTH_COOKIE: ${V2A_INSPECT_AUTH_COOKIE:-v2a_inspect_auth}
+      V2A_INSPECT_AUTH_MAX_AGE_SECONDS: ${V2A_INSPECT_AUTH_MAX_AGE_SECONDS:-604800}
 
       V2A_INSPECT_CLIENT_TIMEOUT: ${V2A_INSPECT_CLIENT_TIMEOUT:-30}
 
@@ -43,6 +45,8 @@ services:
         target: V2A_INSPECT_LANGFUSE_PUBLIC_KEY
       - source: langfuse_secret_key
         target: V2A_INSPECT_LANGFUSE_SECRET_KEY
+      - source: ui_password
+        target: V2A_INSPECT_UI_PASSWORD
 
     volumes:
       - v2a_inspect_data:/data
@@ -53,7 +57,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/').read()",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/healthz').read()",
         ]
       interval: 30s
       timeout: 5s
@@ -70,3 +74,5 @@ secrets:
     file: ./secrets/langfuse_public_key
   langfuse_secret_key:
     file: ./secrets/langfuse_secret_key
+  ui_password:
+    file: ./secrets/ui_password
