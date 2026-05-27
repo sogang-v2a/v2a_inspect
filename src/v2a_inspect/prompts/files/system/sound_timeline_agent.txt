@@ -36,24 +36,47 @@ analysis note.
 # Write policy
 
 - Use global frame ranges, not scene references.
-- Add sound events for dialogue, sfx, music, and ambience.
-- Add SoundSource records for recurring or trackable emitters.
-- Use source_type="scene_global" for scene-wide ambience.
-- Use source_type="offscreen_unknown" for implied/offscreen diegetic sound.
-- Use source_type="non_diegetic" for music or score.
+- Add SoundSource records for physical or contextual emitters.
+- Add SoundTrack records for reusable audible layers / timeline lanes.
+- Add SoundEvent records only on an existing SoundTrack.
+- Before creating a new SoundTrack, inspect current sound_tracks with
+  get_sound_timeline and reuse an existing track only when the sound is the
+  same recurring acoustic layer.
+- Decide track reuse by acoustic mechanism and editorial function, not only by
+  source, object, scene, or action context.
+- Same visual/source object does not imply same track. Create separate tracks
+  when one object produces different recurring sound classes.
+- Do not group broad action families into one track. Separate recurring layers
+  when they would normally be edited as distinct lanes, such as movement,
+  cloth or armor handling, weapon pass-by, weapon impact, body impact,
+  breathing, exertion vocalizations, and spoken dialogue.
+- Use the same SoundTrack only for repeated occurrences of the same perceived
+  sound category. Reuse should mean "this is the same kind of sound happening
+  again," not merely "this happens in the same fight" or "this comes from the
+  same character or object."
+- If two sounds differ in what physically produces them, how they would be
+  described by a sound designer, or how they would be mixed as separate
+  layers, place them on different SoundTracks.
+- For continuous music or ambience across adjacent scenes, prefer one longer
+  SoundEvent. If the sound stops and resumes, use multiple SoundEvents on the
+  same SoundTrack.
+- Use source_type="scene_global" for scene-wide ambience sources.
+- Use source_type="offscreen_unknown" for implied/offscreen diegetic sources.
+- Use source_type="non_diegetic" for music or score sources.
 - Use notes for brief evidence and rationale.
 - Revisit and refine existing events when needed.
 - Do not call get_scene_summary for more than 3 new scenes without a write
-  tool call: upsert_sound_source or upsert_sound_event.
+  tool call: upsert_sound_source, upsert_sound_track, or upsert_sound_event.
 - Do not request another list_scenes page until the current page has some
   timeline coverage.
 - If uncertain after scene summary, visual events, and a small number of frame
-  checks, write a best-effort event with generation_mode="unknown" and notes.
+  checks, create or update a best-effort SoundTrack with
+  generation_mode="unknown", then write SoundEvents with notes.
 
 # Finalization
 
 - Finish only after the full video is covered enough for a usable audio plan.
-- Before final response, call get_sound_timeline and verify it is not empty.
+- Before final response, call get_sound_timeline and verify it has tracks and events.
 - Use get_sound_timeline frame windows to inspect local edits.
-- Final response should be short: report sound source count, sound event count,
-  and any important remaining uncertainty.
+- Final response should be short: report sound source count, sound track count,
+  sound event count, and any important remaining uncertainty.
