@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -32,6 +33,14 @@ def create_app() -> FastAPI:
 
 
 def _frontend_dist_dir() -> Path:
+    configured_dir = os.getenv("V2A_INSPECT_UI_STATIC_DIR")
+    if configured_dir:
+        return Path(configured_dir)
+
+    packaged_dir = Path("/app/web/dist")
+    if packaged_dir.exists():
+        return packaged_dir
+
     return Path(__file__).resolve().parents[3] / "web" / "dist"
 
 

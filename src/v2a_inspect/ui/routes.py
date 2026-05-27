@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -12,6 +13,14 @@ from fastapi.responses import FileResponse, StreamingResponse
 from .pipeline import PipelineOptions, run_uploaded_video_pipeline
 from .rows import current_frame_rows, timeline_rows
 from .store import VideoAssetSnapshot, VideoAssetStore
+
+
+DEFAULT_WORK_DIR = os.getenv("V2A_INSPECT_UI_WORK_DIR")
+DEFAULT_SERVER_URL = os.getenv("V2A_INSPECT_UI_SERVER_URL")
+DEFAULT_SCENE_THRESHOLD = float(os.getenv("V2A_INSPECT_UI_SCENE_THRESHOLD", "27.0"))
+DEFAULT_MAX_KEYFRAMES_PER_SCENE = int(
+    os.getenv("V2A_INSPECT_UI_MAX_KEYFRAMES_PER_SCENE", "20")
+)
 
 
 def create_router(store: VideoAssetStore) -> APIRouter:
@@ -52,13 +61,17 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         video: Annotated[UploadFile, File()],
         work_dir: Annotated[str | None, Form()] = None,
         server_url: Annotated[str | None, Form()] = None,
-        scene_threshold: Annotated[float, Form()] = 27.0,
-        max_keyframes_per_scene: Annotated[int, Form()] = 20,
+        scene_threshold: Annotated[float, Form()] = DEFAULT_SCENE_THRESHOLD,
+        max_keyframes_per_scene: Annotated[
+            int, Form()
+        ] = DEFAULT_MAX_KEYFRAMES_PER_SCENE,
     ) -> dict[str, object]:
         if not video.filename:
             raise HTTPException(status_code=400, detail="No video filename provided")
 
-        root_dir = Path(work_dir or tempfile.gettempdir()) / "v2a-inspect-ui"
+        root_dir = Path(work_dir or DEFAULT_WORK_DIR or tempfile.gettempdir())
+        if root_dir.name != "v2a-inspect-ui":
+            root_dir /= "v2a-inspect-ui"
         upload_dir = root_dir / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
         upload_path = upload_dir / f"{uuid.uuid4()}{Path(video.filename).suffix}"
@@ -67,7 +80,7 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         options = PipelineOptions(
             scene_threshold=scene_threshold,
             max_keyframes_per_scene=max_keyframes_per_scene,
-            server_url=server_url or None,
+            server_url=server_url or DEFAULT_SERVER_URL or None,
         )
         background_tasks.add_task(
             run_uploaded_video_pipeline,
