@@ -26,8 +26,9 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
         0,
       ) ?? 0;
     const visualEvents = asset?.visual_identity_layer?.visual_events.length ?? 0;
+    const soundTracks = asset?.sound_timeline?.sound_tracks.length ?? 0;
     const soundEvents = asset?.sound_timeline?.sound_events.length ?? 0;
-    return { scenes, tracks, visualEvents, soundEvents };
+    return { scenes, tracks, visualEvents, soundTracks, soundEvents };
   }, [asset]);
   const selectFrame = useCallback(
     (nextFrame: number) => {
@@ -144,8 +145,10 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
               <dd>{counts.visualEvents}</dd>
             </div>
             <div>
-              <dt>Sound events</dt>
-              <dd>{counts.soundEvents}</dd>
+              <dt>Sound</dt>
+              <dd>
+                {counts.soundTracks}/{counts.soundEvents}
+              </dd>
             </div>
           </dl>
         </aside>

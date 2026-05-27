@@ -511,12 +511,14 @@ button:disabled {
   background: #a25d2a;
 }
 
-.bar-ambient {
+.bar-ambient,
+.bar-ambience {
   background: #657082;
 }
 
 .bar-foley,
-.bar-effect {
+.bar-effect,
+.bar-sfx {
   background: #7e5bb8;
 }
 

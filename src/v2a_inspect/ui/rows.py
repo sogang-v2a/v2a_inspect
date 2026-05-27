@@ -33,6 +33,11 @@ def overview_rows(video_asset: VideoAsset) -> dict[str, int | float | str]:
         if video_asset.sound_timeline is None
         else len(video_asset.sound_timeline.sound_sources)
     )
+    sound_track_count = (
+        0
+        if video_asset.sound_timeline is None
+        else len(video_asset.sound_timeline.sound_tracks)
+    )
     sound_event_count = (
         0
         if video_asset.sound_timeline is None
@@ -48,6 +53,7 @@ def overview_rows(video_asset: VideoAsset) -> dict[str, int | float | str]:
         "visual_objects": visual_object_count,
         "visual_events": visual_event_count,
         "sound_sources": sound_source_count,
+        "sound_tracks": sound_track_count,
         "sound_events": sound_event_count,
     }
 
@@ -232,7 +238,7 @@ def timeline_rows(video_asset: VideoAsset) -> list[TableRow]:
     for row in sound_event_rows(video_asset):
         rows.append(
             {
-                "lane": f"sound: {row['track_type']}",
+                "lane": f"[{row['track_type']}] {row['track_label']}",
                 "label": row["description"],
                 "start_frame": row["start_frame"],
                 "end_frame": row["end_frame"],
@@ -281,6 +287,8 @@ def _sound_event_row(
     fps: int,
 ) -> TableRow:
     return {
+        "sound_track_id": str(track.sound_track_id),
+        "track_label": track.label,
         "track_type": track.track_type,
         "source": None if source is None else source.label,
         "start_frame": event.start_frame_index,

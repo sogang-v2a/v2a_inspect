@@ -152,13 +152,14 @@ function SoundEventDetails({ rows }: { rows: SoundEventFrameRow[] }) {
       {rows.map((row, index) => (
         <article
           className="detail-card"
-          key={`${row.track_type}-${row.start_frame}-${index}`}
+          key={`${row.sound_track_id}-${row.start_frame}-${index}`}
         >
           <div className="detail-card-title">
-            <strong>{row.track_type}</strong>
+            <strong>{row.track_label}</strong>
             <span>{row.generation_mode}</span>
           </div>
           <dl className="detail-grid">
+            <Field label="Type" value={row.track_type} />
             <Field label="Source" value={row.source || "-"} />
             <Field label="Frames" value={`${row.start_frame}-${row.end_frame}`} />
             <Field label="Duration" value={`${row.duration_sec}s`} />

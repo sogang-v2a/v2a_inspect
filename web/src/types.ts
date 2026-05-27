@@ -61,11 +61,21 @@ export interface VisualEvent {
 
 export interface SoundTimeline {
   sound_sources: unknown[];
+  sound_tracks: SoundTrack[];
   sound_events: SoundEvent[];
 }
 
-export interface SoundEvent {
+export interface SoundTrack {
+  sound_track_id: string;
   track_type: string;
+  label: string;
+  sound_source_id?: string | null;
+  generation_mode: string;
+  notes?: string | null;
+}
+
+export interface SoundEvent {
+  sound_track_id: string;
   start_frame_index: number;
   end_frame_index: number;
   description: string;
@@ -115,6 +125,8 @@ export interface VisualEventFrameRow {
 }
 
 export interface SoundEventFrameRow {
+  sound_track_id: string;
+  track_label: string;
   track_type: string;
   source: string | null;
   start_frame: number;
