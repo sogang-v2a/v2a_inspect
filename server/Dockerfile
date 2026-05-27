@@ -1,40 +1,39 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.13-slim AS base
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PATH="/app/server/.venv/bin:/app/.venv/bin:$PATH" \
+    PATH="/app/server/.venv/bin:$PATH" \
+    V2A_SERVER_HOST=0.0.0.0 \
+    V2A_SERVER_PORT=8080 \
+    V2A_SERVER_UPLOAD_DIR=/data/uploads \
+    HF_HOME=/data/model-cache/huggingface \
+    TRANSFORMERS_CACHE=/data/model-cache/transformers \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
-WORKDIR /app
+WORKDIR /app/server
 
 
 FROM base AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml uv.lock README.md ./
-COPY server/pyproject.toml ./server/pyproject.toml
-COPY server/uv.lock ./server/uv.lock
-COPY server/README.md ./server/README.md
+COPY server/pyproject.toml server/uv.lock server/README.md ./
 
-RUN uv sync --locked --no-dev --no-install-project && \
-    uv --project server sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-dev --no-install-project
 
-COPY src ./src
-COPY server/model-manifest.json ./server/model-manifest.json
-COPY server/src ./server/src
+COPY server/src ./src
 
-RUN uv sync --locked --no-dev && \
-    uv --project server sync --locked --no-dev
+RUN uv sync --locked --no-dev
 
 
 FROM base AS runtime
@@ -45,5 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app /app
+
+EXPOSE 8080
+VOLUME ["/data"]
 
 CMD ["v2a-inspect-server", "serve"]
