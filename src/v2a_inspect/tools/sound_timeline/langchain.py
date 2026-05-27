@@ -7,7 +7,7 @@ from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
-from v2a_inspect.models import SchemaModel, SoundEvent, SoundSource
+from v2a_inspect.models import SchemaModel, SoundEvent, SoundSource, SoundTrack
 
 from .schemas import (
     AnnotatedFrameOutput,
@@ -135,15 +135,23 @@ def _tool_string(value: object) -> str:
     if isinstance(value, SoundSource):
         return f"sound_source {value.source_type} label={value.label}"
     if isinstance(value, SoundEvent):
+        return _sound_event_tool_string(value)
+    if isinstance(value, SoundTrack):
         source = "" if value.sound_source_id is None else " source=linked"
         return (
-            f"sound_event {value.start_frame_index}-{value.end_frame_index} "
-            f"{value.track_type} mode={value.generation_mode}{source} "
-            f"description={value.description}"
+            f"sound_track {value.track_type} mode={value.generation_mode}{source} "
+            f"label={value.label}"
         )
     if isinstance(value, SchemaModel):
         return value.to_tool_string()
     return json.dumps(value, indent=2, default=str)
+
+
+def _sound_event_tool_string(event: SoundEvent) -> str:
+    return (
+        f"sound_event {event.start_frame_index}-{event.end_frame_index} "
+        f"description={event.description}"
+    )
 
 
 def _make_list_scenes_tool(editor: SoundTimelineEditor) -> Callable[[int, int], str]:

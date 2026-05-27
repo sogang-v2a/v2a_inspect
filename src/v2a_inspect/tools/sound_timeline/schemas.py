@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from v2a_inspect.models import SoundEvent, SoundSource, SoundTrack, VisualEvent
+from v2a_inspect.models import SoundEvent, SoundSource, SoundTrack
 from v2a_inspect.models.base import SchemaModel
 
 

@@ -113,7 +113,9 @@ class SoundTimelineWriteTools:
 
     def delete_sound_track(self, sound_track_id: UUID) -> DeleteSoundTrackOutput:
         timeline = self.editor.ensure_sound_timeline()
-        if any(event.sound_track_id == sound_track_id for event in timeline.sound_events):
+        if any(
+            event.sound_track_id == sound_track_id for event in timeline.sound_events
+        ):
             raise ValueError(
                 f"Cannot delete sound_track_id with existing events: {sound_track_id}"
             )

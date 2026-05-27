@@ -4,7 +4,13 @@ from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
-from v2a_inspect.models import SoundEvent, SoundSource, SoundTimeline, SoundTrack, VideoAsset
+from v2a_inspect.models import (
+    SoundEvent,
+    SoundSource,
+    SoundTimeline,
+    SoundTrack,
+    VideoAsset,
+)
 
 from .langchain import build_sound_timeline_tools
 from .read_tools import SoundTimelineReadTools
