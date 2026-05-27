@@ -4,7 +4,7 @@ from uuid import UUID
 
 from langchain_core.tools import StructuredTool
 
-from v2a_inspect.models import SoundEvent, SoundSource, SoundTimeline, VideoAsset
+from v2a_inspect.models import SoundEvent, SoundSource, SoundTimeline, SoundTrack, VideoAsset
 
 from .langchain import build_sound_timeline_tools
 from .read_tools import SoundTimelineReadTools
@@ -12,6 +12,7 @@ from .schemas import (
     AnnotatedFrameOutput,
     DeleteSoundEventOutput,
     DeleteSoundSourceOutput,
+    DeleteSoundTrackOutput,
     FrameResolutionMode,
     ListScenesOutput,
     ListTracksOutput,
@@ -96,25 +97,42 @@ class SoundTimelineEditor:
     def delete_sound_source(self, sound_source_id: UUID) -> DeleteSoundSourceOutput:
         return self.write.delete_sound_source(sound_source_id)
 
+    def upsert_sound_track(
+        self,
+        track_type: SoundTrackType,
+        label: str,
+        sound_track_id: UUID | None = None,
+        sound_source_id: UUID | None = None,
+        generation_mode: SoundGenerationMode = "unknown",
+        notes: str | None = None,
+    ) -> SoundTrack:
+        return self.write.upsert_sound_track(
+            track_type=track_type,
+            label=label,
+            sound_track_id=sound_track_id,
+            sound_source_id=sound_source_id,
+            generation_mode=generation_mode,
+            notes=notes,
+        )
+
+    def delete_sound_track(self, sound_track_id: UUID) -> DeleteSoundTrackOutput:
+        return self.write.delete_sound_track(sound_track_id)
+
     def upsert_sound_event(
         self,
         start_frame_index: int,
         end_frame_index: int,
         description: str,
-        track_type: SoundTrackType,
+        sound_track_id: UUID,
         sound_event_id: UUID | None = None,
-        sound_source_id: UUID | None = None,
-        generation_mode: SoundGenerationMode = "unknown",
         notes: str | None = None,
     ) -> SoundEvent:
         return self.write.upsert_sound_event(
             start_frame_index=start_frame_index,
             end_frame_index=end_frame_index,
             description=description,
-            track_type=track_type,
+            sound_track_id=sound_track_id,
             sound_event_id=sound_event_id,
-            sound_source_id=sound_source_id,
-            generation_mode=generation_mode,
             notes=notes,
         )
 

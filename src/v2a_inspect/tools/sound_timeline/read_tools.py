@@ -261,6 +261,7 @@ class SoundTimelineReadTools:
         if timeline is None:
             return SoundTimelineViewOutput(
                 sound_sources=[],
+                sound_tracks=[],
                 sound_events=[],
                 total_matching_event_count=0,
                 start_frame_index=start_frame_index,
@@ -281,18 +282,20 @@ class SoundTimelineReadTools:
             ):
                 continue
             events.append(event)
+        track_by_id = {track.sound_track_id: track for track in timeline.sound_tracks}
         events = sorted(
             events,
             key=lambda event: (
                 event.start_frame_index,
                 event.end_frame_index,
-                event.track_type,
+                track_by_id[event.sound_track_id].track_type,
                 str(event.sound_event_id),
             ),
         )
         paged_events = events[:limit]
         return SoundTimelineViewOutput(
             sound_sources=timeline.sound_sources,
+            sound_tracks=timeline.sound_tracks,
             sound_events=paged_events,
             total_matching_event_count=len(events),
             start_frame_index=start_frame_index,
