@@ -88,31 +88,6 @@ export interface TrackWindowPoint {
   confidence: number;
 }
 
-export interface MaskWindowResponse {
-  version: number;
-  start_frame: number;
-  end_frame: number;
-  width: number;
-  height: number;
-  tracks: MaskWindowTrack[];
-}
-
-export interface MaskWindowTrack {
-  scene: number;
-  track: number;
-  label: string;
-  start_frame: number;
-  end_frame: number;
-  width: number;
-  height: number;
-  points: MaskWindowPoint[];
-}
-
-export interface MaskWindowPoint {
-  frame_index: number;
-  spans: [number, number, number][];
-}
-
 export interface VisualIdentityLayer {
   visual_objects: unknown[];
   visual_events: VisualEvent[];

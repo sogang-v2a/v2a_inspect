@@ -1,10 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Inspector from "./Inspector";
-import MaskOverlay from "./MaskOverlay";
 import Timeline from "./Timeline";
 import TrackingOverlay from "./TrackingOverlay";
-import { fetchMaskWindow, fetchTrackingWindow } from "../api";
-import type { AssetResponse, MaskWindowResponse, TrackWindowResponse } from "../types";
+import { fetchTrackingWindow } from "../api";
+import type { AssetResponse, TrackWindowResponse } from "../types";
 
 interface VideoEditorProps {
   state: AssetResponse;
@@ -23,14 +22,11 @@ export default function VideoEditor({
 }: VideoEditorProps) {
   const [frame, setFrame] = useState(0);
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
-  const [showSegmentMasks, setShowSegmentMasks] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackWindow, setTrackWindow] = useState<TrackWindowResponse | null>(null);
-  const [maskWindow, setMaskWindow] = useState<MaskWindowResponse | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animationRef = useRef<number | null>(null);
-  const maskWindowRequestRef = useRef<string | null>(null);
   const trackWindowRequestRef = useRef<string | null>(null);
   const video = state.video;
   const fps = video?.fps || 30;
@@ -92,36 +88,6 @@ export default function VideoEditor({
         trackWindowRequestRef.current = null;
       });
   }, [maxFrame, selectedFrame, showTrackingOverlay, state.version, trackWindow, video]);
-
-  useEffect(() => {
-    if (!showSegmentMasks || !video) {
-      setMaskWindow(null);
-      return;
-    }
-    if (
-      maskWindow &&
-      maskWindow.version === state.version &&
-      selectedFrame >= maskWindow.start_frame + 60 &&
-      selectedFrame <= maskWindow.end_frame - 60
-    ) {
-      return;
-    }
-    const startFrame = Math.max(0, selectedFrame - 300);
-    const endFrame = Math.min(maxFrame, selectedFrame + 300);
-    const requestKey = `${state.version}:${startFrame}:${endFrame}`;
-    if (maskWindowRequestRef.current === requestKey) {
-      return;
-    }
-    maskWindowRequestRef.current = requestKey;
-    void fetchMaskWindow(startFrame, endFrame)
-      .then(setMaskWindow)
-      .catch((error) => {
-        console.error(error);
-      })
-      .finally(() => {
-        maskWindowRequestRef.current = null;
-      });
-  }, [maskWindow, maxFrame, selectedFrame, showSegmentMasks, state.version, video]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -337,14 +303,6 @@ export default function VideoEditor({
                 >
                   Tracking
                 </button>
-                <button
-                  className={showSegmentMasks ? "toggle active" : "toggle"}
-                  disabled={!video}
-                  onClick={() => setShowSegmentMasks((value) => !value)}
-                  type="button"
-                >
-                  Masks
-                </button>
               </div>
               {video ? (
                 <div className="video-frame">
@@ -355,12 +313,6 @@ export default function VideoEditor({
                     onPlay={() => setIsPlaying(true)}
                     onSeeked={syncFrameFromVideo}
                     onTimeUpdate={syncFrameFromVideo}
-                  />
-                  <MaskOverlay
-                    enabled={showSegmentMasks}
-                    frame={selectedFrame}
-                    masks={maskWindow}
-                    video={video}
                   />
                   <TrackingOverlay
                     video={video}

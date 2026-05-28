@@ -3,9 +3,6 @@ from __future__ import annotations
 from collections import Counter
 from uuid import UUID
 
-import numpy as np
-from PIL import Image
-
 from v2a_inspect.models import (
     SceneTrack,
     SoundEvent,
@@ -15,11 +12,8 @@ from v2a_inspect.models import (
     VisualEvent,
     VisualObject,
 )
-from v2a_inspect.visualization.masks import decode_mask_ref
 
 TableRow = dict[str, object]
-MASK_WINDOW_WIDTH = 160
-MASK_WINDOW_HEIGHT = 90
 _GENERIC_TRACK_LABELS = {
     "",
     "object",
@@ -311,45 +305,6 @@ def tracking_window_rows(
     return rows
 
 
-def mask_window_rows(
-    video_asset: VideoAsset, start_frame: int, end_frame: int
-) -> list[TableRow]:
-    rows: list[TableRow] = []
-    for scene_index, scene in enumerate(video_asset.initial_scenes):
-        if scene.end_frame_index < start_frame or scene.start_frame_index > end_frame:
-            continue
-        for track_index, track in enumerate(scene.scene_tracks):
-            if (
-                track.end_frame_index < start_frame
-                or track.start_frame_index > end_frame
-            ):
-                continue
-            points = [
-                {
-                    "frame_index": point.frame_index,
-                    "spans": _mask_spans(decode_mask_ref(point.mask)),
-                }
-                for point in track.points
-                if start_frame <= point.frame_index <= end_frame
-                and point.mask is not None
-            ]
-            if not points:
-                continue
-            rows.append(
-                {
-                    "scene": scene_index,
-                    "track": track_index,
-                    "label": _track_label(track),
-                    "start_frame": track.start_frame_index,
-                    "end_frame": track.end_frame_index,
-                    "width": MASK_WINDOW_WIDTH,
-                    "height": MASK_WINDOW_HEIGHT,
-                    "points": points,
-                }
-            )
-    return rows
-
-
 def _visual_event_row(
     event: VisualEvent,
     object_labels: dict[UUID, str],
@@ -441,28 +396,3 @@ def _frame_value(row: TableRow, key: str) -> int:
     if not isinstance(value, int):
         raise TypeError(f"{key} must be an int")
     return value
-
-
-def _mask_spans(mask: np.ndarray) -> list[list[int]]:
-    resized = _resize_mask(mask)
-    spans: list[list[int]] = []
-    for y, row in enumerate(resized):
-        start: int | None = None
-        for x, value in enumerate(row):
-            if value and start is None:
-                start = x
-            elif not value and start is not None:
-                spans.append([y, start, x])
-                start = None
-        if start is not None:
-            spans.append([y, start, len(row)])
-    return spans
-
-
-def _resize_mask(mask: np.ndarray) -> np.ndarray:
-    image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
-    resized = image.resize(
-        (MASK_WINDOW_WIDTH, MASK_WINDOW_HEIGHT),
-        Image.Resampling.NEAREST,
-    )
-    return np.array(resized) > 0

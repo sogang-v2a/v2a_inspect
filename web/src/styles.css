@@ -257,7 +257,6 @@ button:disabled {
 }
 
 .video-frame video,
-.segmentation-mask-overlay,
 .tracking-overlay {
   height: 100%;
   inset: 0;
@@ -274,12 +273,6 @@ button:disabled {
   display: block;
   pointer-events: none;
   z-index: 2;
-}
-
-.segmentation-mask-overlay {
-  object-fit: contain;
-  pointer-events: none;
-  z-index: 1;
 }
 
 .empty-video {

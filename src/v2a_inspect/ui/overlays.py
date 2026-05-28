@@ -15,14 +15,7 @@ from .rows import track_display_label
 OVERLAY_SIZE = (1280, 720)
 
 
-def render_tracking_overlay(
-    video_asset: VideoAsset,
-    frame_index: int,
-    *,
-    masks: bool = True,
-    boxes: bool = True,
-    labels: bool = True,
-) -> bytes:
+def render_tracking_overlay(video_asset: VideoAsset, frame_index: int) -> bytes:
     image = Image.new("RGBA", OVERLAY_SIZE, (0, 0, 0, 0))
     for track_index, track in enumerate(_tracks(video_asset)):
         point = next(
@@ -33,15 +26,13 @@ def render_tracking_overlay(
             continue
 
         color = color_for_index(track_index)
-        if masks and point.mask is not None:
+        if point.mask is not None:
             mask = decode_mask_ref(point.mask)
             image = _overlay_mask(image, mask, color)
 
-        if boxes and point.bbox_xyxy is not None:
+        if point.bbox_xyxy is not None:
             draw_bbox(image, point.bbox_xyxy, color, width=3)
 
-        if not labels:
-            continue
         label = track_display_label(track, track_index)
         if point.bbox_xyxy is None:
             position = (10, 24 + (track_index * 18))
