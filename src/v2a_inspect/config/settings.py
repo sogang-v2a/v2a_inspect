@@ -92,7 +92,7 @@ class Settings(BaseSettings):
         ),
     )
     agent_sound_timeline_max_workers: int = Field(
-        default=0,
+        default=3,
         ge=0,
         validation_alias=AliasChoices(
             "V2A_INSPECT_AGENT_SOUND_TIMELINE_MAX_WORKERS",
