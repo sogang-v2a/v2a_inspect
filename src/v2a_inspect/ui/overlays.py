@@ -13,8 +13,6 @@ from v2a_inspect.visualization.masks import decode_mask_ref
 from .rows import track_display_label
 
 OVERLAY_SIZE = (1280, 720)
-MASK_ATLAS_TILE_SIZE = (640, 360)
-MASK_ATLAS_MAX_FRAMES = 30
 
 
 def render_tracking_overlay(
@@ -59,35 +57,6 @@ def render_tracking_overlay(
     return output.getvalue()
 
 
-def render_tracking_mask_atlas(
-    video_asset: VideoAsset,
-    start_frame: int,
-    end_frame: int,
-    *,
-    tile_size: tuple[int, int] = MASK_ATLAS_TILE_SIZE,
-) -> bytes:
-    frame_count = end_frame - start_frame + 1
-    tile_width, tile_height = tile_size
-    atlas = Image.new("RGBA", (tile_width, tile_height * frame_count), (0, 0, 0, 0))
-    for offset, frame_index in enumerate(range(start_frame, end_frame + 1)):
-        tile = Image.new("RGBA", tile_size, (0, 0, 0, 0))
-        for track_index, track in enumerate(_tracks(video_asset)):
-            point = next(
-                (item for item in track.points if item.frame_index == frame_index),
-                None,
-            )
-            if point is None or point.mask is None:
-                continue
-            tile = _overlay_mask(
-                tile, decode_mask_ref(point.mask), color_for_index(track_index)
-            )
-        atlas.alpha_composite(tile, dest=(0, offset * tile_height))
-
-    output = BytesIO()
-    atlas.save(output, format="PNG")
-    return output.getvalue()
-
-
 def _tracks(video_asset: VideoAsset) -> list[SceneTrack]:
     return [
         track for scene in video_asset.initial_scenes for track in scene.scene_tracks
@@ -101,8 +70,6 @@ def _overlay_mask(
 ) -> Image.Image:
     base = image.convert("RGBA")
     mask_image = Image.fromarray((mask.astype(np.uint8) * 95), mode="L")
-    if mask_image.size != base.size:
-        mask_image = mask_image.resize(base.size, Image.Resampling.NEAREST)
     color_image = Image.new("RGBA", base.size, (*color, 0))
     color_image.putalpha(mask_image)
     return Image.alpha_composite(base, color_image)
