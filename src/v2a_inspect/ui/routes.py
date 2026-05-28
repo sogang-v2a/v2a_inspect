@@ -111,14 +111,25 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         }
 
     @router.get("/api/frames/tracking-overlay")
-    async def get_tracking_overlay(frame: int) -> Response:
+    async def get_tracking_overlay(
+        frame: int,
+        masks: bool = True,
+        boxes: bool = True,
+        labels: bool = True,
+    ) -> Response:
         snapshot = await store.snapshot()
         if snapshot.asset is None:
             raise HTTPException(status_code=404, detail="No video asset loaded")
         if frame < 0 or frame >= snapshot.asset.frame_count:
             raise HTTPException(status_code=400, detail="Frame out of range")
         return Response(
-            render_tracking_overlay(snapshot.asset, frame),
+            render_tracking_overlay(
+                snapshot.asset,
+                frame,
+                masks=masks,
+                boxes=boxes,
+                labels=labels,
+            ),
             media_type="image/png",
             headers={"Cache-Control": "no-store"},
         )
