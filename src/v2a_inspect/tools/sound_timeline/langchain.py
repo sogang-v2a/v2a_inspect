@@ -92,7 +92,8 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
             args_schema=UpsertSoundSourceArgs,
             description=(
                 "Create or update a SoundSource in the SoundTimeline. Use as soon "
-                "as a recurring sound emitter is known."
+                "as a recurring sound emitter is known. Returns id=<uuid> for "
+                "later track/source updates."
             ),
         ),
         StructuredTool.from_function(
@@ -105,7 +106,8 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
             args_schema=UpsertSoundTrackArgs,
             description=(
                 "Create or update a SoundTrack, the reusable audible layer / "
-                "timeline lane. Reuse an existing track for the same sound identity."
+                "timeline lane. Reuse an existing track for the same sound identity. "
+                "Returns id=<uuid> for later SoundEvent calls."
             ),
         ),
         StructuredTool.from_function(
@@ -136,13 +138,26 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
 
 def _tool_string(value: object) -> str:
     if isinstance(value, SoundSource):
-        return f"sound_source {value.source_type} label={value.label}"
+        visual_source = (
+            ""
+            if value.visual_object_id is None
+            else f" visual_object_id={value.visual_object_id}"
+        )
+        return (
+            f"sound_source id={value.sound_source_id} "
+            f"type={value.source_type}{visual_source} label={value.label}"
+        )
     if isinstance(value, SoundEvent):
         return _sound_event_tool_string(value)
     if isinstance(value, SoundTrack):
-        source = "" if value.sound_source_id is None else " source=linked"
+        source = (
+            ""
+            if value.sound_source_id is None
+            else f" source_id={value.sound_source_id}"
+        )
         return (
-            f"sound_track {value.track_type} mode={value.generation_mode}{source} "
+            f"sound_track id={value.sound_track_id} "
+            f"type={value.track_type} mode={value.generation_mode}{source} "
             f"label={value.label}"
         )
     if isinstance(value, SchemaModel):
@@ -152,7 +167,8 @@ def _tool_string(value: object) -> str:
 
 def _sound_event_tool_string(event: SoundEvent) -> str:
     return (
-        f"sound_event {event.start_frame_index}-{event.end_frame_index} "
+        f"sound_event id={event.sound_event_id} track_id={event.sound_track_id} "
+        f"frames={event.start_frame_index}-{event.end_frame_index} "
         f"description={event.description}"
     )
 
