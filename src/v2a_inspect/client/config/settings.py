@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     server_host: str = "localhost"
     server_port: int = 8000
     timeout: float = 30.0
+    max_retries: int = 3
+    retry_backoff_seconds: float = 10.0
 
     @property
     def server_url(self) -> str:
