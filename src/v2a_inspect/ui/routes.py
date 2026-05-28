@@ -22,7 +22,14 @@ from .pipeline import (
     run_sound_timeline_pipeline,
     run_uploaded_video_pipeline,
 )
-from .rows import current_frame_rows, timeline_rows, tracking_window_rows
+from .rows import (
+    MASK_WINDOW_HEIGHT,
+    MASK_WINDOW_WIDTH,
+    current_frame_rows,
+    mask_window_rows,
+    timeline_rows,
+    tracking_window_rows,
+)
 from .store import VideoAssetSnapshot, VideoAssetStore
 
 
@@ -108,6 +115,31 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             "start_frame": start,
             "end_frame": end,
             "tracks": tracking_window_rows(snapshot.asset, start, end),
+        }
+
+    @router.get("/api/masks/window")
+    async def get_mask_window(start_frame: int, end_frame: int) -> dict[str, object]:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            return {
+                "version": snapshot.version,
+                "start_frame": start_frame,
+                "end_frame": end_frame,
+                "width": MASK_WINDOW_WIDTH,
+                "height": MASK_WINDOW_HEIGHT,
+                "tracks": [],
+            }
+        start = max(0, start_frame)
+        end = min(snapshot.asset.frame_count - 1, end_frame)
+        if end < start:
+            raise HTTPException(status_code=400, detail="Invalid frame window")
+        return {
+            "version": snapshot.version,
+            "start_frame": start,
+            "end_frame": end,
+            "width": MASK_WINDOW_WIDTH,
+            "height": MASK_WINDOW_HEIGHT,
+            "tracks": mask_window_rows(snapshot.asset, start, end),
         }
 
     @router.get("/api/frames/tracking-overlay")

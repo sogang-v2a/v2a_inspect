@@ -1,4 +1,9 @@
-import type { AssetResponse, CurrentFrameRows, TrackWindowResponse } from "./types";
+import type {
+  AssetResponse,
+  CurrentFrameRows,
+  MaskWindowResponse,
+  TrackWindowResponse,
+} from "./types";
 
 export async function fetchAssetSummary(): Promise<AssetResponse> {
   const response = await fetch("/api/asset-summary");
@@ -31,6 +36,21 @@ export async function fetchTrackingWindow(
   const response = await fetch(`/api/tracks/window?${params.toString()}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch tracking window: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchMaskWindow(
+  startFrame: number,
+  endFrame: number,
+): Promise<MaskWindowResponse> {
+  const params = new URLSearchParams({
+    start_frame: String(startFrame),
+    end_frame: String(endFrame),
+  });
+  const response = await fetch(`/api/masks/window?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch mask window: ${response.status}`);
   }
   return response.json();
 }
