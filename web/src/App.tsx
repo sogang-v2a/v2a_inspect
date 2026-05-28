@@ -1,5 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import { fetchAssetSummary, startRun } from "./api";
+import {
+  fetchAssetSummary,
+  importAsset,
+  resetSoundTimeline,
+  startRun,
+} from "./api";
 import VideoEditor from "./components/VideoEditor";
 import type { AssetResponse } from "./types";
 
@@ -43,11 +48,34 @@ export default function App() {
     }
   }
 
+  async function handleImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitError(null);
+    try {
+      await importAsset(event.currentTarget);
+      await refreshAssetSummary();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleResetSoundTimeline() {
+    setSubmitError(null);
+    try {
+      await resetSoundTimeline();
+      await refreshAssetSummary();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <VideoEditor
       state={state}
       submitError={submitError}
       onSubmit={handleSubmit}
+      onImport={handleImport}
+      onResetSoundTimeline={handleResetSoundTimeline}
     />
   );
 }

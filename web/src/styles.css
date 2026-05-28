@@ -100,6 +100,12 @@ form {
   gap: 12px;
 }
 
+.import-form {
+  border-top: 1px solid #2a2d35;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
 label {
   color: #c7ceda;
   display: grid;

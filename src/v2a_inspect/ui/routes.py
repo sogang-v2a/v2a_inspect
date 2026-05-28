@@ -9,9 +9,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from pydantic import ValidationError
+
+from v2a_inspect.media_utils import probe_prepared_video
+from v2a_inspect.models import VideoAsset
 
 from .overlays import render_tracking_overlay
-from .pipeline import PipelineOptions, run_uploaded_video_pipeline
+from .pipeline import (
+    PipelineOptions,
+    run_sound_timeline_pipeline,
+    run_uploaded_video_pipeline,
+)
 from .rows import current_frame_rows, timeline_rows, tracking_window_rows
 from .store import VideoAssetSnapshot, VideoAssetStore
 
@@ -127,13 +135,8 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         if not video.filename:
             raise HTTPException(status_code=400, detail="No video filename provided")
 
-        root_dir = Path(work_dir or DEFAULT_WORK_DIR or tempfile.gettempdir())
-        if root_dir.name != "v2a-inspect-ui":
-            root_dir /= "v2a-inspect-ui"
-        upload_dir = root_dir / "uploads"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        upload_path = upload_dir / f"{uuid.uuid4()}{Path(video.filename).suffix}"
-        upload_path.write_bytes(await video.read())
+        root_dir = _root_dir(work_dir)
+        upload_path = _write_upload(root_dir, video.filename, await video.read())
 
         options = PipelineOptions(
             scene_threshold=scene_threshold,
@@ -150,6 +153,79 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         await store.set_running(stage="queued")
         return {"status": "queued"}
 
+    @router.post("/api/asset/import")
+    async def import_asset(
+        video: Annotated[UploadFile, File()],
+        asset: Annotated[UploadFile, File()],
+        work_dir: Annotated[str | None, Form()] = None,
+    ) -> dict[str, object]:
+        snapshot = await store.snapshot()
+        if snapshot.status == "running":
+            raise HTTPException(status_code=409, detail="Pipeline is running")
+        if not video.filename:
+            raise HTTPException(status_code=400, detail="No video filename provided")
+        if not asset.filename:
+            raise HTTPException(status_code=400, detail="No asset filename provided")
+
+        try:
+            imported_asset = VideoAsset.model_validate_json(await asset.read())
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid VideoAsset JSON: {exc}",
+            ) from exc
+
+        root_dir = _root_dir(work_dir)
+        upload_path = _write_upload(
+            root_dir,
+            video.filename,
+            await video.read(),
+        )
+        try:
+            probe = probe_prepared_video(upload_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid prepared video: {exc}",
+            ) from exc
+        if probe.frame_count != imported_asset.frame_count:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Imported video frame count does not match VideoAsset: "
+                    f"{probe.frame_count} != {imported_asset.frame_count}"
+                ),
+            )
+
+        sam3_tracking_path = imported_asset.sam3_tracking_path
+        if sam3_tracking_path is not None and not sam3_tracking_path.exists():
+            sam3_tracking_path = None
+        imported_asset = imported_asset.model_copy(
+            update={
+                "source_path": probe.path,
+                "sam3_tracking_path": sam3_tracking_path,
+            }
+        )
+        await store.set_complete_asset(imported_asset, stage="imported asset")
+        return {"status": "imported"}
+
+    @router.post("/api/sound-timeline/reset-run")
+    async def reset_sound_timeline(
+        background_tasks: BackgroundTasks,
+    ) -> dict[str, object]:
+        snapshot = await store.snapshot()
+        if snapshot.status == "running":
+            raise HTTPException(status_code=409, detail="Pipeline is running")
+        if snapshot.asset is None:
+            raise HTTPException(status_code=404, detail="No video asset loaded")
+        video_asset = snapshot.asset.model_copy(update={"sound_timeline": None})
+        await store.publish_asset_mutation(
+            video_asset,
+            stage="reset sound timeline",
+        )
+        background_tasks.add_task(run_sound_timeline_pipeline, video_asset, store)
+        return {"status": "queued"}
+
     @router.get("/events")
     async def events() -> StreamingResponse:
         async def event_stream():
@@ -164,6 +240,21 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     return router
+
+
+def _root_dir(work_dir: str | None) -> Path:
+    root_dir = Path(work_dir or DEFAULT_WORK_DIR or tempfile.gettempdir())
+    if root_dir.name != "v2a-inspect-ui":
+        root_dir /= "v2a-inspect-ui"
+    return root_dir
+
+
+def _write_upload(root_dir: Path, filename: str, data: bytes) -> Path:
+    upload_dir = root_dir / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = upload_dir / f"{uuid.uuid4()}{Path(filename).suffix}"
+    upload_path.write_bytes(data)
+    return upload_path
 
 
 def _summary_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:

@@ -45,6 +45,17 @@ class VideoAssetStore:
             self._asset_version += 1
             self._bump_locked()
 
+    async def set_complete_asset(
+        self, video_asset: VideoAsset, *, stage: str | None = None
+    ) -> None:
+        async with self._condition:
+            self._asset = video_asset
+            self._status = "complete"
+            self._current_stage = stage
+            self._error = None
+            self._asset_version += 1
+            self._bump_locked()
+
     async def publish_asset_mutation(
         self, video_asset: VideoAsset, *, stage: str | None = None
     ) -> None:

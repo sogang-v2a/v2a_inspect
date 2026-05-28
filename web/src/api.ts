@@ -46,3 +46,25 @@ export async function startRun(form: HTMLFormElement): Promise<void> {
     throw new Error(message || `Failed to start run: ${response.status}`);
   }
 }
+
+export async function importAsset(form: HTMLFormElement): Promise<void> {
+  const formData = new FormData(form);
+  const response = await fetch("/api/asset/import", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to import asset: ${response.status}`);
+  }
+}
+
+export async function resetSoundTimeline(): Promise<void> {
+  const response = await fetch("/api/sound-timeline/reset-run", {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to reset soundtrack: ${response.status}`);
+  }
+}

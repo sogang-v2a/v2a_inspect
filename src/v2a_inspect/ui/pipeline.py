@@ -97,6 +97,29 @@ async def run_uploaded_video_pipeline(
         await store.set_error(str(exc))
 
 
+async def run_sound_timeline_pipeline(
+    video_asset: VideoAsset,
+    store: VideoAssetStore,
+) -> None:
+    """Rebuild only the final SoundTimeline stage for an existing VideoAsset."""
+
+    try:
+        loop = asyncio.get_running_loop()
+        await store.touch(stage="build sound timeline")
+        on_sound_change = _threadsafe_publish_callback(loop, store, video_asset)
+        await asyncio.to_thread(
+            run_sound_timeline_agent_parallel,
+            video_asset,
+            segment_seconds=settings.agent_sound_timeline_segment_seconds,
+            max_workers=settings.agent_sound_timeline_max_workers,
+            on_change=on_sound_change,
+        )
+        await store.publish_asset_mutation(video_asset, stage="built sound timeline")
+        await store.set_complete()
+    except Exception as exc:  # noqa: BLE001 - UI needs stage-specific failure text.
+        await store.set_error(str(exc))
+
+
 async def _extract_keyframes_incrementally(
     video_asset: VideoAsset,
     work_dir: Path,

@@ -9,9 +9,17 @@ interface VideoEditorProps {
   state: AssetResponse;
   submitError: string | null;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onImport: (event: FormEvent<HTMLFormElement>) => void;
+  onResetSoundTimeline: () => void;
 }
 
-export default function VideoEditor({ state, submitError, onSubmit }: VideoEditorProps) {
+export default function VideoEditor({
+  state,
+  submitError,
+  onSubmit,
+  onImport,
+  onResetSoundTimeline,
+}: VideoEditorProps) {
   const [frame, setFrame] = useState(0);
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -185,9 +193,43 @@ export default function VideoEditor({ state, submitError, onSubmit }: VideoEdito
               Run pipeline
             </button>
           </form>
+          <form className="import-form" onSubmit={onImport}>
+            <label>
+              Processed video
+              <input name="video" type="file" accept="video/*" required />
+            </label>
+            <label>
+              VideoAsset JSON
+              <input
+                name="asset"
+                type="file"
+                accept="application/json,.json"
+                required
+              />
+            </label>
+            <label>
+              Work directory
+              <input
+                name="work_dir"
+                type="text"
+                placeholder="/tmp/v2a-inspect-ui"
+              />
+            </label>
+            <button type="submit" disabled={state.status === "running"}>
+              Import processed asset
+            </button>
+          </form>
           {submitError ? <p className="error">{submitError}</p> : null}
           {state.error ? <p className="error">{state.error}</p> : null}
           <section className="export-panel">
+            <button
+              className="toggle"
+              disabled={!video || state.status === "running"}
+              onClick={onResetSoundTimeline}
+              type="button"
+            >
+              Reset + rerun soundtrack
+            </button>
             <button
               className={showExport ? "toggle active" : "toggle"}
               onClick={() => setShowExport((value) => !value)}
