@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         ),
     )
     llm_small_model: str = Field(
-        default="gemini-3.5-flash",
+        default="gemini-3.1-flash-lite",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_SMALL_MODEL",
             "V2A_LLM_SMALL_MODEL",
