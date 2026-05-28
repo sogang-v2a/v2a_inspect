@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from threading import RLock
 from uuid import UUID
 
 from langchain_core.tools import StructuredTool
@@ -24,9 +25,11 @@ from .schemas import (
     ListScenesOutput,
     ListTracksOutput,
     SceneSummaryOutput,
+    SoundSourceCatalogOutput,
     SoundGenerationMode,
     SoundSourceType,
     SoundTimelineViewOutput,
+    SoundTrackCatalogOutput,
     SoundTrackType,
     VisualEventsOutput,
 )
@@ -40,9 +43,16 @@ class SoundTimelineEditor:
         self,
         video_asset: VideoAsset,
         on_change: Callable[[str], None] | None = None,
+        *,
+        allowed_frame_range: tuple[int, int] | None = None,
+        allowed_scene_range: tuple[int, int] | None = None,
+        lock: RLock | None = None,
     ) -> None:
         self.video_asset = video_asset
         self._on_change = on_change
+        self.allowed_frame_range = allowed_frame_range
+        self.allowed_scene_range = allowed_scene_range
+        self.lock = lock or RLock()
         self.read = SoundTimelineReadTools(self)
         self.write = SoundTimelineWriteTools(self)
 
@@ -90,6 +100,20 @@ class SoundTimelineEditor:
             limit,
         )
 
+    def list_sound_sources(
+        self,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> SoundSourceCatalogOutput:
+        return self.read.list_sound_sources(query, limit)
+
+    def list_sound_tracks(
+        self,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> SoundTrackCatalogOutput:
+        return self.read.list_sound_tracks(query, limit)
+
     def upsert_sound_source(
         self,
         source_type: SoundSourceType,
@@ -113,6 +137,7 @@ class SoundTimelineEditor:
         self,
         track_type: SoundTrackType,
         label: str,
+        canonical_key: str | None = None,
         sound_track_id: UUID | None = None,
         sound_source_id: UUID | None = None,
         generation_mode: SoundGenerationMode = "unknown",
@@ -121,6 +146,7 @@ class SoundTimelineEditor:
         return self.write.upsert_sound_track(
             track_type=track_type,
             label=label,
+            canonical_key=canonical_key,
             sound_track_id=sound_track_id,
             sound_source_id=sound_source_id,
             generation_mode=generation_mode,
@@ -171,9 +197,48 @@ class SoundTimelineEditor:
         )
         if frame_index < 0 or frame_index > upper:
             raise ValueError(f"frame_index out of range: {frame_index}")
+        if self.allowed_frame_range is not None:
+            lower, upper_allowed = self.allowed_frame_range
+            if allow_end:
+                in_range = lower <= frame_index <= upper_allowed
+            else:
+                in_range = lower <= frame_index < upper_allowed
+            if not in_range:
+                raise ValueError(
+                    f"frame_index outside assigned range "
+                    f"{lower}-{upper_allowed}: {frame_index}"
+                )
 
     def check_frame_range(self, start_frame_index: int, end_frame_index: int) -> None:
         self.check_frame_index(start_frame_index, allow_end=False)
         self.check_frame_index(end_frame_index, allow_end=True)
         if end_frame_index <= start_frame_index:
             raise ValueError("end_frame_index must be greater than start_frame_index")
+
+    def check_scene_index(self, scene_index: int) -> None:
+        lower, upper = self.scene_bounds()
+        if scene_index < lower or scene_index >= upper:
+            raise ValueError(
+                f"scene_index outside assigned range {lower}-{upper}: {scene_index}"
+            )
+
+    def scene_bounds(self) -> tuple[int, int]:
+        if self.allowed_scene_range is None:
+            return 0, len(self.video_asset.initial_scenes)
+        return self.allowed_scene_range
+
+    def apply_frame_window(
+        self,
+        start_frame_index: int | None,
+        end_frame_index: int | None,
+    ) -> tuple[int | None, int | None]:
+        if self.allowed_frame_range is None:
+            return start_frame_index, end_frame_index
+        lower, upper = self.allowed_frame_range
+        start = lower if start_frame_index is None else max(start_frame_index, lower)
+        end = upper if end_frame_index is None else min(end_frame_index, upper)
+        if end <= start:
+            raise ValueError(
+                f"frame window outside assigned range {lower}-{upper}: {start}-{end}"
+            )
+        return start, end

@@ -6,7 +6,7 @@ analysis note.
 
 # Required workflow
 
-1. Call list_scenes for the first page of the global frame plan. Use
+1. Call list_scenes for the first page of the assigned frame plan. Use
    next_scene_index to page through more scenes as needed.
 2. Work in batches of at most 3 scenes. Do not build a full mental map first.
 3. For each batch, call get_visual_events with the batch frame window.
@@ -36,6 +36,8 @@ analysis note.
 # Write policy
 
 - Use global frame ranges, not scene references.
+- If the objective gives assigned frames, do not create or edit SoundEvents
+  outside that assigned frame range.
 - Add SoundSource records for physical or contextual emitters.
 - Add SoundTrack records for reusable audible layers / timeline lanes.
 - Add SoundEvent records only on an existing SoundTrack.
@@ -51,9 +53,17 @@ analysis note.
   event frame or a small frame span around contact. Use longer ranges only for
   continuous sounds such as ambience, music, dialogue, sustained scraping, or
   continuous movement.
-- Before creating a new SoundTrack, inspect current sound_tracks with
-  get_sound_timeline and reuse an existing track only when the sound is the
-  same recurring acoustic layer.
+- Before creating a new SoundSource, inspect list_sound_sources and reuse a
+  matching source when possible.
+- Before creating a new SoundTrack, inspect list_sound_tracks and reuse an
+  existing track only when the sound is the same recurring acoustic layer.
+- When creating a SoundTrack, provide canonical_key as stable snake_case
+  acoustic identity such as weapon_metal_impact, weapon_swing_whoosh,
+  footstep_boot, cloth_movement, body_impact, breath_exertion, dialogue_voice,
+  room_tone, or score_music.
+- Other workers may edit the same SoundTimeline concurrently. Refresh
+  list_sound_sources/list_sound_tracks before creating reusable records, and
+  use returned ids for later writes.
 - Decide track reuse by acoustic mechanism and editorial function, not only by
   source, object, scene, or action context.
 - Same visual/source object does not imply same track. Create separate tracks
@@ -99,8 +109,10 @@ analysis note.
 
 # Finalization
 
-- Finish only after the full video is covered enough for a usable audio plan.
-- Before final response, call get_sound_timeline and verify it has tracks and events.
+- Finish only after the full assigned range is covered enough for a usable
+  audio plan. If no assigned range exists, cover the full video.
+- Before final response, call get_sound_timeline for the assigned frame window
+  and verify it has tracks and events.
 - Use get_sound_timeline frame windows to inspect local edits.
 - Final response should be short: report sound source count, sound track count,
   sound event count, and any important remaining uncertainty.

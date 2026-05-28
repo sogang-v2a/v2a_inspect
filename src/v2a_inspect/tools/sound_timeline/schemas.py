@@ -65,6 +65,7 @@ class DeleteSoundSourceArgs(SchemaModel):
 class UpsertSoundTrackArgs(SchemaModel):
     track_type: SoundTrackType
     label: str = Field(min_length=1)
+    canonical_key: str | None = Field(default=None, min_length=1)
     sound_track_id: UUID | None = None
     sound_source_id: UUID | None = None
     generation_mode: SoundGenerationMode = "unknown"
@@ -335,7 +336,13 @@ class SoundTimelineViewOutput(SchemaModel):
                 )
                 lines.append(
                     f"- {track.sound_track_id} {track.track_type} "
-                    f"mode={track.generation_mode}{source_text} label={track.label}"
+                    f"mode={track.generation_mode}"
+                    + (
+                        ""
+                        if track.canonical_key is None
+                        else f" canonical_key={track.canonical_key}"
+                    )
+                    + f"{source_text} label={track.label}"
                 )
         if self.sound_events:
             lines.append("events:")
@@ -351,6 +358,67 @@ class SoundTimelineViewOutput(SchemaModel):
                     + (f" source={source_label}" if source_label else "")
                     + f" description={event.description}"
                 )
+        return "\n".join(lines)
+
+
+class SoundSourceCatalogOutput(SchemaModel):
+    total_matching_source_count: int
+    limit: int
+    returned_source_count: int
+    sound_sources: list[SoundSource]
+    query: str | None = None
+
+    def to_tool_string(self) -> str:
+        lines = [
+            (
+                f"sound_sources matching={self.total_matching_source_count} "
+                f"shown={self.returned_source_count}"
+            )
+        ]
+        if self.returned_source_count < self.total_matching_source_count:
+            lines.append("truncated: use query for narrower catalog")
+        for source in self.sound_sources:
+            visual = (
+                ""
+                if source.visual_object_id is None
+                else f" visual_object_id={source.visual_object_id}"
+            )
+            lines.append(
+                f"- id={source.sound_source_id} type={source.source_type}"
+                f"{visual} label={source.label}"
+            )
+        return "\n".join(lines)
+
+
+class SoundTrackCatalogOutput(SchemaModel):
+    total_matching_track_count: int
+    limit: int
+    returned_track_count: int
+    sound_tracks: list[SoundTrack]
+    sound_sources: list[SoundSource]
+    query: str | None = None
+
+    def to_tool_string(self) -> str:
+        lines = [
+            (
+                f"sound_tracks matching={self.total_matching_track_count} "
+                f"shown={self.returned_track_count}"
+            )
+        ]
+        if self.returned_track_count < self.total_matching_track_count:
+            lines.append("truncated: use query for narrower catalog")
+        for track in self.sound_tracks:
+            source_label = _sound_source_label(track, self.sound_sources)
+            canonical = (
+                ""
+                if track.canonical_key is None
+                else f" canonical_key={track.canonical_key}"
+            )
+            lines.append(
+                f"- id={track.sound_track_id} type={track.track_type}"
+                f"{canonical} mode={track.generation_mode} label={track.label}"
+                + (f" source={source_label}" if source_label else "")
+            )
         return "\n".join(lines)
 
 

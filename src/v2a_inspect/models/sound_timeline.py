@@ -41,6 +41,7 @@ class SoundTrack(SchemaModel):
 
     track_type: Literal["dialogue", "sfx", "music", "ambience"]
     label: str
+    canonical_key: str | None = None
     sound_source_id: UUID | None = None
     generation_mode: Literal["tta", "vta", "hybrid", "unknown"] = "unknown"
 

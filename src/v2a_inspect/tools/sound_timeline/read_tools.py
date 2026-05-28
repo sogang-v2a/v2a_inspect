@@ -20,7 +20,9 @@ from .schemas import (
     ObjectSeedView,
     SceneListItem,
     SceneSummaryOutput,
+    SoundSourceCatalogOutput,
     SoundTimelineViewOutput,
+    SoundTrackCatalogOutput,
     TrackSummary,
     VisualEventView,
     VisualEventsOutput,
@@ -42,20 +44,25 @@ class SoundTimelineReadTools:
     def list_scenes(
         self,
         start_scene_index: int = 0,
-        limit: int = 25,
+        limit: int = 3,
     ) -> ListScenesOutput:
         video_asset = self.editor.video_asset
         scenes = video_asset.initial_scenes
-        if start_scene_index > len(scenes):
+        lower_scene_index, upper_scene_index = self.editor.scene_bounds()
+        if start_scene_index < lower_scene_index:
+            start_scene_index = lower_scene_index
+        if start_scene_index > upper_scene_index:
             raise ValueError(f"start_scene_index out of range: {start_scene_index}")
-        selected_scenes = scenes[start_scene_index : start_scene_index + limit]
+        selected_scenes = scenes[
+            start_scene_index : min(start_scene_index + limit, upper_scene_index)
+        ]
         next_scene_index = start_scene_index + len(selected_scenes)
-        if next_scene_index >= len(scenes):
+        if next_scene_index >= upper_scene_index:
             next_scene_index = None
         return ListScenesOutput(
             frame_count=video_asset.frame_count,
             fps=video_asset.fps,
-            total_scene_count=len(scenes),
+            total_scene_count=upper_scene_index - lower_scene_index,
             start_scene_index=start_scene_index,
             returned_scene_count=len(selected_scenes),
             next_scene_index=next_scene_index,
@@ -82,6 +89,7 @@ class SoundTimelineReadTools:
         )
 
     def get_scene_summary(self, scene_index: int) -> SceneSummaryOutput:
+        self.editor.check_scene_index(scene_index)
         scene = self._scene(scene_index)
         object_seeds: list[ObjectSeedView] = []
         if scene.initial_analysis is not None:
@@ -140,6 +148,7 @@ class SoundTimelineReadTools:
         )
 
     def list_tracks(self, scene_index: int) -> ListTracksOutput:
+        self.editor.check_scene_index(scene_index)
         scene = self._scene(scene_index)
         return ListTracksOutput(
             scene_index=scene_index,
@@ -172,6 +181,9 @@ class SoundTimelineReadTools:
             and end_frame_index <= start_frame_index
         ):
             raise ValueError("end_frame_index must be greater than start_frame_index")
+        start_frame_index, end_frame_index = self.editor.apply_frame_window(
+            start_frame_index, end_frame_index
+        )
         layer = self.editor.video_asset.visual_identity_layer
         if layer is None:
             return VisualEventsOutput(
@@ -258,6 +270,9 @@ class SoundTimelineReadTools:
             and end_frame_index <= start_frame_index
         ):
             raise ValueError("end_frame_index must be greater than start_frame_index")
+        start_frame_index, end_frame_index = self.editor.apply_frame_window(
+            start_frame_index, end_frame_index
+        )
         timeline = self.editor.video_asset.sound_timeline
         if timeline is None:
             return SoundTimelineViewOutput(
@@ -294,9 +309,25 @@ class SoundTimelineReadTools:
             ),
         )
         paged_events = events[:limit]
+        selected_track_ids = {event.sound_track_id for event in paged_events}
+        selected_tracks = [
+            track
+            for track in timeline.sound_tracks
+            if track.sound_track_id in selected_track_ids
+        ]
+        selected_source_ids = {
+            track.sound_source_id
+            for track in selected_tracks
+            if track.sound_source_id is not None
+        }
+        selected_sources = [
+            source
+            for source in timeline.sound_sources
+            if source.sound_source_id in selected_source_ids
+        ]
         return SoundTimelineViewOutput(
-            sound_sources=timeline.sound_sources,
-            sound_tracks=timeline.sound_tracks,
+            sound_sources=selected_sources,
+            sound_tracks=selected_tracks,
             sound_events=paged_events,
             total_matching_event_count=len(events),
             start_frame_index=start_frame_index,
@@ -304,6 +335,85 @@ class SoundTimelineReadTools:
             limit=limit,
             returned_event_count=len(paged_events),
             notes=timeline.notes,
+        )
+
+    def list_sound_sources(
+        self,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> SoundSourceCatalogOutput:
+        timeline = self.editor.video_asset.sound_timeline
+        sources = [] if timeline is None else timeline.sound_sources
+        matching_sources = [
+            source
+            for source in sources
+            if _matches_query(query, source.label, source.source_type)
+        ]
+        matching_sources = sorted(
+            matching_sources,
+            key=lambda source: (source.source_type, source.label.lower()),
+        )
+        shown_sources = matching_sources[:limit]
+        return SoundSourceCatalogOutput(
+            total_matching_source_count=len(matching_sources),
+            limit=limit,
+            returned_source_count=len(shown_sources),
+            sound_sources=shown_sources,
+            query=query,
+        )
+
+    def list_sound_tracks(
+        self,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> SoundTrackCatalogOutput:
+        timeline = self.editor.video_asset.sound_timeline
+        if timeline is None:
+            return SoundTrackCatalogOutput(
+                total_matching_track_count=0,
+                limit=limit,
+                returned_track_count=0,
+                sound_tracks=[],
+                sound_sources=[],
+                query=query,
+            )
+        matching_tracks = [
+            track
+            for track in timeline.sound_tracks
+            if _matches_query(
+                query,
+                track.label,
+                track.track_type,
+                track.generation_mode,
+                track.canonical_key,
+            )
+        ]
+        matching_tracks = sorted(
+            matching_tracks,
+            key=lambda track: (
+                track.track_type,
+                track.canonical_key or "",
+                track.label.lower(),
+            ),
+        )
+        shown_tracks = matching_tracks[:limit]
+        source_ids = {
+            track.sound_source_id
+            for track in shown_tracks
+            if track.sound_source_id is not None
+        }
+        shown_sources = [
+            source
+            for source in timeline.sound_sources
+            if source.sound_source_id in source_ids
+        ]
+        return SoundTrackCatalogOutput(
+            total_matching_track_count=len(matching_tracks),
+            limit=limit,
+            returned_track_count=len(shown_tracks),
+            sound_tracks=shown_tracks,
+            sound_sources=shown_sources,
+            query=query,
         )
 
     def _scene(self, scene_index: int):
@@ -348,6 +458,13 @@ def _render_output_image(
 
     height = round(image.height * (LOW_RES_WIDTH / image.width))
     return image.resize((LOW_RES_WIDTH, height), Image.Resampling.LANCZOS)
+
+
+def _matches_query(query: str | None, *values: object) -> bool:
+    if query is None or not query.strip():
+        return True
+    needle = query.strip().lower()
+    return any(needle in str(value).lower() for value in values if value is not None)
 
 
 def _jpeg_quality(resolution_mode: FrameResolutionMode) -> int:

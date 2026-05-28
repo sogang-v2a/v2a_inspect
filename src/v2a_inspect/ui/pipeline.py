@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from v2a_inspect.agents.sound_timeline import run_sound_timeline_agent
+from v2a_inspect.agents.sound_timeline import run_sound_timeline_agent_parallel
 from v2a_inspect.client import SAM3Client, VideoClient
 from v2a_inspect.config import settings
 from v2a_inspect.models import InitialScene, VideoAsset
@@ -84,8 +84,10 @@ async def run_uploaded_video_pipeline(
         await store.touch(stage="build sound timeline")
         on_sound_change = _threadsafe_publish_callback(loop, store, video_asset)
         await asyncio.to_thread(
-            run_sound_timeline_agent,
+            run_sound_timeline_agent_parallel,
             video_asset,
+            segment_seconds=settings.agent_sound_timeline_segment_seconds,
+            max_workers=settings.agent_sound_timeline_max_workers,
             on_change=on_sound_change,
         )
         await store.publish_asset_mutation(video_asset, stage="built sound timeline")

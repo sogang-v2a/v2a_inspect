@@ -91,6 +91,20 @@ class Settings(BaseSettings):
             "V2A_INSPECT_AGENT_SOUND_TIMELINE_RECURSION_LIMIT",
         ),
     )
+    agent_sound_timeline_max_workers: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_AGENT_SOUND_TIMELINE_MAX_WORKERS",
+        ),
+    )
+    agent_sound_timeline_segment_seconds: int = Field(
+        default=30,
+        ge=1,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_AGENT_SOUND_TIMELINE_SEGMENT_SECONDS",
+        ),
+    )
     langfuse_public_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
