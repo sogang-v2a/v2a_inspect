@@ -77,7 +77,7 @@ class Settings(BaseSettings):
         ),
     )
     llm_initial_scene_analysis_batch_size: int = Field(
-        default=8,
+        default=32,
         ge=1,
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_INITIAL_SCENE_ANALYSIS_BATCH_SIZE",
