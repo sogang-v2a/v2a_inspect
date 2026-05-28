@@ -3,14 +3,14 @@
 Mutate `VideoAsset.sound_timeline` with tools. SoundTimeline is final
 multitrack audio plan, not analysis prose.
 
-# Loop
+# Batch Loop
 
 1. `list_scenes` current assigned page, max 3 scenes per batch.
-2. Batch independent reads for current batch in one assistant step:
+2. Discovery pass: batch independent reads for current batch in one assistant step:
    `get_visual_events` for batch frame window, all needed
    `get_scene_summary` calls, narrow source/track catalog searches, and only
-   necessary targeted frame checks.
-3. Write sources/tracks/events for batch before paging ahead.
+   necessary targeted frame checks. Identify audible candidates before writing.
+3. Write pass: write sources/tracks/events for batch before paging ahead.
 4. `get_sound_timeline` for batch frame window, then continue.
 5. Final answer only after `get_sound_timeline` verifies assigned range has
    usable tracks and events.
@@ -18,50 +18,52 @@ multitrack audio plan, not analysis prose.
 Do not build full-video mental map first. Do not inspect scenes outside assigned
 range except global source/track catalog searches.
 
-# Evidence
+# Evidence Rules
 
 - Use `get_visual_events` as rough motion/contact timing evidence.
 - Use `get_scene_summary` for scene objects, seeds, tracks, and keyframes.
+- Tracked objects and visual events can miss audible actions. If a scene has no
+  useful tracks/events, probe a few representative keyframes or scene frames for
+  obvious audible actions before deciding it is silent or ambience-only.
 - Use `get_annotated_frame_message` to pin exact transient frames when visual
   events are broad, uncertain, or not accurate enough. Low-res first, high-res
   only when detail is too small.
+- Only fetch frames for transients where exact timing changes the SoundEvent.
+  Do not spend frame probes on ambience, music, dialogue, or broad movement.
+- Check at most 3 candidate frames per transient before deciding. Prefer frames
+  near contact, landing, maximum overlap, direction reversal, or keyframes.
 - Never scan frame-by-frame. If several frames are needed, request them in one
   batch, then write from combined evidence.
 
-# Transient Timing
-
-- For impacts/transients, write frame-precise SoundEvents: sword clash, weapon
-  hit, object drop, knock, footstep, body hit, cloth snap, armor jolt, gunshot,
-  door slam, glass break.
-- Use visual events to find candidate windows, not as final truth when timing
-  looks broad or suspicious.
-- If a candidate window spans several frames, fetch the most likely contact or
-  landing frames with `get_annotated_frame_message` before writing.
-- Impulse events should usually be 1-3 frames. Put exact evidence in notes, e.g.
-  `visual_event 1842-1846; contact visible at 1844`.
-- If exact frame remains unclear after bounded frame checks, write the narrowest
-  defensible range and note uncertainty.
-
-# Writes
+# Write Rules
 
 - Use global frame ranges. If assigned frames exist, create/edit SoundEvents
   only inside them.
 - Create SoundSources for recurring physical/contextual emitters.
 - Create SoundTracks as reusable audio lanes. Add SoundEvents only to existing
   SoundTracks.
-- SoundEvent = one audible occurrence. For visible impacts/transients, create
-  one tight event per beat: clash, scrape, pass-by, footstep, knock, body hit,
-  drop, cloth snap, armor jolt, breath, grunt, vocal effort.
+- SoundEvent = one audible occurrence.
+- For impacts/transients, write frame-precise SoundEvents: sword clash, weapon
+  hit, object drop, knock, footstep, body hit, cloth snap, armor jolt, gunshot,
+  door slam, glass break. Use one tight event per visible beat.
+- Use visual events to find candidate windows, not as final truth when timing
+  looks broad or suspicious.
+- Impulse events should usually be 1-3 frames. Put exact evidence in notes, e.g.
+  `source=visual_event 1842-1846; frame_check=1844 contact; confidence=medium`.
+- If exact frame remains unclear after bounded frame checks, write the narrowest
+  defensible range and note uncertainty.
 - Do not summarize visible repeated beats as "multiple", "repeated", "several",
   or broad "fighting sounds".
 - Longer ranges are only for continuous ambience, music, dialogue, sustained
   scrape, or continuous movement.
 - Source types: `scene_global` ambience, `offscreen_unknown` implied/offscreen
   diegetic, `non_diegetic` music/score.
-- Use short notes for evidence/rationale. If uncertain after bounded evidence,
-  write best-effort events with `generation_mode="unknown"` and notes.
+- Use short notes for evidence/rationale. Prefer compact note format:
+  `source=<tool evidence>; frame_check=<frame result>; confidence=<low|medium|high>`.
+- If uncertain after bounded evidence, write best-effort events and mark
+  uncertainty in notes.
 
-# Reuse
+# Reuse Rules
 
 - Before creating Source/Track, call `list_sound_sources`/`list_sound_tracks`
   with narrow query. Other workers may edit same SoundTimeline, so refresh
