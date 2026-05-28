@@ -427,6 +427,8 @@ button:disabled {
 }
 
 .timeline-panel {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
 }
@@ -476,10 +478,11 @@ button:disabled {
   --timeline-label-width: 142px;
   --timeline-gap: 8px;
   --timeline-track-offset: calc(var(--timeline-label-width) + var(--timeline-gap));
-  max-height: 42vh;
+  flex: 1;
   min-height: 220px;
   overflow: auto;
-  padding: 10px 12px 14px;
+  padding: 10px 12px 28px;
+  scroll-padding-bottom: 28px;
 }
 
 .timeline-content {
