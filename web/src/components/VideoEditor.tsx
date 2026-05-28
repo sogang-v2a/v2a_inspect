@@ -195,7 +195,7 @@ export default function VideoEditor({
           </form>
           <form className="import-form" onSubmit={onImport}>
             <label>
-              Processed video
+              Video
               <input name="video" type="file" accept="video/*" required />
             </label>
             <label>
@@ -216,7 +216,7 @@ export default function VideoEditor({
               />
             </label>
             <button type="submit" disabled={state.status === "running"}>
-              Import processed asset
+              Import asset
             </button>
           </form>
           {submitError ? <p className="error">{submitError}</p> : null}

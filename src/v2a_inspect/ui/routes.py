@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -13,6 +14,7 @@ from pydantic import ValidationError
 
 from v2a_inspect.media_utils import probe_prepared_video
 from v2a_inspect.models import VideoAsset
+from v2a_inspect.preprocessing import prepare_video
 
 from .overlays import render_tracking_overlay
 from .pipeline import (
@@ -182,27 +184,28 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             await video.read(),
         )
         try:
-            probe = probe_prepared_video(upload_path)
+            resolved_video_asset = await _resolve_import_video(upload_path, root_dir)
         except Exception as exc:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid prepared video: {exc}",
+                detail=f"Invalid video: {exc}",
             ) from exc
-        if probe.frame_count != imported_asset.frame_count:
+        if resolved_video_asset.frame_count != imported_asset.frame_count:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     "Imported video frame count does not match VideoAsset: "
-                    f"{probe.frame_count} != {imported_asset.frame_count}"
+                    f"{resolved_video_asset.frame_count} != "
+                    f"{imported_asset.frame_count}"
                 ),
             )
 
-        sam3_tracking_path = imported_asset.sam3_tracking_path
+        sam3_tracking_path = resolved_video_asset.sam3_tracking_path
         if sam3_tracking_path is not None and not sam3_tracking_path.exists():
             sam3_tracking_path = None
         imported_asset = imported_asset.model_copy(
             update={
-                "source_path": probe.path,
+                "source_path": resolved_video_asset.source_path,
                 "sam3_tracking_path": sam3_tracking_path,
             }
         )
@@ -255,6 +258,17 @@ def _write_upload(root_dir: Path, filename: str, data: bytes) -> Path:
     upload_path = upload_dir / f"{uuid.uuid4()}{Path(filename).suffix}"
     upload_path.write_bytes(data)
     return upload_path
+
+
+async def _resolve_import_video(upload_path: Path, root_dir: Path) -> VideoAsset:
+    try:
+        probe = probe_prepared_video(upload_path)
+    except Exception:
+        return await asyncio.to_thread(prepare_video, upload_path, root_dir)
+    return VideoAsset(
+        source_path=probe.path,
+        frame_count=probe.frame_count,
+    )
 
 
 def _summary_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
