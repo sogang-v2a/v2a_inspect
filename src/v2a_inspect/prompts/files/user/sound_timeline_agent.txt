@@ -1,34 +1,7 @@
 Objective:
 {objective}
 
-Execute by mutating the current VideoAsset.sound_timeline with tools.
-Use visual events and scene summaries before frame images.
-Batch independent tool calls in the same assistant step whenever the inputs are
-already known.
-Create sources, tracks, and events throughout the run.
-When objective lists assigned scenes or frames, treat that assigned range as
-the full scope for this run.
-Before each batch write, inspect list_sound_sources/list_sound_tracks with
-narrow queries and reuse records only for the same recurring acoustic layer.
-Use SoundTrack as the track identity and attach SoundEvents to existing SoundTracks.
-Provide canonical_key when creating SoundTracks.
-Do not create duplicate tracks for the same recurring sound category, but do
-create separate tracks when the sound class changes, even if the source or
-action context stays the same.
-Prefer narrower, semantically clean tracks over broad omnibus tracks.
-Create one SoundEvent per discrete audible beat when visual timing supports it.
-Do not collapse visible repeated contacts into "multiple", "repeated", or
-"several" summary events.
-Use tight global frame ranges for impacts, clashes, footfalls, hits, drops,
-scrapes, pass-bys, breaths, and vocal exertions.
-If assigned frames are listed in the objective, create or edit SoundEvents only
-inside that assigned range.
-Do not inspect scenes outside assigned range except global list_sound_sources
-and list_sound_tracks catalog checks.
-Reuse the same SoundTrack for repeated beats of the same sound identity.
-Do not build a full mental map first.
-Make incremental edits after each small scene batch.
-Use one batched read phase, then write the batch events.
-After each batch, check the timeline window and continue.
-Use global frame ranges.
-Return only a short completion summary after get_sound_timeline confirms sources, tracks, and events.
+Execute by mutating current `VideoAsset.sound_timeline`.
+Use incremental 3-scene batches: batch reads, write batch events, verify local
+timeline window, then continue. Respect assigned scenes/frames as full scope
+for this run.
