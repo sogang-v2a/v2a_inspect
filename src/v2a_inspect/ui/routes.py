@@ -16,7 +16,12 @@ from v2a_inspect.media_utils import probe_prepared_video
 from v2a_inspect.models import VideoAsset
 from v2a_inspect.preprocessing import prepare_video
 
-from .overlays import render_tracking_overlay
+from .overlays import (
+    MASK_ATLAS_MAX_FRAMES,
+    MASK_ATLAS_TILE_SIZE,
+    render_tracking_mask_atlas,
+    render_tracking_overlay,
+)
 from .pipeline import (
     PipelineOptions,
     run_sound_timeline_pipeline,
@@ -132,6 +137,34 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             ),
             media_type="image/png",
             headers={"Cache-Control": "no-store"},
+        )
+
+    @router.get("/api/frames/tracking-mask-atlas")
+    async def get_tracking_mask_atlas(
+        start_frame: int,
+        end_frame: int,
+    ) -> Response:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            raise HTTPException(status_code=404, detail="No video asset loaded")
+        if end_frame < start_frame:
+            raise HTTPException(status_code=400, detail="Invalid frame window")
+        start = max(0, start_frame)
+        end = min(snapshot.asset.frame_count - 1, end_frame)
+        end = min(end, start + MASK_ATLAS_MAX_FRAMES - 1)
+        if end < start:
+            raise HTTPException(status_code=400, detail="Invalid frame window")
+        tile_width, tile_height = MASK_ATLAS_TILE_SIZE
+        return Response(
+            render_tracking_mask_atlas(snapshot.asset, start, end),
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Start-Frame": str(start),
+                "X-End-Frame": str(end),
+                "X-Tile-Width": str(tile_width),
+                "X-Tile-Height": str(tile_height),
+            },
         )
 
     @router.post("/api/runs")

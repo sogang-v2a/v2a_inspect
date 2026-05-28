@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Inspector from "./Inspector";
+import MaskOverlay from "./MaskOverlay";
 import Timeline from "./Timeline";
 import TrackingOverlay from "./TrackingOverlay";
 import { fetchTrackingWindow } from "../api";
@@ -26,7 +27,6 @@ export default function VideoEditor({
   const [showExport, setShowExport] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackWindow, setTrackWindow] = useState<TrackWindowResponse | null>(null);
-  const [maskOverlayUrl, setMaskOverlayUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const trackWindowRequestRef = useRef<string | null>(null);
@@ -90,61 +90,6 @@ export default function VideoEditor({
         trackWindowRequestRef.current = null;
       });
   }, [maxFrame, selectedFrame, showTrackingOverlay, state.version, trackWindow, video]);
-
-  useEffect(() => {
-    setMaskOverlayUrl((previousUrl) => {
-      if (previousUrl) {
-        URL.revokeObjectURL(previousUrl);
-      }
-      return null;
-    });
-
-    if (!showSegmentMasks || !video) {
-      return;
-    }
-
-    const controller = new AbortController();
-    let loadedUrl: string | null = null;
-    const params = new URLSearchParams({
-      frame: String(selectedFrame),
-      masks: "true",
-      boxes: "false",
-      labels: "false",
-      asset_version: String(state.asset_version),
-    });
-
-    void fetch(`/api/frames/tracking-overlay?${params.toString()}`, {
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch mask overlay: ${response.status}`);
-        }
-        return response.blob();
-      })
-      .then((blob) => {
-        loadedUrl = URL.createObjectURL(blob);
-        setMaskOverlayUrl((previousUrl) => {
-          if (previousUrl) {
-            URL.revokeObjectURL(previousUrl);
-          }
-          return loadedUrl;
-        });
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        console.error(error);
-      });
-
-    return () => {
-      controller.abort();
-      if (loadedUrl) {
-        URL.revokeObjectURL(loadedUrl);
-      }
-    };
-  }, [selectedFrame, showSegmentMasks, state.asset_version, video]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -379,14 +324,12 @@ export default function VideoEditor({
                     onSeeked={syncFrameFromVideo}
                     onTimeUpdate={syncFrameFromVideo}
                   />
-                  {maskOverlayUrl ? (
-                    <img
-                      alt=""
-                      aria-hidden="true"
-                      className="segmentation-mask-overlay"
-                      src={maskOverlayUrl}
-                    />
-                  ) : null}
+                  <MaskOverlay
+                    assetVersion={state.asset_version}
+                    enabled={showSegmentMasks}
+                    frame={selectedFrame}
+                    video={video}
+                  />
                   <TrackingOverlay
                     video={video}
                     tracks={trackWindow?.tracks ?? []}
