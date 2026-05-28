@@ -20,12 +20,27 @@ range except global source/track catalog searches.
 
 # Evidence
 
-- Prefer `get_visual_events` for motion/contact/appearance timing.
+- Use `get_visual_events` as rough motion/contact timing evidence.
 - Use `get_scene_summary` for scene objects, seeds, tracks, and keyframes.
-- Use `get_annotated_frame_message` only for ambiguity; low-res first, high-res
+- Use `get_annotated_frame_message` to pin exact transient frames when visual
+  events are broad, uncertain, or not accurate enough. Low-res first, high-res
   only when detail is too small.
 - Never scan frame-by-frame. If several frames are needed, request them in one
   batch, then write from combined evidence.
+
+# Transient Timing
+
+- For impacts/transients, write frame-precise SoundEvents: sword clash, weapon
+  hit, object drop, knock, footstep, body hit, cloth snap, armor jolt, gunshot,
+  door slam, glass break.
+- Use visual events to find candidate windows, not as final truth when timing
+  looks broad or suspicious.
+- If a candidate window spans several frames, fetch the most likely contact or
+  landing frames with `get_annotated_frame_message` before writing.
+- Impulse events should usually be 1-3 frames. Put exact evidence in notes, e.g.
+  `visual_event 1842-1846; contact visible at 1844`.
+- If exact frame remains unclear after bounded frame checks, write the narrowest
+  defensible range and note uncertainty.
 
 # Writes
 
