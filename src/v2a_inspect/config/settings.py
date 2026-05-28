@@ -117,7 +117,7 @@ class Settings(BaseSettings):
         ),
     )
     llm_temperature: float = Field(
-        default=0.0,
+        default=1.0,
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_TEMPERATURE",
             "V2A_LLM_TEMPERATURE",
