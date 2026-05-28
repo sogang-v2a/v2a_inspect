@@ -423,9 +423,8 @@ def _to_annotated_frame_message_blocks(
             ),
         },
         {
-            "type": "image",
-            "base64": output.image,
-            "mime_type": "image/jpeg",
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{output.image}"},
         },
         {
             "type": "json",
