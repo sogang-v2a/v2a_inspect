@@ -42,11 +42,15 @@ async def track_initial_scene_object_seeds(
     if initial_scene.initial_analysis is None:
         return initial_scene
 
-    resolved_seed_frame_index = _seed_frame_index(initial_scene, seed_frame_index)
     scene_tracks: list[SceneTrack] = []
 
     for object_seed in initial_scene.initial_analysis.object_seeds:
         tracking_prompt = _tracking_prompt(object_seed)
+        resolved_seed_frame_index = _seed_frame_index(
+            initial_scene,
+            object_seed=object_seed,
+            seed_frame_index=seed_frame_index,
+        )
         seed = SAM3Client.seed_from_prompt(
             tracking_prompt,
             frame_index=resolved_seed_frame_index,
@@ -158,21 +162,39 @@ def _validate_scene_indexes(scene_indexes: set[int], scene_count: int) -> None:
 
 def _seed_frame_index(
     initial_scene: InitialScene,
+    *,
+    object_seed: ObjectSeed | None = None,
     seed_frame_index: int | None,
 ) -> int:
-    if seed_frame_index is None:
-        return (
-            initial_scene.start_frame_index + initial_scene.end_frame_index - 1
-        ) // 2
-    if (
-        not initial_scene.start_frame_index
-        <= seed_frame_index
-        < initial_scene.end_frame_index
-    ):
+    if seed_frame_index is not None:
+        if _is_frame_in_scene(initial_scene, seed_frame_index):
+            return seed_frame_index
         raise ValueError(
             "seed_frame_index must be inside the initial scene frame range"
         )
-    return seed_frame_index
+
+    if object_seed is not None and object_seed.seed_frame_index is not None:
+        if _is_frame_in_scene(initial_scene, object_seed.seed_frame_index):
+            return object_seed.seed_frame_index
+        logger.warning(
+            "Ignoring object seed frame %s outside scene %s range %s-%s",
+            object_seed.seed_frame_index,
+            initial_scene.initial_scene_id,
+            initial_scene.start_frame_index,
+            initial_scene.end_frame_index,
+        )
+
+    return _midpoint_frame_index(initial_scene)
+
+
+def _is_frame_in_scene(initial_scene: InitialScene, frame_index: int) -> bool:
+    return (
+        initial_scene.start_frame_index <= frame_index < initial_scene.end_frame_index
+    )
+
+
+def _midpoint_frame_index(initial_scene: InitialScene) -> int:
+    return (initial_scene.start_frame_index + initial_scene.end_frame_index - 1) // 2
 
 
 def _tracking_prompt(object_seed: ObjectSeed) -> str:

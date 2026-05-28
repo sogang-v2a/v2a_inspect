@@ -46,6 +46,7 @@ def analyze_initial_scene(
 class _ObjectSeedOutput(SchemaModel):
     label: str
     tracking_prompt: str | None = None
+    seed_frame_index: int | None = Field(default=None, ge=0)
     notes: str | None = None
 
 
@@ -63,6 +64,7 @@ def _to_initial_scene_analysis(
             ObjectSeed(
                 label=object_seed.label,
                 tracking_prompt=object_seed.tracking_prompt,
+                seed_frame_index=object_seed.seed_frame_index,
                 notes=object_seed.notes,
             )
             for object_seed in output.object_seeds

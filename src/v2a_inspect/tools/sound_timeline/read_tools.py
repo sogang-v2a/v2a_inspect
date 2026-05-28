@@ -89,6 +89,7 @@ class SoundTimelineReadTools:
                 ObjectSeedView(
                     label=seed.label,
                     tracking_prompt=seed.tracking_prompt,
+                    seed_frame_index=seed.seed_frame_index,
                     notes=seed.notes,
                 )
                 for seed in scene.initial_analysis.object_seeds

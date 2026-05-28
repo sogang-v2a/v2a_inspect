@@ -137,6 +137,7 @@ class ListScenesOutput(SchemaModel):
 class ObjectSeedView(SchemaModel):
     label: str
     tracking_prompt: str
+    seed_frame_index: int | None = None
     notes: str | None = None
 
 
@@ -203,6 +204,8 @@ class SceneSummaryOutput(SchemaModel):
                 strict=True,
             ):
                 detail = f"- object {label}: prompt={seed.tracking_prompt}"
+                if seed.seed_frame_index is not None:
+                    detail += f"; seed_frame={seed.seed_frame_index}"
                 if seed.notes:
                     detail += f"; notes={seed.notes}"
                 lines.append(detail)
