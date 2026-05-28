@@ -3,12 +3,14 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 DEFAULT_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts" / "files"
+ThinkingLevel = Literal["minimal", "low", "medium", "high"]
 
 
 class Settings(BaseSettings):
@@ -52,6 +54,66 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_LARGE_MODEL",
             "V2A_LLM_LARGE_MODEL",
+        ),
+    )
+    llm_thinking_level: ThinkingLevel | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_THINKING_LEVEL",
+            "V2A_LLM_THINKING_LEVEL",
+        ),
+    )
+    llm_small_thinking_level: ThinkingLevel | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_SMALL_THINKING_LEVEL",
+            "V2A_LLM_SMALL_THINKING_LEVEL",
+        ),
+    )
+    llm_medium_thinking_level: ThinkingLevel | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_MEDIUM_THINKING_LEVEL",
+            "V2A_LLM_MEDIUM_THINKING_LEVEL",
+        ),
+    )
+    llm_large_thinking_level: ThinkingLevel | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_LARGE_THINKING_LEVEL",
+            "V2A_LLM_LARGE_THINKING_LEVEL",
+        ),
+    )
+    llm_thinking_budget: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_THINKING_BUDGET",
+            "V2A_LLM_THINKING_BUDGET",
+        ),
+    )
+    llm_small_thinking_budget: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_SMALL_THINKING_BUDGET",
+            "V2A_LLM_SMALL_THINKING_BUDGET",
+        ),
+    )
+    llm_medium_thinking_budget: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_MEDIUM_THINKING_BUDGET",
+            "V2A_LLM_MEDIUM_THINKING_BUDGET",
+        ),
+    )
+    llm_large_thinking_budget: int | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices(
+            "V2A_INSPECT_LLM_LARGE_THINKING_BUDGET",
+            "V2A_LLM_LARGE_THINKING_BUDGET",
         ),
     )
     llm_temperature: float = Field(
@@ -152,6 +214,23 @@ class Settings(BaseSettings):
         env_prefix="V2A_INSPECT_",
         secrets_dir="/run/secrets" if os.path.exists("/run/secrets") else None,
     )
+
+    @field_validator(
+        "llm_small_thinking_level",
+        "llm_medium_thinking_level",
+        "llm_large_thinking_level",
+        "llm_thinking_level",
+        "llm_thinking_budget",
+        "llm_small_thinking_budget",
+        "llm_medium_thinking_budget",
+        "llm_large_thinking_budget",
+        mode="before",
+    )
+    @classmethod
+    def empty_thinking_config_to_none(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
     @model_validator(mode="after")
     def validate_langfuse_keys(self) -> Settings:
