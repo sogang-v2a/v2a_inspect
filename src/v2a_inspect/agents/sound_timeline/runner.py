@@ -13,7 +13,7 @@ from langchain.agents.middleware import ToolRetryMiddleware
 from v2a_inspect.config import settings
 from v2a_inspect.llm import model_manager
 from v2a_inspect.models import VideoAsset
-from v2a_inspect.observability import build_langchain_config, flush_langfuse
+from v2a_inspect.observability import build_langchain_config
 from v2a_inspect.prompts.manager import PromptManager
 from v2a_inspect.tools.sound_timeline import SoundTimelineEditor
 
@@ -120,17 +120,14 @@ def run_agent_loop(
         name="sound_timeline_agent",
         middleware=[retry_middleware],
     )
-    try:
-        return agent.invoke(
-            {"messages": [HumanMessage(content=str(user_message.content))]},
-            config=_agent_invoke_config(
-                editor,
-                objective=objective,
-                max_iterations=resolved_max_iterations,
-            ),
-        )
-    finally:
-        flush_langfuse()
+    return agent.invoke(
+        {"messages": [HumanMessage(content=str(user_message.content))]},
+        config=_agent_invoke_config(
+            editor,
+            objective=objective,
+            max_iterations=resolved_max_iterations,
+        ),
+    )
 
 
 def _resolve_max_iterations(max_iterations: int | None) -> int:
