@@ -26,7 +26,7 @@ class NoArgs(SchemaModel):
 
 class ListScenesArgs(SchemaModel):
     start_scene_index: int = Field(default=0, ge=0)
-    limit: int = Field(default=25, ge=1, le=100)
+    limit: int = Field(default=3, ge=1)
 
 
 class SceneIndexArgs(SchemaModel):
@@ -41,13 +41,18 @@ class FrameIndexArgs(SchemaModel):
 class VisualEventsArgs(SchemaModel):
     start_frame_index: int | None = Field(default=None, ge=0)
     end_frame_index: int | None = Field(default=None, gt=0)
-    limit: int = Field(default=50, ge=1, le=200)
+    limit: int = Field(default=20, ge=1)
 
 
 class SoundTimelineArgs(SchemaModel):
     start_frame_index: int | None = Field(default=None, ge=0)
     end_frame_index: int | None = Field(default=None, gt=0)
-    limit: int = Field(default=50, ge=1, le=200)
+    limit: int = Field(default=20, ge=1)
+
+
+class CatalogArgs(SchemaModel):
+    query: str | None = None
+    limit: int = Field(default=3, ge=1)
 
 
 class UpsertSoundSourceArgs(SchemaModel):
@@ -329,11 +334,7 @@ class SoundTimelineViewOutput(SchemaModel):
         if self.sound_tracks:
             lines.append("tracks:")
             for track in self.sound_tracks:
-                source_text = (
-                    ""
-                    if track.sound_source_id is None
-                    else f" source={track.sound_source_id}"
-                )
+                source_label = _sound_source_label(track, self.sound_sources)
                 lines.append(
                     f"- {track.sound_track_id} {track.track_type} "
                     f"mode={track.generation_mode}"
@@ -342,7 +343,8 @@ class SoundTimelineViewOutput(SchemaModel):
                         if track.canonical_key is None
                         else f" canonical_key={track.canonical_key}"
                     )
-                    + f"{source_text} label={track.label}"
+                    + (f" source={source_label}" if source_label else "")
+                    + f" label={track.label}"
                 )
         if self.sound_events:
             lines.append("events:")

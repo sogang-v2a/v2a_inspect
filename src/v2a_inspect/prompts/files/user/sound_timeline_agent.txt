@@ -3,11 +3,13 @@ Objective:
 
 Execute by mutating the current VideoAsset.sound_timeline with tools.
 Use visual events and scene summaries before frame images.
+Batch independent tool calls in the same assistant step whenever the inputs are
+already known.
 Create sources, tracks, and events throughout the run.
 When objective lists assigned scenes or frames, treat that assigned range as
 the full scope for this run.
-Before each batch write, inspect list_sound_sources/list_sound_tracks and reuse
-records only for the same recurring acoustic layer.
+Before each batch write, inspect list_sound_sources/list_sound_tracks with
+narrow queries and reuse records only for the same recurring acoustic layer.
 Use SoundTrack as the track identity and attach SoundEvents to existing SoundTracks.
 Provide canonical_key when creating SoundTracks.
 Do not create duplicate tracks for the same recurring sound category, but do
@@ -26,6 +28,7 @@ and list_sound_tracks catalog checks.
 Reuse the same SoundTrack for repeated beats of the same sound identity.
 Do not build a full mental map first.
 Make incremental edits after each small scene batch.
+Use one batched read phase, then write the batch events.
 After each batch, check the timeline window and continue.
 Use global frame ranges.
 Return only a short completion summary after get_sound_timeline confirms sources, tracks, and events.

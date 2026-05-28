@@ -11,6 +11,7 @@ from v2a_inspect.models import SchemaModel, SoundEvent, SoundSource, SoundTrack
 
 from .schemas import (
     AnnotatedFrameOutput,
+    CatalogArgs,
     DeleteSoundEventArgs,
     DeleteSoundSourceArgs,
     DeleteSoundTrackArgs,
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from .editor import SoundTimelineEditor
 
 ToolMessageContentBlock = str | dict[str, object]
+MAX_TOOL_STRING_CHARS = 6000
 
 
 def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTool]:
@@ -89,16 +91,18 @@ def build_sound_timeline_tools(editor: SoundTimelineEditor) -> list[StructuredTo
         ),
         StructuredTool.from_function(
             _make_list_sound_sources_tool(editor),
+            args_schema=CatalogArgs,
             description=(
-                "List compact global SoundSource catalog for reuse checks. "
-                "Use before creating a source."
+                "Fuzzy-search compact global SoundSource catalog for reuse checks. "
+                "Default limit=3. Use query before creating a source."
             ),
         ),
         StructuredTool.from_function(
             _make_list_sound_tracks_tool(editor),
+            args_schema=CatalogArgs,
             description=(
-                "List compact global SoundTrack catalog for reuse checks. "
-                "Use before creating a track."
+                "Fuzzy-search compact global SoundTrack catalog for reuse checks. "
+                "Default limit=3. Use query before creating a track."
             ),
         ),
         StructuredTool.from_function(
@@ -158,19 +162,19 @@ def _tool_string(value: object) -> str:
             if value.visual_object_id is None
             else f" visual_object_id={value.visual_object_id}"
         )
-        return (
+        return _cap_tool_string(
             f"sound_source id={value.sound_source_id} "
             f"type={value.source_type}{visual_source} label={value.label}"
         )
     if isinstance(value, SoundEvent):
-        return _sound_event_tool_string(value)
+        return _cap_tool_string(_sound_event_tool_string(value))
     if isinstance(value, SoundTrack):
         source = (
             ""
             if value.sound_source_id is None
             else f" source_id={value.sound_source_id}"
         )
-        return (
+        return _cap_tool_string(
             f"sound_track id={value.sound_track_id} "
             f"type={value.track_type} mode={value.generation_mode}"
             + (
@@ -182,8 +186,8 @@ def _tool_string(value: object) -> str:
             f"label={value.label}"
         )
     if isinstance(value, SchemaModel):
-        return value.to_tool_string()
-    return json.dumps(value, indent=2, default=str)
+        return _cap_tool_string(value.to_tool_string())
+    return _cap_tool_string(json.dumps(value, indent=2, default=str))
 
 
 def _sound_event_tool_string(event: SoundEvent) -> str:
@@ -191,6 +195,15 @@ def _sound_event_tool_string(event: SoundEvent) -> str:
         f"sound_event id={event.sound_event_id} track_id={event.sound_track_id} "
         f"frames={event.start_frame_index}-{event.end_frame_index} "
         f"description={event.description}"
+    )
+
+
+def _cap_tool_string(value: str) -> str:
+    if len(value) <= MAX_TOOL_STRING_CHARS:
+        return value
+    return (
+        value[:MAX_TOOL_STRING_CHARS]
+        + "\n[truncated: narrow query/time range; tool output cap reached]"
     )
 
 
@@ -221,7 +234,7 @@ def _make_get_visual_events_tool(
     def get_visual_events(
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> str:
         return _tool_string(
             editor.get_visual_events(
@@ -240,7 +253,7 @@ def _make_get_sound_timeline_tool(
     def get_sound_timeline(
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> str:
         return _tool_string(
             editor.get_sound_timeline(
@@ -256,7 +269,7 @@ def _make_get_sound_timeline_tool(
 def _make_list_sound_sources_tool(
     editor: SoundTimelineEditor,
 ) -> Callable[[str | None, int], str]:
-    def list_sound_sources(query: str | None = None, limit: int = 50) -> str:
+    def list_sound_sources(query: str | None = None, limit: int = 3) -> str:
         return _tool_string(editor.list_sound_sources(query, limit))
 
     return list_sound_sources
@@ -265,7 +278,7 @@ def _make_list_sound_sources_tool(
 def _make_list_sound_tracks_tool(
     editor: SoundTimelineEditor,
 ) -> Callable[[str | None, int], str]:
-    def list_sound_tracks(query: str | None = None, limit: int = 50) -> str:
+    def list_sound_tracks(query: str | None = None, limit: int = 3) -> str:
         return _tool_string(editor.list_sound_tracks(query, limit))
 
     return list_sound_tracks

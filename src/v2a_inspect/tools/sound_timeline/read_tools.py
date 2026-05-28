@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from difflib import SequenceMatcher
 import io
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,6 +36,9 @@ if TYPE_CHECKING:
 LOW_RES_WIDTH = 640
 LOW_RES_JPEG_QUALITY = 75
 HIGH_RES_JPEG_QUALITY = 90
+MAX_SCENE_LIMIT = 5
+MAX_EVENT_LIMIT = 50
+MAX_CATALOG_LIMIT = 5
 
 
 class SoundTimelineReadTools:
@@ -46,6 +50,7 @@ class SoundTimelineReadTools:
         start_scene_index: int = 0,
         limit: int = 3,
     ) -> ListScenesOutput:
+        limit = _clamp_limit(limit, MAX_SCENE_LIMIT)
         video_asset = self.editor.video_asset
         scenes = video_asset.initial_scenes
         lower_scene_index, upper_scene_index = self.editor.scene_bounds()
@@ -173,8 +178,9 @@ class SoundTimelineReadTools:
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> VisualEventsOutput:
+        limit = _clamp_limit(limit, MAX_EVENT_LIMIT)
         if (
             start_frame_index is not None
             and end_frame_index is not None
@@ -262,8 +268,9 @@ class SoundTimelineReadTools:
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> SoundTimelineViewOutput:
+        limit = _clamp_limit(limit, MAX_EVENT_LIMIT)
         if (
             start_frame_index is not None
             and end_frame_index is not None
@@ -340,18 +347,23 @@ class SoundTimelineReadTools:
     def list_sound_sources(
         self,
         query: str | None = None,
-        limit: int = 50,
+        limit: int = 3,
     ) -> SoundSourceCatalogOutput:
+        limit = _clamp_limit(limit, MAX_CATALOG_LIMIT)
         timeline = self.editor.video_asset.sound_timeline
         sources = [] if timeline is None else timeline.sound_sources
-        matching_sources = [
-            source
-            for source in sources
-            if _matches_query(query, source.label, source.source_type)
-        ]
         matching_sources = sorted(
-            matching_sources,
-            key=lambda source: (source.source_type, source.label.lower()),
+            (
+                source
+                for source in sources
+                if _query_score(query, source.label, source.source_type, source.notes)
+                > 0
+            ),
+            key=lambda source: (
+                -_query_score(query, source.label, source.source_type, source.notes),
+                source.source_type,
+                source.label.lower(),
+            ),
         )
         shown_sources = matching_sources[:limit]
         return SoundSourceCatalogOutput(
@@ -365,8 +377,9 @@ class SoundTimelineReadTools:
     def list_sound_tracks(
         self,
         query: str | None = None,
-        limit: int = 50,
+        limit: int = 3,
     ) -> SoundTrackCatalogOutput:
+        limit = _clamp_limit(limit, MAX_CATALOG_LIMIT)
         timeline = self.editor.video_asset.sound_timeline
         if timeline is None:
             return SoundTrackCatalogOutput(
@@ -377,20 +390,29 @@ class SoundTimelineReadTools:
                 sound_sources=[],
                 query=query,
             )
-        matching_tracks = [
-            track
-            for track in timeline.sound_tracks
-            if _matches_query(
-                query,
-                track.label,
-                track.track_type,
-                track.generation_mode,
-                track.canonical_key,
-            )
-        ]
         matching_tracks = sorted(
-            matching_tracks,
+            (
+                track
+                for track in timeline.sound_tracks
+                if _query_score(
+                    query,
+                    track.label,
+                    track.track_type,
+                    track.generation_mode,
+                    track.canonical_key,
+                    track.notes,
+                )
+                > 0
+            ),
             key=lambda track: (
+                -_query_score(
+                    query,
+                    track.label,
+                    track.track_type,
+                    track.generation_mode,
+                    track.canonical_key,
+                    track.notes,
+                ),
                 track.track_type,
                 track.canonical_key or "",
                 track.label.lower(),
@@ -460,11 +482,48 @@ def _render_output_image(
     return image.resize((LOW_RES_WIDTH, height), Image.Resampling.LANCZOS)
 
 
-def _matches_query(query: str | None, *values: object) -> bool:
+def _query_score(query: str | None, *values: object) -> float:
     if query is None or not query.strip():
-        return True
-    needle = query.strip().lower()
-    return any(needle in str(value).lower() for value in values if value is not None)
+        return 1.0
+    needle = _normalize_query_text(query)
+    if not needle:
+        return 1.0
+    best = 0.0
+    needle_tokens = set(needle.split())
+    for value in values:
+        if value is None:
+            continue
+        candidate = _normalize_query_text(str(value))
+        if not candidate:
+            continue
+        if needle in candidate:
+            best = max(best, 1.0)
+            continue
+        candidate_tokens = set(candidate.split())
+        overlap = len(needle_tokens & candidate_tokens) / max(1, len(needle_tokens))
+        ratio = SequenceMatcher(None, needle, candidate).ratio()
+        best = max(best, overlap, ratio)
+    return best if best >= 0.45 else 0.0
+
+
+def _normalize_query_text(value: str) -> str:
+    text = "".join(char.lower() if char.isalnum() else " " for char in value)
+    tokens = [_stem_token(token) for token in text.split()]
+    return " ".join(token for token in tokens if token)
+
+
+def _stem_token(token: str) -> str:
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _clamp_limit(limit: int, maximum: int) -> int:
+    return max(1, min(limit, maximum))
 
 
 def _jpeg_quality(resolution_mode: FrameResolutionMode) -> int:

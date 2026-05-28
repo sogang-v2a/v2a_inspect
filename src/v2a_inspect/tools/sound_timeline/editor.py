@@ -59,7 +59,7 @@ class SoundTimelineEditor:
     def list_scenes(
         self,
         start_scene_index: int = 0,
-        limit: int = 25,
+        limit: int = 3,
     ) -> ListScenesOutput:
         return self.read.list_scenes(start_scene_index, limit)
 
@@ -80,7 +80,7 @@ class SoundTimelineEditor:
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> VisualEventsOutput:
         return self.read.get_visual_events(
             start_frame_index,
@@ -92,7 +92,7 @@ class SoundTimelineEditor:
         self,
         start_frame_index: int | None = None,
         end_frame_index: int | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> SoundTimelineViewOutput:
         return self.read.get_sound_timeline(
             start_frame_index,
@@ -103,14 +103,14 @@ class SoundTimelineEditor:
     def list_sound_sources(
         self,
         query: str | None = None,
-        limit: int = 50,
+        limit: int = 3,
     ) -> SoundSourceCatalogOutput:
         return self.read.list_sound_sources(query, limit)
 
     def list_sound_tracks(
         self,
         query: str | None = None,
-        limit: int = 50,
+        limit: int = 3,
     ) -> SoundTrackCatalogOutput:
         return self.read.list_sound_tracks(query, limit)
 
