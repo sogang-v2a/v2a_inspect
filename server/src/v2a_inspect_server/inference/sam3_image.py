@@ -5,6 +5,7 @@ import os
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.request import urlretrieve
 
 import cv2
 import numpy as np
@@ -51,11 +52,7 @@ if settings.opencv_ffmpeg_capture_options:
 
 class Sam3ImageInferenceClient:
     def __init__(self) -> None:
-        bpe_path = (
-            Path(sam3.__file__).resolve().parent.parent
-            / "assets"
-            / "bpe_simple_vocab_16e6.txt.gz"
-        )
+        bpe_path = _ensure_bpe_vocab()
         self.model = build_sam3_image_model(bpe_path=str(bpe_path))
         self.transform = ComposeAPI(
             transforms=[
@@ -321,6 +318,24 @@ def _binary_mask_to_rle(mask: Any) -> str | None:
         },
         separators=(",", ":"),
     )
+
+
+def _ensure_bpe_vocab() -> Path:
+    bpe_path = settings.sam3_bpe_path
+    if bpe_path.exists():
+        return bpe_path
+
+    packaged_path = (
+        Path(sam3.__file__).resolve().parent
+        / "assets"
+        / "bpe_simple_vocab_16e6.txt.gz"
+    )
+    if packaged_path.exists():
+        return packaged_path
+
+    bpe_path.parent.mkdir(parents=True, exist_ok=True)
+    urlretrieve(settings.sam3_bpe_url, bpe_path)
+    return bpe_path
 
 
 def _box_xyxy_tuple(box: Any) -> tuple[float, float, float, float]:
