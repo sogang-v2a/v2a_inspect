@@ -154,6 +154,7 @@ class Sam3InferenceClient:
             )
             try:
                 has_prompt_outputs = False
+                seed_index_by_obj_id: dict[int, int] = {}
                 for seed_index, seed in enumerate(seeds):
                     prompt_started_at = time.perf_counter()
                     outputs = self._add_seed_prompt(
@@ -171,6 +172,13 @@ class Sam3InferenceClient:
                     )
                     if prompt_objects:
                         has_prompt_outputs = True
+                        for (
+                            obj_id,
+                            _bbox_xyxy,
+                            _confidence,
+                            _mask_rle,
+                        ) in prompt_objects:
+                            seed_index_by_obj_id.setdefault(obj_id, seed_index)
                     else:
                         logger.info(
                             "SAM3 seed prompt produced no objects session_id=%s seed_index=%s seed_type=%s",
@@ -195,6 +203,7 @@ class Sam3InferenceClient:
                 propagate_started_at = time.perf_counter()
                 tracks = self._propagate_tracks(
                     session_id,
+                    seed_index_by_obj_id=seed_index_by_obj_id,
                     width=width,
                     height=height,
                     output_prob_thresh=output_prob_thresh,
@@ -377,6 +386,7 @@ class Sam3InferenceClient:
         self,
         session_id: str,
         *,
+        seed_index_by_obj_id: dict[int, int],
         width: int,
         height: int,
         output_prob_thresh: float,
@@ -415,7 +425,7 @@ class Sam3InferenceClient:
             tracks.append(
                 Sam3Track(
                     track_id=str(obj_id),
-                    seed_index=obj_id,
+                    seed_index=seed_index_by_obj_id.get(obj_id, max(0, obj_id - 1)),
                     points=points,
                     confidence=confidence,
                 )

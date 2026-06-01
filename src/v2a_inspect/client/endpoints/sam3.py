@@ -24,7 +24,29 @@ class SAM3Client(BaseClient):
         min_points: int = 2,
         high_confidence_threshold: float = 0.45,
         match_threshold: float = 0.45,
+        batch_size: int | None = None,
     ) -> Sam3TrackVideoResponse:
+        if batch_size is not None and batch_size > 0 and len(seeds) > batch_size:
+            tracks = []
+            for offset in range(0, len(seeds), batch_size):
+                chunk = seeds[offset : offset + batch_size]
+                response = await self.track_video(
+                    video_id,
+                    seeds=chunk,
+                    start_frame_index=start_frame_index,
+                    end_frame_index=end_frame_index,
+                    score_threshold=score_threshold,
+                    min_points=min_points,
+                    high_confidence_threshold=high_confidence_threshold,
+                    match_threshold=match_threshold,
+                    batch_size=None,
+                )
+                tracks.extend(
+                    track.model_copy(update={"seed_index": track.seed_index + offset})
+                    for track in response.tracks
+                )
+            return Sam3TrackVideoResponse(tracks=tracks)
+
         request = Sam3TrackVideoRequest(
             video_id=video_id,
             seeds=seeds,
