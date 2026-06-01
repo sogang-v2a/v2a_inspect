@@ -260,22 +260,26 @@ class Sam3InferenceClient:
 
         if seed.prompt is not None:
             request["text"] = seed.prompt
-        elif seed.points:
-            request["points"] = self._relative_points(seed, width=width, height=height)
-            request["point_labels"] = [
-                1 if point.is_positive else 0 for point in seed.points
-            ]
+        elif seed.points or seed.bbox_xyxy is not None:
             request["obj_id"] = seed_index + 1
-        elif seed.bbox_xyxy is not None:
-            request["bounding_boxes"] = [
-                self._bbox_xyxy_to_relative_xywh(
-                    seed.bbox_xyxy,
+            if seed.points:
+                request["points"] = self._relative_points(
+                    seed,
                     width=width,
                     height=height,
                 )
-            ]
-            request["bounding_box_labels"] = [1]
-            request["obj_id"] = seed_index + 1
+                request["point_labels"] = [
+                    1 if point.is_positive else 0 for point in seed.points
+                ]
+            if seed.bbox_xyxy is not None:
+                request["bounding_boxes"] = [
+                    self._bbox_xyxy_to_relative_xywh(
+                        seed.bbox_xyxy,
+                        width=width,
+                        height=height,
+                    )
+                ]
+                request["bounding_box_labels"] = [1]
         else:
             raise ValueError("Seed must include prompt, bbox, or points")
 
@@ -503,7 +507,9 @@ class Sam3InferenceClient:
         if seed.points is None:
             return points
         for point in seed.points:
-            points.append([point.x / width, point.y / height])
+            x = min(max(point.x, 0.0), float(width - 1))
+            y = min(max(point.y, 0.0), float(height - 1))
+            points.append([x / width, y / height])
         return points
 
     def _bbox_xyxy_to_relative_xywh(
@@ -514,6 +520,10 @@ class Sam3InferenceClient:
         height: int,
     ) -> list[float]:
         x1, y1, x2, y2 = bbox_xyxy
+        x1 = min(max(x1, 0.0), float(width - 1))
+        y1 = min(max(y1, 0.0), float(height - 1))
+        x2 = min(max(x2, x1 + 1.0), float(width))
+        y2 = min(max(y2, y1 + 1.0), float(height))
         return [
             x1 / width,
             y1 / height,

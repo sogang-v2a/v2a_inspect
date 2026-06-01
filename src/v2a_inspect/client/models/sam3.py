@@ -23,7 +23,7 @@ class Sam3Seed(BaseModel):
         has_prompt = self.prompt is not None
 
         if has_spatial and has_prompt:
-            raise ValueError("Cannot combine text prompt with bbox/points in one seed.")
+            raise ValueError("Cannot combine text prompt with spatial prompts.")
         if not has_spatial and not has_prompt:
             raise ValueError("Must provide either prompt, bbox, or points.")
         return self

@@ -5,16 +5,19 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from v2a_inspect.client import SAM3Client
 from v2a_inspect.client.endpoints.base import ClientError
 from v2a_inspect.client.models import (
+    PointPrompt,
     Sam3Mask,
     Sam3Seed,
     Sam3SegmentFrameItem,
     Sam3Track,
     Sam3TrackPoint,
 )
-from v2a_inspect.media_utils import resize_coco_rle
+from v2a_inspect.media_utils import decode_coco_rle, resize_coco_rle
 from v2a_inspect.models import (
     InitialScene,
     MaskRef,
@@ -26,6 +29,9 @@ from v2a_inspect.models import (
 
 
 logger = logging.getLogger(__name__)
+MAX_POSITIVE_POINTS = 3
+MAX_NEGATIVE_POINTS = 6
+NEGATIVE_RING_PIXELS = 8
 
 
 @dataclass(frozen=True)
@@ -337,14 +343,19 @@ async def _detect_object_seed_bboxes(
                 initial_scenes[entry.scene_index].initial_scene_id,
             )
             continue
+        seed = _tracking_seed_from_segmented_mask(mask, frame_index=entry.frame_index)
+        if seed is None:
+            logger.warning(
+                "Skipping object seed %s in scene %s because SAM3 mask is unusable",
+                entry.object_seed.label,
+                initial_scenes[entry.scene_index].initial_scene_id,
+            )
+            continue
         detected_entries_by_scene.setdefault(entry.scene_index, []).append(
             _DetectedSeedEntry(
                 object_seed=entry.object_seed,
                 tracking_prompt=entry.tracking_prompt,
-                seed=SAM3Client.seed_from_bbox(
-                    mask.bbox_xyxy,
-                    frame_index=entry.frame_index,
-                ),
+                seed=seed,
             )
         )
 
@@ -415,6 +426,146 @@ def _is_seed_tracking_failure(exc: ClientError) -> bool:
         or "HTTP 400" in message
         or "HTTP 422" in message
     )
+
+
+def _tracking_seed_from_segmented_mask(
+    mask: Sam3Mask,
+    *,
+    frame_index: int,
+) -> Sam3Seed | None:
+    if mask.mask_rle is None:
+        return _tracking_seed_from_bbox(mask.bbox_xyxy, frame_index=frame_index)
+
+    binary_mask = decode_coco_rle(mask.mask_rle)
+    bbox_xyxy = _bbox_from_binary_mask(binary_mask)
+    if bbox_xyxy is None:
+        return _tracking_seed_from_bbox(mask.bbox_xyxy, frame_index=frame_index)
+
+    points = _positive_points_from_mask(binary_mask)
+    points.extend(_negative_points_from_mask(binary_mask))
+    if not points:
+        return None
+    return Sam3Seed(
+        frame_index=frame_index,
+        bbox_xyxy=bbox_xyxy,
+        points=[
+            PointPrompt(x=x, y=y, is_positive=is_positive)
+            for x, y, is_positive in points
+        ],
+    )
+
+
+def _tracking_seed_from_bbox(
+    bbox_xyxy: tuple[float, float, float, float],
+    *,
+    frame_index: int,
+) -> Sam3Seed | None:
+    valid_bbox = _valid_bbox(bbox_xyxy)
+    if valid_bbox is None:
+        return None
+    return Sam3Seed(
+        frame_index=frame_index,
+        bbox_xyxy=valid_bbox,
+    )
+
+
+def _bbox_from_binary_mask(
+    mask: np.ndarray,
+) -> tuple[float, float, float, float] | None:
+    coords = np.argwhere(mask)
+    if coords.size == 0:
+        return None
+    y1, x1 = coords.min(axis=0)
+    y2, x2 = coords.max(axis=0) + 1
+    return (float(x1), float(y1), float(x2), float(y2))
+
+
+def _positive_points_from_mask(mask: np.ndarray) -> list[tuple[float, float, bool]]:
+    eroded = _erode(mask, iterations=2)
+    candidate_mask = eroded if eroded.any() else mask
+    return [
+        (x, y, True)
+        for x, y in _spread_points(candidate_mask, max_points=MAX_POSITIVE_POINTS)
+    ]
+
+
+def _negative_points_from_mask(
+    mask: np.ndarray,
+) -> list[tuple[float, float, bool]]:
+    ring = _dilate(mask, iterations=NEGATIVE_RING_PIXELS) & ~mask
+    points = _spread_points(ring, max_points=MAX_NEGATIVE_POINTS)
+    return [(x, y, False) for x, y in points]
+
+
+def _spread_points(mask: np.ndarray, *, max_points: int) -> list[tuple[float, float]]:
+    coords = np.argwhere(mask)
+    if coords.size == 0:
+        return []
+
+    center = coords.mean(axis=0)
+    distances_to_center = np.sum((coords - center) ** 2, axis=1)
+    first_index = int(np.argmin(distances_to_center))
+    selected = [coords[first_index]]
+
+    while len(selected) < max_points and len(selected) < len(coords):
+        selected_array = np.stack(selected)
+        distances = np.min(
+            np.sum((coords[:, None, :] - selected_array[None, :, :]) ** 2, axis=2),
+            axis=1,
+        )
+        next_point = coords[int(np.argmax(distances))]
+        if any(np.array_equal(next_point, point) for point in selected):
+            break
+        selected.append(next_point)
+
+    return [(float(x), float(y)) for y, x in selected]
+
+
+def _erode(mask: np.ndarray, *, iterations: int) -> np.ndarray:
+    output = mask.astype(bool)
+    for _ in range(iterations):
+        padded = np.pad(output, 1, mode="constant", constant_values=False)
+        output = (
+            padded[:-2, :-2]
+            & padded[:-2, 1:-1]
+            & padded[:-2, 2:]
+            & padded[1:-1, :-2]
+            & padded[1:-1, 1:-1]
+            & padded[1:-1, 2:]
+            & padded[2:, :-2]
+            & padded[2:, 1:-1]
+            & padded[2:, 2:]
+        )
+        if not output.any():
+            break
+    return output
+
+
+def _dilate(mask: np.ndarray, *, iterations: int) -> np.ndarray:
+    output = mask.astype(bool)
+    for _ in range(iterations):
+        padded = np.pad(output, 1, mode="constant", constant_values=False)
+        output = (
+            padded[:-2, :-2]
+            | padded[:-2, 1:-1]
+            | padded[:-2, 2:]
+            | padded[1:-1, :-2]
+            | padded[1:-1, 1:-1]
+            | padded[1:-1, 2:]
+            | padded[2:, :-2]
+            | padded[2:, 1:-1]
+            | padded[2:, 2:]
+        )
+    return output
+
+
+def _valid_bbox(
+    bbox_xyxy: tuple[float, float, float, float],
+) -> tuple[float, float, float, float] | None:
+    x1, y1, x2, y2 = bbox_xyxy
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return bbox_xyxy
 
 
 def _scene_track_from_sam_track(
