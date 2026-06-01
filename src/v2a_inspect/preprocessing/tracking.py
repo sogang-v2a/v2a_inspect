@@ -6,7 +6,7 @@ from pathlib import Path
 
 from v2a_inspect.client import SAM3Client
 from v2a_inspect.client.endpoints.base import ClientError
-from v2a_inspect.client.models import Sam3Seed, Sam3Track, Sam3TrackPoint
+from v2a_inspect.client.models import Sam3Track, Sam3TrackPoint
 from v2a_inspect.media_utils import resize_coco_rle
 from v2a_inspect.models import (
     InitialScene,
@@ -43,7 +43,6 @@ async def track_initial_scene_object_seeds(
         return initial_scene
 
     scene_tracks: list[SceneTrack] = []
-    object_seed_entries: list[tuple[ObjectSeed, str, Sam3Seed]] = []
 
     for object_seed in initial_scene.initial_analysis.object_seeds:
         tracking_prompt = _tracking_prompt(object_seed)
@@ -56,44 +55,6 @@ async def track_initial_scene_object_seeds(
             tracking_prompt,
             frame_index=resolved_seed_frame_index,
         )
-        object_seed_entries.append((object_seed, tracking_prompt, seed))
-
-    if not object_seed_entries:
-        return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
-
-    seeds = [seed for _object_seed, _tracking_prompt, seed in object_seed_entries]
-    try:
-        response = await sam_client.track_video(
-            video_id,
-            seeds=seeds,
-            start_frame_index=initial_scene.start_frame_index,
-            end_frame_index=initial_scene.end_frame_index,
-            score_threshold=score_threshold,
-            min_points=min_points,
-            high_confidence_threshold=high_confidence_threshold,
-            match_threshold=match_threshold,
-        )
-        _append_scene_tracks_from_response(
-            scene_tracks,
-            response.tracks,
-            object_seed_entries=object_seed_entries,
-            tracking_width=tracking_width,
-            tracking_height=tracking_height,
-            output_width=output_width,
-            output_height=output_height,
-            min_track_mean_confidence=min_track_mean_confidence,
-        )
-        return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
-    except ClientError as exc:
-        if not _is_seed_tracking_failure(exc):
-            raise
-        logger.warning(
-            "Retrying scene %s object seeds individually after batched tracking failed: %s",
-            initial_scene.initial_scene_id,
-            exc,
-        )
-
-    for object_seed, tracking_prompt, seed in object_seed_entries:
         try:
             response = await sam_client.track_video(
                 video_id,
@@ -132,41 +93,6 @@ async def track_initial_scene_object_seeds(
             scene_tracks.append(scene_track)
 
     return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
-
-
-def _append_scene_tracks_from_response(
-    scene_tracks: list[SceneTrack],
-    sam_tracks: list[Sam3Track],
-    *,
-    object_seed_entries: list[tuple[ObjectSeed, str, Sam3Seed]],
-    tracking_width: int,
-    tracking_height: int,
-    output_width: int,
-    output_height: int,
-    min_track_mean_confidence: float,
-) -> None:
-    for sam_track in sam_tracks:
-        if sam_track.seed_index < 0 or sam_track.seed_index >= len(object_seed_entries):
-            logger.warning(
-                "Skipping SAM3 track with seed_index %s outside request seed range",
-                sam_track.seed_index,
-            )
-            continue
-        object_seed, tracking_prompt, _seed = object_seed_entries[sam_track.seed_index]
-        scene_track = _scene_track_from_sam_track(
-            sam_track,
-            object_seed=object_seed,
-            tracking_prompt=tracking_prompt,
-            tracking_width=tracking_width,
-            tracking_height=tracking_height,
-            output_width=output_width,
-            output_height=output_height,
-        )
-        if scene_track is None:
-            continue
-        if scene_track.confidence < min_track_mean_confidence:
-            continue
-        scene_tracks.append(scene_track)
 
 
 async def track_initial_scenes_object_seeds(
