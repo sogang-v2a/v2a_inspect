@@ -449,7 +449,6 @@ class Sam3InferenceClient:
             raise ValueError(f"Could not read video dimensions from {video_path}")
         return width, height
 
-
     def _write_video_frame_range_to_directory(
         self,
         video_path: Path,
