@@ -9,7 +9,7 @@ class ServerSettings(BaseSettings):
     upload_dir: Path = Path(os.getenv("V2A_UPLOAD_DIR", "/tmp/v2a_uploads"))
     host: str = "0.0.0.0"
     port: int = 8080
-    sam31_max_num_objects: int = 8
+    sam31_max_num_objects: int = 48
     sam31_use_fa3: bool = False
     sam31_use_rope_real: bool = True
     sam31_compile: bool = False
