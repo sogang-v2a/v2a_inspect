@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import shutil
+import traceback
 import uuid
 from pathlib import Path
 
@@ -22,6 +24,15 @@ sam3_client: Sam3InferenceClient | None = None
 sam3_image_client: Sam3ImageInferenceClient | None = None
 embed_client: DinoV2InferenceClient | None = None
 score_client: Siglip2InferenceClient | None = None
+logger = logging.getLogger("uvicorn.error")
+
+
+def _exception_detail(error: Exception) -> dict[str, str]:
+    return {
+        "error": str(error),
+        "type": type(error).__name__,
+        "traceback": traceback.format_exc(),
+    }
 
 
 @asynccontextmanager
@@ -66,7 +77,10 @@ async def upload_video(file: UploadFile = File(...)):
         with save_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
+        logger.exception("Failed to upload video")
+        detail = _exception_detail(e)
+        detail["error"] = f"Could not save file: {detail['error']}"
+        raise HTTPException(status_code=500, detail=detail)
 
     return {"video_id": video_id}
 
@@ -78,9 +92,11 @@ async def track_video_sam3(request: Sam3TrackVideoRequest):
     try:
         return sam3_client.track_video(request)
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.exception("SAM3 track-video file not found")
+        raise HTTPException(status_code=404, detail=_exception_detail(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("SAM3 track-video failed")
+        raise HTTPException(status_code=500, detail=_exception_detail(e))
 
 
 @app.post("/infer/sam3/segment-frames")
@@ -90,9 +106,11 @@ async def segment_frames_sam3(request: Sam3SegmentFramesRequest):
     try:
         return sam3_image_client.segment_frames(request)
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.exception("SAM3 segment-frames file not found")
+        raise HTTPException(status_code=404, detail=_exception_detail(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("SAM3 segment-frames failed")
+        raise HTTPException(status_code=500, detail=_exception_detail(e))
 
 
 @app.post("/infer/dinov2/embed-images")
@@ -104,9 +122,11 @@ async def embed_images_dinov2(request: DinoV2EmbedImagesRequest):
     try:
         return embed_client.embed_images(request)
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.exception("DINOv2 embed-images file not found")
+        raise HTTPException(status_code=404, detail=_exception_detail(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("DINOv2 embed-images failed")
+        raise HTTPException(status_code=500, detail=_exception_detail(e))
 
 
 @app.post("/infer/score")
@@ -118,6 +138,8 @@ async def score_labels(request: LabelScoreRequest):
     try:
         return score_client.score(request)
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.exception("Score labels file not found")
+        raise HTTPException(status_code=404, detail=_exception_detail(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Score labels failed")
+        raise HTTPException(status_code=500, detail=_exception_detail(e))
