@@ -72,6 +72,13 @@ class Sam3ImageInferenceClient:
         self._query_counter = 1
         self._lock = threading.Lock()
 
+    def close(self) -> None:
+        if getattr(self, "model", None) is None:
+            return
+        del self.model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def segment_frames(
         self, request: Sam3SegmentFramesRequest
     ) -> Sam3SegmentFramesResponse:

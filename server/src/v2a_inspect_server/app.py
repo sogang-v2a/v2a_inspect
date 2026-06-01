@@ -36,6 +36,8 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     if sam3_client is not None:
         sam3_client.close()
+    if sam3_image_client is not None:
+        sam3_image_client.close()
     sam3_client = sam3_image_client = embed_client = score_client = None
 
 
