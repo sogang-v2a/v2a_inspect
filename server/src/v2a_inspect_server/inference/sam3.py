@@ -150,7 +150,7 @@ class Sam3InferenceClient:
                 time.perf_counter() - session_started_at,
             )
             try:
-                has_prompt_outputs = False
+                added_prompt_frames: list[int] = []
                 for seed_index, seed in enumerate(seeds):
                     prompt_started_at = time.perf_counter()
                     outputs = self._add_seed_prompt(
@@ -161,34 +161,46 @@ class Sam3InferenceClient:
                         height=height,
                         output_prob_thresh=output_prob_thresh,
                     )
+                    prompt_frame_index = _seed_frame_index(seed)
+                    added_prompt_frames.append(prompt_frame_index)
                     prompt_objects = self._iter_output_objects(
                         outputs,
                         width=width,
                         height=height,
                     )
                     if prompt_objects:
-                        has_prompt_outputs = True
-                    else:
                         logger.info(
-                            "SAM3 seed prompt produced no objects session_id=%s seed_index=%s seed_type=%s",
+                            "SAM3 seed prompt produced objects session_id=%s seed_index=%s seed_type=%s frame_index=%s objects=%s",
                             session_id,
                             seed_index,
                             _seed_type(seed),
+                            prompt_frame_index,
+                            len(prompt_objects),
+                        )
+                    else:
+                        logger.info(
+                            "SAM3 seed prompt produced no immediate objects session_id=%s seed_index=%s seed_type=%s frame_index=%s",
+                            session_id,
+                            seed_index,
+                            _seed_type(seed),
+                            prompt_frame_index,
                         )
                     logger.info(
-                        "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s elapsed=%.3fs",
+                        "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s frame_index=%s elapsed=%.3fs",
                         session_id,
                         seed_index,
                         _seed_type(seed),
+                        prompt_frame_index,
                         time.perf_counter() - prompt_started_at,
                     )
-                if not has_prompt_outputs:
+                if not added_prompt_frames:
                     logger.info(
-                        "SAM3 skipping propagation because no seed prompts produced objects session_id=%s",
+                        "SAM3 skipping propagation because no seed prompts were added session_id=%s",
                         session_id,
                     )
                     return []
 
+                start_frame_index = min(added_prompt_frames)
                 propagate_started_at = time.perf_counter()
                 tracks = self._propagate_tracks(
                     session_id,
@@ -196,10 +208,12 @@ class Sam3InferenceClient:
                     height=height,
                     output_prob_thresh=output_prob_thresh,
                     frame_index_offset=frame_index_offset,
+                    start_frame_index=start_frame_index,
                 )
                 logger.info(
-                    "SAM3 propagated tracks session_id=%s tracks=%s elapsed=%.3fs",
+                    "SAM3 propagated tracks session_id=%s start_frame_index=%s tracks=%s elapsed=%.3fs",
                     session_id,
+                    start_frame_index,
                     len(tracks),
                     time.perf_counter() - propagate_started_at,
                 )
@@ -284,6 +298,7 @@ class Sam3InferenceClient:
         height: int,
         output_prob_thresh: float,
         frame_index_offset: int,
+        start_frame_index: int,
     ) -> list[Sam3Track]:
         points_by_obj_id: dict[int, list[Sam3TrackPoint]] = {}
 
@@ -291,6 +306,7 @@ class Sam3InferenceClient:
             request={
                 "type": "propagate_in_video",
                 "session_id": session_id,
+                "start_frame_index": start_frame_index,
                 "output_prob_thresh": output_prob_thresh,
             }
         ):
@@ -549,3 +565,9 @@ def _seed_type(seed: Sam3Seed) -> str:
     if seed.points:
         return "points"
     return "unknown"
+
+
+def _seed_frame_index(seed: Sam3Seed) -> int:
+    if seed.frame_index is None:
+        return 0
+    return seed.frame_index
