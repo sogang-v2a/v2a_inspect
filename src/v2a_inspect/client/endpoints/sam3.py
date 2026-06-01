@@ -60,12 +60,6 @@ class SAM3Client(BaseClient):
         return Sam3SegmentFramesResponse(**response.json())
 
     @staticmethod
-    def seed_from_bbox(
-        bbox: tuple[float, float, float, float], frame_index: int | None = None
-    ) -> Sam3Seed:
-        return Sam3Seed(frame_index=frame_index, bbox_xyxy=bbox)
-
-    @staticmethod
     def seed_from_prompt(prompt: str, frame_index: int | None = None) -> Sam3Seed:
         return Sam3Seed(frame_index=frame_index, prompt=prompt)
 

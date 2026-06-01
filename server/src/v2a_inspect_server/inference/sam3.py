@@ -260,28 +260,18 @@ class Sam3InferenceClient:
 
         if seed.prompt is not None:
             request["text"] = seed.prompt
-        elif seed.points or seed.bbox_xyxy is not None:
+        elif seed.points:
             request["obj_id"] = seed_index + 1
-            if seed.points:
-                request["points"] = self._relative_points(
-                    seed,
-                    width=width,
-                    height=height,
-                )
-                request["point_labels"] = [
-                    1 if point.is_positive else 0 for point in seed.points
-                ]
-            if seed.bbox_xyxy is not None:
-                request["bounding_boxes"] = [
-                    self._bbox_xyxy_to_relative_xywh(
-                        seed.bbox_xyxy,
-                        width=width,
-                        height=height,
-                    )
-                ]
-                request["bounding_box_labels"] = [1]
+            request["points"] = self._relative_points(
+                seed,
+                width=width,
+                height=height,
+            )
+            request["point_labels"] = [
+                1 if point.is_positive else 0 for point in seed.points
+            ]
         else:
-            raise ValueError("Seed must include prompt, bbox, or points")
+            raise ValueError("Seed must include prompt or points")
 
         response = self.predictor.handle_request(request=request)
         return dict(response["outputs"])
@@ -512,25 +502,6 @@ class Sam3InferenceClient:
             points.append([x / width, y / height])
         return points
 
-    def _bbox_xyxy_to_relative_xywh(
-        self,
-        bbox_xyxy: tuple[float, float, float, float],
-        *,
-        width: int,
-        height: int,
-    ) -> list[float]:
-        x1, y1, x2, y2 = bbox_xyxy
-        x1 = min(max(x1, 0.0), float(width - 1))
-        y1 = min(max(y1, 0.0), float(height - 1))
-        x2 = min(max(x2, x1 + 1.0), float(width))
-        y2 = min(max(y2, y1 + 1.0), float(height))
-        return [
-            x1 / width,
-            y1 / height,
-            (x2 - x1) / width,
-            (y2 - y1) / height,
-        ]
-
     def _relative_xywh_to_absolute_xyxy(
         self,
         bbox_xywh: list[float],
@@ -577,6 +548,4 @@ def _seed_type(seed: Sam3Seed) -> str:
         return "text"
     if seed.points:
         return "points"
-    if seed.bbox_xyxy is not None:
-        return "bbox"
     return "unknown"

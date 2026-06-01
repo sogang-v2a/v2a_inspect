@@ -29,8 +29,8 @@ from v2a_inspect.models import (
 
 
 logger = logging.getLogger(__name__)
-MAX_POSITIVE_POINTS = 3
-MAX_NEGATIVE_POINTS = 6
+MAX_POSITIVE_POINTS = 32
+MAX_NEGATIVE_POINTS = 16
 NEGATIVE_RING_PIXELS = 8
 
 
@@ -434,50 +434,20 @@ def _tracking_seed_from_segmented_mask(
     frame_index: int,
 ) -> Sam3Seed | None:
     if mask.mask_rle is None:
-        return _tracking_seed_from_bbox(mask.bbox_xyxy, frame_index=frame_index)
+        return None
 
     binary_mask = decode_coco_rle(mask.mask_rle)
-    bbox_xyxy = _bbox_from_binary_mask(binary_mask)
-    if bbox_xyxy is None:
-        return _tracking_seed_from_bbox(mask.bbox_xyxy, frame_index=frame_index)
-
     points = _positive_points_from_mask(binary_mask)
     points.extend(_negative_points_from_mask(binary_mask))
     if not points:
         return None
     return Sam3Seed(
         frame_index=frame_index,
-        bbox_xyxy=bbox_xyxy,
         points=[
             PointPrompt(x=x, y=y, is_positive=is_positive)
             for x, y, is_positive in points
         ],
     )
-
-
-def _tracking_seed_from_bbox(
-    bbox_xyxy: tuple[float, float, float, float],
-    *,
-    frame_index: int,
-) -> Sam3Seed | None:
-    valid_bbox = _valid_bbox(bbox_xyxy)
-    if valid_bbox is None:
-        return None
-    return Sam3Seed(
-        frame_index=frame_index,
-        bbox_xyxy=valid_bbox,
-    )
-
-
-def _bbox_from_binary_mask(
-    mask: np.ndarray,
-) -> tuple[float, float, float, float] | None:
-    coords = np.argwhere(mask)
-    if coords.size == 0:
-        return None
-    y1, x1 = coords.min(axis=0)
-    y2, x2 = coords.max(axis=0) + 1
-    return (float(x1), float(y1), float(x2), float(y2))
 
 
 def _positive_points_from_mask(mask: np.ndarray) -> list[tuple[float, float, bool]]:
@@ -557,15 +527,6 @@ def _dilate(mask: np.ndarray, *, iterations: int) -> np.ndarray:
             | padded[2:, 2:]
         )
     return output
-
-
-def _valid_bbox(
-    bbox_xyxy: tuple[float, float, float, float],
-) -> tuple[float, float, float, float] | None:
-    x1, y1, x2, y2 = bbox_xyxy
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return bbox_xyxy
 
 
 def _scene_track_from_sam_track(

@@ -12,20 +12,19 @@ class PointPrompt(BaseModel):
 
 class Sam3Seed(BaseModel):
     frame_index: int | None = None
-    bbox_xyxy: tuple[float, float, float, float] | None = None
     points: list[PointPrompt] | None = None
     prompt: str | None = None
     label_hint: str | None = None
 
     @model_validator(mode="after")
     def check_prompt(self) -> Self:
-        has_spatial = self.bbox_xyxy is not None or bool(self.points)
+        has_spatial = bool(self.points)
         has_prompt = self.prompt is not None
 
         if has_spatial and has_prompt:
             raise ValueError("Cannot combine text prompt with spatial prompts.")
         if not has_spatial and not has_prompt:
-            raise ValueError("Must provide either prompt, bbox, or points.")
+            raise ValueError("Must provide either prompt or points.")
         return self
 
 
