@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -198,6 +198,7 @@ async def track_initial_scenes_object_seeds(
     match_threshold: float = 0.45,
     min_track_mean_confidence: float = 0.0,
     segmentation_batch_size: int = 32,
+    on_scene_tracked: Callable[[VideoAsset, int, int], Awaitable[VideoAsset]] | None = None,
 ) -> VideoAsset:
     """Track object seeds for explicitly selected scenes and return a new asset.
 
@@ -223,6 +224,8 @@ async def track_initial_scenes_object_seeds(
     )
 
     updated_scenes = list(video_asset.initial_scenes)
+    tracked_scene_count = 0
+    selected_scene_count = len(selected_scene_indexes)
     updated_asset = video_asset
     for scene_index, initial_scene in enumerate(video_asset.initial_scenes):
         if scene_index not in selected_scene_indexes:
@@ -244,7 +247,15 @@ async def track_initial_scenes_object_seeds(
             min_track_mean_confidence=min_track_mean_confidence,
         )
         updated_scenes[scene_index] = updated_scene
+        tracked_scene_count += 1
         updated_asset = updated_asset.model_copy(update={"initial_scenes": updated_scenes})
+        if on_scene_tracked is not None:
+            updated_asset = await on_scene_tracked(
+                updated_asset,
+                tracked_scene_count,
+                selected_scene_count,
+            )
+            updated_scenes = list(updated_asset.initial_scenes)
 
     return updated_asset
 
