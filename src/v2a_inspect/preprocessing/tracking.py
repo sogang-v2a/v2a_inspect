@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from v2a_inspect.client import SAM3Client
 from v2a_inspect.client.endpoints.base import ClientError
-from v2a_inspect.client.models import Sam3Track, Sam3TrackPoint
+from v2a_inspect.client.models import (
+    Sam3Mask,
+    Sam3Seed,
+    Sam3SegmentFrameItem,
+    Sam3Track,
+    Sam3TrackPoint,
+)
 from v2a_inspect.media_utils import resize_coco_rle
 from v2a_inspect.models import (
     InitialScene,
@@ -19,6 +26,22 @@ from v2a_inspect.models import (
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _SegmentationSeedEntry:
+    scene_index: int
+    request_index: int
+    frame_index: int
+    object_seed: ObjectSeed
+    tracking_prompt: str
+
+
+@dataclass(frozen=True)
+class _DetectedSeedEntry:
+    object_seed: ObjectSeed
+    tracking_prompt: str
+    seed: Sam3Seed
 
 
 async def track_initial_scene_object_seeds(
@@ -42,57 +65,125 @@ async def track_initial_scene_object_seeds(
     if initial_scene.initial_analysis is None:
         return initial_scene
 
-    scene_tracks: list[SceneTrack] = []
+    detected_entries_by_scene = await _detect_object_seed_bboxes(
+        [initial_scene],
+        video_id=video_id,
+        sam_client=sam_client,
+        selected_scene_indexes={0},
+        score_threshold=score_threshold,
+        batch_size=32,
+        seed_frame_index=seed_frame_index,
+    )
+    return await _track_initial_scene_detected_seed_entries(
+        initial_scene,
+        video_id=video_id,
+        sam_client=sam_client,
+        detected_seed_entries=detected_entries_by_scene.get(0, []),
+        tracking_width=tracking_width,
+        tracking_height=tracking_height,
+        output_width=output_width,
+        output_height=output_height,
+        min_points=min_points,
+        score_threshold=score_threshold,
+        high_confidence_threshold=high_confidence_threshold,
+        match_threshold=match_threshold,
+        min_track_mean_confidence=min_track_mean_confidence,
+    )
 
-    for object_seed in initial_scene.initial_analysis.object_seeds:
-        tracking_prompt = _tracking_prompt(object_seed)
-        resolved_seed_frame_index = _seed_frame_index(
-            initial_scene,
-            object_seed=object_seed,
-            seed_frame_index=seed_frame_index,
+
+def _best_mask(masks: list[Sam3Mask]) -> Sam3Mask | None:
+    if not masks:
+        return None
+    return max(masks, key=lambda mask: mask.confidence)
+
+
+async def _track_initial_scene_detected_seed_entries(
+    initial_scene: InitialScene,
+    *,
+    video_id: str,
+    sam_client: SAM3Client,
+    detected_seed_entries: list[_DetectedSeedEntry],
+    tracking_width: int,
+    tracking_height: int,
+    output_width: int,
+    output_height: int,
+    min_points: int,
+    score_threshold: float,
+    high_confidence_threshold: float,
+    match_threshold: float,
+    min_track_mean_confidence: float,
+) -> InitialScene:
+    scene_tracks: list[SceneTrack] = []
+    if not detected_seed_entries:
+        return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
+
+    try:
+        response = await sam_client.track_video(
+            video_id,
+            seeds=[entry.seed for entry in detected_seed_entries],
+            start_frame_index=initial_scene.start_frame_index,
+            end_frame_index=initial_scene.end_frame_index,
+            score_threshold=score_threshold,
+            min_points=min_points,
+            high_confidence_threshold=high_confidence_threshold,
+            match_threshold=match_threshold,
         )
-        seed = SAM3Client.seed_from_prompt(
-            tracking_prompt,
-            frame_index=resolved_seed_frame_index,
+    except ClientError as exc:
+        if not _is_seed_tracking_failure(exc):
+            raise
+        logger.warning(
+            "Skipping scene %s bbox tracking after SAM3 failure: %s",
+            initial_scene.initial_scene_id,
+            exc,
         )
-        try:
-            response = await sam_client.track_video(
-                video_id,
-                seeds=[seed],
-                start_frame_index=initial_scene.start_frame_index,
-                end_frame_index=initial_scene.end_frame_index,
-                score_threshold=score_threshold,
-                min_points=min_points,
-                high_confidence_threshold=high_confidence_threshold,
-                match_threshold=match_threshold,
-            )
-        except ClientError as exc:
-            if not _is_seed_tracking_failure(exc):
-                raise
+        return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
+
+    _append_scene_tracks_from_response(
+        scene_tracks,
+        response.tracks,
+        seed_entries=detected_seed_entries,
+        tracking_width=tracking_width,
+        tracking_height=tracking_height,
+        output_width=output_width,
+        output_height=output_height,
+        min_track_mean_confidence=min_track_mean_confidence,
+    )
+    return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
+
+
+def _append_scene_tracks_from_response(
+    scene_tracks: list[SceneTrack],
+    sam_tracks: list[Sam3Track],
+    *,
+    seed_entries: list[_DetectedSeedEntry],
+    tracking_width: int,
+    tracking_height: int,
+    output_width: int,
+    output_height: int,
+    min_track_mean_confidence: float,
+) -> None:
+    for sam_track in sam_tracks:
+        if sam_track.seed_index < 0 or sam_track.seed_index >= len(seed_entries):
             logger.warning(
-                "Skipping object seed %s in scene %s: %s",
-                object_seed.label,
-                initial_scene.initial_scene_id,
-                exc,
+                "Skipping SAM3 track with seed_index %s outside request seed range",
+                sam_track.seed_index,
             )
             continue
-        for sam_track in response.tracks:
-            scene_track = _scene_track_from_sam_track(
-                sam_track,
-                object_seed=object_seed,
-                tracking_prompt=tracking_prompt,
-                tracking_width=tracking_width,
-                tracking_height=tracking_height,
-                output_width=output_width,
-                output_height=output_height,
-            )
-            if scene_track is None:
-                continue
-            if scene_track.confidence < min_track_mean_confidence:
-                continue
-            scene_tracks.append(scene_track)
-
-    return initial_scene.model_copy(update={"scene_tracks": scene_tracks})
+        seed_entry = seed_entries[sam_track.seed_index]
+        scene_track = _scene_track_from_sam_track(
+            sam_track,
+            object_seed=seed_entry.object_seed,
+            tracking_prompt=seed_entry.tracking_prompt,
+            tracking_width=tracking_width,
+            tracking_height=tracking_height,
+            output_width=output_width,
+            output_height=output_height,
+        )
+        if scene_track is None:
+            continue
+        if scene_track.confidence < min_track_mean_confidence:
+            continue
+        scene_tracks.append(scene_track)
 
 
 async def track_initial_scenes_object_seeds(
@@ -106,6 +197,7 @@ async def track_initial_scenes_object_seeds(
     high_confidence_threshold: float = 0.45,
     match_threshold: float = 0.45,
     min_track_mean_confidence: float = 0.0,
+    segmentation_batch_size: int = 32,
 ) -> VideoAsset:
     """Track object seeds for explicitly selected scenes and return a new asset.
 
@@ -121,29 +213,128 @@ async def track_initial_scenes_object_seeds(
         tracking_width = video_asset.sam3_tracking_width
         tracking_height = video_asset.sam3_tracking_height
 
-    updated_scenes: list[InitialScene] = []
+    detected_entries_by_scene = await _detect_object_seed_bboxes(
+        video_asset.initial_scenes,
+        video_id=video_id,
+        sam_client=sam_client,
+        selected_scene_indexes=selected_scene_indexes,
+        score_threshold=score_threshold,
+        batch_size=segmentation_batch_size,
+    )
+
+    updated_scenes = list(video_asset.initial_scenes)
+    updated_asset = video_asset
     for scene_index, initial_scene in enumerate(video_asset.initial_scenes):
         if scene_index not in selected_scene_indexes:
-            updated_scenes.append(initial_scene)
             continue
 
-        updated_scene = await track_initial_scene_object_seeds(
+        updated_scene = await _track_initial_scene_detected_seed_entries(
             initial_scene,
             video_id=video_id,
             sam_client=sam_client,
+            detected_seed_entries=detected_entries_by_scene.get(scene_index, []),
             tracking_width=tracking_width,
             tracking_height=tracking_height,
             output_width=video_asset.width,
             output_height=video_asset.height,
-            score_threshold=score_threshold,
             min_points=min_points,
+            score_threshold=score_threshold,
             high_confidence_threshold=high_confidence_threshold,
             match_threshold=match_threshold,
             min_track_mean_confidence=min_track_mean_confidence,
         )
-        updated_scenes.append(updated_scene)
+        updated_scenes[scene_index] = updated_scene
+        updated_asset = updated_asset.model_copy(update={"initial_scenes": updated_scenes})
 
-    return video_asset.model_copy(update={"initial_scenes": updated_scenes})
+    return updated_asset
+
+
+async def _detect_object_seed_bboxes(
+    initial_scenes: list[InitialScene],
+    *,
+    video_id: str,
+    sam_client: SAM3Client,
+    selected_scene_indexes: set[int],
+    score_threshold: float,
+    batch_size: int,
+    seed_frame_index: int | None = None,
+) -> dict[int, list[_DetectedSeedEntry]]:
+    entries: list[_SegmentationSeedEntry] = []
+    for scene_index, initial_scene in enumerate(initial_scenes):
+        if scene_index not in selected_scene_indexes:
+            continue
+        if initial_scene.initial_analysis is None:
+            continue
+        for object_seed in initial_scene.initial_analysis.object_seeds:
+            entries.append(
+                _SegmentationSeedEntry(
+                    scene_index=scene_index,
+                    request_index=len(entries),
+                    frame_index=_seed_frame_index(
+                        initial_scene,
+                        object_seed=object_seed,
+                        seed_frame_index=seed_frame_index,
+                    ),
+                    object_seed=object_seed,
+                    tracking_prompt=_tracking_prompt(object_seed),
+                )
+            )
+
+    if not entries:
+        return {}
+
+    response = await sam_client.segment_frames(
+        video_id=video_id,
+        items=[
+            Sam3SegmentFrameItem(
+                request_index=entry.request_index,
+                frame_index=entry.frame_index,
+                seed=SAM3Client.seed_from_prompt(entry.tracking_prompt),
+                max_masks=5,
+            )
+            for entry in entries
+        ],
+        score_threshold=score_threshold,
+        batch_size=batch_size,
+    )
+    for error in response.errors:
+        logger.warning(
+            "Skipping object seed frame segmentation request %s at frame %s: %s",
+            error.request_index,
+            error.frame_index,
+            error.message,
+        )
+
+    entry_by_request_index = {entry.request_index: entry for entry in entries}
+    detected_entries_by_scene: dict[int, list[_DetectedSeedEntry]] = {}
+    for result in response.results:
+        entry = entry_by_request_index.get(result.request_index)
+        if entry is None:
+            logger.warning(
+                "Skipping unknown SAM3 segmentation result request_index %s",
+                result.request_index,
+            )
+            continue
+        mask = _best_mask(result.masks)
+        if mask is None:
+            logger.warning(
+                "Skipping object seed %s in scene %s because SAM3 found no mask",
+                entry.object_seed.label,
+                initial_scenes[entry.scene_index].initial_scene_id,
+            )
+            continue
+        detected_entries_by_scene.setdefault(entry.scene_index, []).append(
+            _DetectedSeedEntry(
+                object_seed=entry.object_seed,
+                tracking_prompt=entry.tracking_prompt,
+                seed=SAM3Client.seed_from_bbox(
+                    mask.bbox_xyxy,
+                    frame_index=entry.frame_index,
+                ),
+            )
+        )
+
+    return detected_entries_by_scene
 
 
 def sam3_tracking_video_path(video_asset: VideoAsset) -> Path:

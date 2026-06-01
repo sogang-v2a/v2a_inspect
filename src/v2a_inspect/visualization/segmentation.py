@@ -5,8 +5,6 @@ from typing import Any
 
 from PIL import Image
 
-from v2a_inspect.client.models import Sam3SegmentImageResponse
-
 from .colors import color_for_index
 from .drawing import draw_bbox, draw_label
 from .masks import decode_coco_rle, overlay_mask
@@ -43,6 +41,6 @@ def _load_image(image: Path | Image.Image) -> Image.Image:
 
 
 def _normalize_masks(masks: Any) -> list[Any]:
-    if isinstance(masks, Sam3SegmentImageResponse):
+    if hasattr(masks, "masks"):
         return list(masks.masks)
     return list(masks)

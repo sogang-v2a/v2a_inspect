@@ -28,10 +28,7 @@ from sam3.model_builder import build_sam3_multiplex_video_predictor
 from torchvision.ops import masks_to_boxes
 
 from ..models import (
-    Sam3Mask,
     Sam3Seed,
-    Sam3SegmentImageRequest,
-    Sam3SegmentImageResponse,
     Sam3Track,
     Sam3TrackPoint,
     Sam3TrackVideoRequest,
@@ -211,94 +208,6 @@ class Sam3InferenceClient:
 
         return tracks
 
-    def segment_image(
-        self, request: Sam3SegmentImageRequest
-    ) -> Sam3SegmentImageResponse:
-        if request.video_id is not None and request.frame_index is not None:
-            video_path = self._find_video_path(request.video_id)
-            with tempfile.TemporaryDirectory() as temp_dir:
-                frame_dir = Path(temp_dir)
-                width, height = self._write_video_frame_to_directory(
-                    video_path,
-                    frame_index=request.frame_index,
-                    frame_dir=frame_dir,
-                )
-                masks = self._segment_resource(
-                    resource_path=frame_dir,
-                    frame_index=0,
-                    seeds=request.seeds,
-                    width=width,
-                    height=height,
-                    max_masks=request.max_masks,
-                    output_prob_thresh=request.score_threshold,
-                )
-            return Sam3SegmentImageResponse(masks=masks)
-
-        if request.image_path is None:
-            raise ValueError("image_path is required for image segmentation")
-
-        image_path = Path(request.image_path)
-        if not image_path.is_file():
-            raise FileNotFoundError(f"Image {image_path} not found")
-        width, height = self._read_image_size(image_path)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            frame_dir = Path(temp_dir)
-            frame_path = frame_dir / "00000.jpg"
-            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-            if image is None:
-                raise FileNotFoundError(f"Image {image_path} not found")
-            cv2.imwrite(str(frame_path), image)
-            masks = self._segment_resource(
-                resource_path=frame_dir,
-                frame_index=0,
-                seeds=request.seeds,
-                width=width,
-                height=height,
-                max_masks=request.max_masks,
-                output_prob_thresh=request.score_threshold,
-            )
-
-        return Sam3SegmentImageResponse(masks=masks)
-
-    def _segment_resource(
-        self,
-        *,
-        resource_path: Path,
-        frame_index: int,
-        seeds: list[Sam3Seed],
-        width: int,
-        height: int,
-        max_masks: int,
-        output_prob_thresh: float,
-    ) -> list[Sam3Mask]:
-        with self._lock:
-            session_id = self._start_session(resource_path)
-            try:
-                outputs = None
-                for seed_index, seed in enumerate(seeds):
-                    outputs = self._add_seed_prompt(
-                        session_id=session_id,
-                        seed=seed,
-                        seed_index=seed_index,
-                        width=width,
-                        height=height,
-                        default_frame_index=frame_index,
-                        output_prob_thresh=output_prob_thresh,
-                    )
-                if outputs is None:
-                    return []
-                masks = self._outputs_to_masks(
-                    outputs,
-                    width=width,
-                    height=height,
-                    max_masks=max_masks,
-                )
-            finally:
-                self._close_session(session_id)
-
-        return masks
-
     def _start_session(self, resource_path: Path) -> str:
         init_kwargs: dict[str, Any] = {
             "resource_path": str(resource_path),
@@ -415,7 +324,7 @@ class Sam3InferenceClient:
             tracks.append(
                 Sam3Track(
                     track_id=str(obj_id),
-                    seed_index=obj_id,
+                    seed_index=max(0, obj_id - 1),
                     points=points,
                     confidence=confidence,
                 )
@@ -440,33 +349,6 @@ class Sam3InferenceClient:
             )
         return localized_seeds
 
-    def _outputs_to_masks(
-        self,
-        outputs: dict[str, Any],
-        *,
-        width: int,
-        height: int,
-        max_masks: int,
-    ) -> list[Sam3Mask]:
-        masks = []
-        for obj_id, bbox_xyxy, confidence, mask_rle in self._iter_output_objects(
-            outputs,
-            width=width,
-            height=height,
-        ):
-            masks.append(
-                Sam3Mask(
-                    mask_id=str(obj_id),
-                    bbox_xyxy=bbox_xyxy,
-                    mask_rle=mask_rle,
-                    confidence=confidence,
-                    source_seed_index=obj_id,
-                )
-            )
-            if len(masks) >= max_masks:
-                break
-        return masks
-
     def _iter_output_objects(
         self, outputs: dict[str, Any], *, width: int, height: int
     ) -> list[tuple[int, tuple[float, float, float, float], float, str | None]]:
@@ -489,23 +371,7 @@ class Sam3InferenceClient:
                 bbox_xyxy = self._mask_to_bbox_xyxy(binary_masks[index])
 
             if binary_masks is not None:
-                mask_tensor = binary_masks[index]
-                if not isinstance(mask_tensor, torch.Tensor):
-                    mask_tensor = torch.as_tensor(np.asarray(mask_tensor))
-                mask_array = mask_tensor.detach().cpu().bool().numpy().squeeze()
-                if mask_array.ndim == 2:
-                    encoded_mask = mask_utils.encode(
-                        np.asfortranarray(mask_array.astype(np.uint8))
-                    )
-                    encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
-                    mask_rle = json.dumps(
-                        {
-                            "encoding": "coco_rle",
-                            "size": encoded_mask["size"],
-                            "counts": encoded_mask["counts"],
-                        },
-                        separators=(",", ":"),
-                    )
+                mask_rle = self._binary_mask_to_rle(binary_masks[index])
 
             if bbox_xyxy is None:
                 continue
@@ -517,6 +383,24 @@ class Sam3InferenceClient:
             objects.append((int(obj_id), bbox_xyxy, confidence, mask_rle))
 
         return objects
+
+    def _binary_mask_to_rle(self, mask: Any) -> str | None:
+        mask_tensor = mask
+        if not isinstance(mask_tensor, torch.Tensor):
+            mask_tensor = torch.as_tensor(np.asarray(mask_tensor))
+        mask_array = mask_tensor.detach().cpu().bool().numpy().squeeze()
+        if mask_array.ndim != 2:
+            return None
+        encoded_mask = mask_utils.encode(np.asfortranarray(mask_array.astype(np.uint8)))
+        encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
+        return json.dumps(
+            {
+                "encoding": "coco_rle",
+                "size": encoded_mask["size"],
+                "counts": encoded_mask["counts"],
+            },
+            separators=(",", ":"),
+        )
 
     def _find_video_path(self, video_id: str) -> Path:
         for ext in [".mp4", ".mov", ".avi", ".mkv"]:
@@ -565,28 +449,6 @@ class Sam3InferenceClient:
             raise ValueError(f"Could not read video dimensions from {video_path}")
         return width, height
 
-    def _read_image_size(self, image_path: Path) -> tuple[int, int]:
-        image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-        if image is None:
-            raise FileNotFoundError(f"Image {image_path} not found")
-        height, width = image.shape[:2]
-        return width, height
-
-    def _write_video_frame_to_directory(
-        self, video_path: Path, *, frame_index: int, frame_dir: Path
-    ) -> tuple[int, int]:
-        if frame_index < 0:
-            raise ValueError("frame_index must be greater than or equal to 0")
-        cap = self._open_video_capture(video_path)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-        ret, frame = cap.read()
-        cap.release()
-        if not ret:
-            raise ValueError(f"Could not read frame {frame_index} from {video_path}")
-        frame_path = frame_dir / "00000.jpg"
-        cv2.imwrite(str(frame_path), frame)
-        height, width = frame.shape[:2]
-        return width, height
 
     def _write_video_frame_range_to_directory(
         self,
@@ -691,7 +553,10 @@ class Sam3InferenceClient:
             return value.tolist()
         if value is None:
             return []
-        return list(value)
+        try:
+            return list(value)
+        except TypeError:
+            return [value]
 
 
 def _resource_description(resource_path: Path) -> str:
