@@ -326,9 +326,7 @@ def _ensure_bpe_vocab() -> Path:
         return bpe_path
 
     packaged_path = (
-        Path(sam3.__file__).resolve().parent
-        / "assets"
-        / "bpe_simple_vocab_16e6.txt.gz"
+        Path(sam3.__file__).resolve().parent / "assets" / "bpe_simple_vocab_16e6.txt.gz"
     )
     if packaged_path.exists():
         return packaged_path
