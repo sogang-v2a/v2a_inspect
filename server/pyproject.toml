@@ -29,6 +29,7 @@ dependencies = [
   "pycocotools>=2.0.11",
   "psutil>=7.2.2",
   "flash-attn-3",
+  "accelerate>=1.13.0",
 ]
 
 [project.scripts]
