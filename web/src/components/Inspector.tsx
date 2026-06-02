@@ -35,6 +35,7 @@ export default function Inspector({
   const [rows, setRows] = useState<CurrentFrameRows | null>(null);
   const [activeTab, setActiveTab] = useState<InspectorTab>("scene");
   const sceneRow = activeSceneRow(timelineRows, frame, video?.fps ?? 30);
+  const soundRows = activeSoundEventRows(timelineRows, frame, video?.fps ?? 30);
 
   useEffect(() => {
     if (!video) {
@@ -84,7 +85,7 @@ export default function Inspector({
               <VisualEventDetails rows={rows?.visual_events ?? []} />
             ) : null}
             {activeTab === "sound" ? (
-              <SoundEventDetails rows={rows?.sound_events ?? []} />
+              <SoundEventDetails rows={soundRows.length ? soundRows : rows?.sound_events ?? []} />
             ) : null}
           </div>
         </>
@@ -93,6 +94,36 @@ export default function Inspector({
       )}
     </aside>
   );
+}
+
+function activeSoundEventRows(
+  rows: TimelineRow[],
+  frame: number,
+  fps: number,
+): SoundEventFrameRow[] {
+  return rows
+    .filter(
+      (row) =>
+        row.sound_event_id &&
+        row.start_frame <= frame &&
+        frame < row.end_frame,
+    )
+    .map((row) => {
+      const match = /^\[(?<trackType>[^\]]+)\] (?<trackLabel>.*)$/.exec(row.lane);
+      return {
+        sound_event_id: row.sound_event_id,
+        sound_track_id: row.sound_track_id ?? "",
+        track_label: match?.groups?.trackLabel || row.lane,
+        track_type: match?.groups?.trackType || row.kind,
+        source: null,
+        start_frame: row.start_frame,
+        end_frame: row.end_frame,
+        duration_sec: Number(((row.end_frame - row.start_frame) / fps).toFixed(2)),
+        generation_mode: "unknown",
+        description: row.label,
+        notes: null,
+      };
+    });
 }
 
 function SceneDetails({ row }: { row: SceneFrameRow | null }) {

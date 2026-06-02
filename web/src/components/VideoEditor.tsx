@@ -1,9 +1,16 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Inspector from "./Inspector";
-import Timeline from "./Timeline";
+import Timeline, { type CreateSoundTrackInput } from "./Timeline";
 import TrackingOverlay from "./TrackingOverlay";
-import { fetchTrackingWindow } from "../api";
-import type { AssetResponse, TrackWindowResponse } from "../types";
+import { fetchAssetForExport, fetchTrackingWindow } from "../api";
+import type {
+  AssetResponse,
+  SoundEvent,
+  SoundTrack,
+  TimelineRow,
+  TrackWindowResponse,
+  VideoAsset,
+} from "../types";
 
 interface VideoEditorProps {
   state: AssetResponse;
@@ -25,26 +32,36 @@ export default function VideoEditor({
   const [showExport, setShowExport] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackWindow, setTrackWindow] = useState<TrackWindowResponse | null>(null);
+  const [timelineRows, setTimelineRows] = useState<TimelineRow[]>(state.timeline_rows);
+  const [baseAsset, setBaseAsset] = useState<VideoAsset | null>(null);
+  const [draftAsset, setDraftAsset] = useState<VideoAsset | null>(null);
+  const [hasTimelineEdits, setHasTimelineEdits] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const trackWindowRequestRef = useRef<string | null>(null);
   const video = state.video;
   const fps = video?.fps || 30;
-  const maxFrame = Math.max(0, (video?.frame_count ?? 1) - 1);
+  const timelineFrameCount = Math.max(video?.frame_count ?? 0, inferFrameCount(timelineRows));
+  const maxFrame = Math.max(0, timelineFrameCount - 1);
   const selectedFrame = clamp(frame, 0, maxFrame);
   const timeSec = selectedFrame / fps;
+  const soundTracks = useMemo(
+    () => draftAsset?.sound_timeline?.sound_tracks ?? [],
+    [draftAsset],
+  );
   const counts = useMemo(() => {
-    const scenes = countRows(state.timeline_rows, "scene");
-    const tracks = countRows(state.timeline_rows, "track");
-    const visualEvents = state.timeline_rows.filter((row) =>
+    const scenes = countRows(timelineRows, "scene");
+    const tracks = countRows(timelineRows, "track");
+    const visualEvents = timelineRows.filter((row) =>
       row.lane.startsWith("visual: "),
     ).length;
-    const soundEvents = state.timeline_rows.filter(isSoundRow).length;
+    const soundEvents = timelineRows.filter(isSoundRow).length;
     const soundTracks = new Set(
-      state.timeline_rows.filter(isSoundRow).map((row) => row.lane),
+      timelineRows.filter(isSoundRow).map((row) => row.lane),
     ).size;
     return { scenes, tracks, visualEvents, soundTracks, soundEvents };
-  }, [state.timeline_rows]);
+  }, [timelineRows]);
   const selectFrame = useCallback(
     (nextFrame: number) => {
       const next = clamp(nextFrame, 0, maxFrame);
@@ -56,6 +73,30 @@ export default function VideoEditor({
     },
     [fps, maxFrame],
   );
+
+  useEffect(() => {
+    setTimelineRows(state.timeline_rows);
+    setHasTimelineEdits(false);
+    setExportStatus(null);
+    let alive = true;
+    void fetchAssetForExport()
+      .then((asset) => {
+        if (!alive) {
+          return;
+        }
+        setBaseAsset(asset);
+        setDraftAsset(asset ? cloneAsset(asset) : null);
+      })
+      .catch(() => {
+        if (alive) {
+          setBaseAsset(null);
+          setDraftAsset(null);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [state.asset_version]);
 
   useEffect(() => {
     if (frame !== selectedFrame) {
@@ -131,6 +172,176 @@ export default function VideoEditor({
       return;
     }
     video.pause();
+  }
+
+  const editSoundEventTimestamp = useCallback(
+    (soundEventId: string, startFrame: number, endFrame: number) => {
+      const nextStart = clamp(startFrame, 0, Math.max(0, maxFrame));
+      const nextEnd = clamp(endFrame, nextStart + 1, timelineFrameCount || 1);
+      setTimelineRows((currentRows) =>
+        currentRows.map((row) => {
+          if (row.sound_event_id !== soundEventId) {
+            return row;
+          }
+          return {
+            ...row,
+            start_frame: nextStart,
+            end_frame: nextEnd,
+          };
+        }),
+      );
+      setDraftAsset((currentAsset) =>
+        currentAsset
+          ? updateSoundEventInAsset(currentAsset, soundEventId, (event) => ({
+              ...event,
+              start_frame_index: nextStart,
+              end_frame_index: nextEnd,
+            }))
+          : currentAsset,
+      );
+      setHasTimelineEdits(true);
+      setExportStatus("Timestamp edits are ready to export.");
+    },
+    [maxFrame, timelineFrameCount],
+  );
+
+  function resetTimestampEdits() {
+    setTimelineRows(state.timeline_rows);
+    setDraftAsset(baseAsset ? cloneAsset(baseAsset) : null);
+    setHasTimelineEdits(false);
+    setExportStatus("Local timeline edits reset.");
+  }
+
+  function createSoundTrack(input: CreateSoundTrackInput) {
+    const track: SoundTrack = {
+      sound_track_id: makeId(),
+      track_type: input.trackType,
+      label: input.label,
+      canonical_key: input.canonicalKey ?? normalizeCanonicalKey(input.label),
+      sound_source_id: null,
+      generation_mode: input.generationMode,
+      notes: null,
+    };
+    setDraftAsset((currentAsset) => {
+      if (!currentAsset) {
+        return currentAsset;
+      }
+      const nextAsset = ensureTimeline(cloneAsset(currentAsset));
+      nextAsset.sound_timeline?.sound_tracks.push(track);
+      return nextAsset;
+    });
+    setHasTimelineEdits(true);
+    setExportStatus(`Created sound track "${track.label}".`);
+  }
+
+  function deleteSoundTrack(soundTrackId: string) {
+    const track = soundTracks.find((item) => item.sound_track_id === soundTrackId);
+    const eventCount =
+      draftAsset?.sound_timeline?.sound_events.filter(
+        (event) => event.sound_track_id === soundTrackId,
+      ).length ?? 0;
+    if (
+      !window.confirm(
+        `Delete "${track?.label ?? "sound track"}" and ${eventCount} events?`,
+      )
+    ) {
+      return;
+    }
+    setDraftAsset((currentAsset) => {
+      if (!currentAsset?.sound_timeline) {
+        return currentAsset;
+      }
+      const nextAsset = cloneAsset(currentAsset);
+      const timeline = nextAsset.sound_timeline;
+      if (!timeline) {
+        return nextAsset;
+      }
+      timeline.sound_tracks = timeline.sound_tracks.filter(
+        (item) => item.sound_track_id !== soundTrackId,
+      );
+      timeline.sound_events = timeline.sound_events.filter(
+        (event) => event.sound_track_id !== soundTrackId,
+      );
+      return nextAsset;
+    });
+    setTimelineRows((currentRows) =>
+      currentRows.filter((row) => row.sound_track_id !== soundTrackId),
+    );
+    setHasTimelineEdits(true);
+    setExportStatus(`Deleted sound track "${track?.label ?? soundTrackId}".`);
+  }
+
+  function createSoundEvent(soundTrackId: string, startFrame: number) {
+    const track = soundTracks.find((item) => item.sound_track_id === soundTrackId);
+    if (!track) {
+      return;
+    }
+    const nextStart = clamp(startFrame, 0, Math.max(0, maxFrame));
+    const nextEnd = clamp(nextStart + 10, nextStart + 1, timelineFrameCount || 1);
+    const event: SoundEvent = {
+      sound_event_id: makeId(),
+      sound_track_id: soundTrackId,
+      start_frame_index: nextStart,
+      end_frame_index: nextEnd,
+      description: `New ${track.label} event`,
+      notes: null,
+    };
+    setDraftAsset((currentAsset) => {
+      if (!currentAsset) {
+        return currentAsset;
+      }
+      const nextAsset = ensureTimeline(cloneAsset(currentAsset));
+      nextAsset.sound_timeline?.sound_events.push(event);
+      return nextAsset;
+    });
+    setTimelineRows((currentRows) => [
+      ...currentRows,
+      timelineRowFromSoundEvent(event, track),
+    ]);
+    setHasTimelineEdits(true);
+    setExportStatus(`Created sound event on "${track.label}".`);
+  }
+
+  function deleteSoundEvent(soundEventId: string) {
+    setDraftAsset((currentAsset) => {
+      if (!currentAsset?.sound_timeline) {
+        return currentAsset;
+      }
+      const nextAsset = cloneAsset(currentAsset);
+      const timeline = nextAsset.sound_timeline;
+      if (!timeline) {
+        return nextAsset;
+      }
+      timeline.sound_events = timeline.sound_events.filter(
+        (event) => event.sound_event_id !== soundEventId,
+      );
+      return nextAsset;
+    });
+    setTimelineRows((currentRows) =>
+      currentRows.filter((row) => row.sound_event_id !== soundEventId),
+    );
+    setHasTimelineEdits(true);
+    setExportStatus("Deleted sound event.");
+  }
+
+  async function exportEditedAsset() {
+    try {
+      const asset = draftAsset ?? (await fetchAssetForExport());
+      if (!asset) {
+        setExportStatus("No VideoAsset JSON is available to export.");
+        return;
+      }
+      const editedAsset = applyTimelineEdits(asset, timelineRows);
+      downloadJson(editedAsset, "video-asset-edited.json");
+      setHasTimelineEdits(false);
+      setExportStatus("Exported video-asset-edited.json.");
+    } catch (error) {
+      setExportStatus(
+        error instanceof Error
+          ? `Export failed: ${error.message}`
+          : `Export failed: ${String(error)}`,
+      );
+    }
   }
 
   return (
@@ -238,19 +449,25 @@ export default function VideoEditor({
               Export
             </button>
             {showExport ? (
-              video ? (
-                <a
+              <>
+                <button
                   className="download-link"
-                  href={`/api/asset/export?asset_version=${state.asset_version}`}
-                  download="video-asset.json"
+                  disabled={!draftAsset}
+                  onClick={exportEditedAsset}
+                  type="button"
                 >
-                  Download VideoAsset JSON
-                </a>
-              ) : (
-                <button className="download-link" disabled type="button">
-                  Download VideoAsset JSON
+                  Download edited VideoAsset JSON
                 </button>
-              )
+                <button
+                  className="download-link secondary"
+                  disabled={!hasTimelineEdits}
+                  onClick={resetTimestampEdits}
+                  type="button"
+                >
+                  Reset timestamp edits
+                </button>
+                {exportStatus ? <p className="muted">{exportStatus}</p> : null}
+              </>
             ) : null}
           </section>
           <dl className="asset-stats">
@@ -342,14 +559,20 @@ export default function VideoEditor({
             <Inspector
               video={video}
               frame={selectedFrame}
-              timelineRows={state.timeline_rows}
+              timelineRows={timelineRows}
               version={state.version}
             />
           </div>
           <Timeline
-            rows={state.timeline_rows}
+            rows={timelineRows}
+            soundTracks={soundTracks}
             frame={selectedFrame}
-            frameCount={video?.frame_count ?? 0}
+            frameCount={timelineFrameCount}
+            onCreateSoundTrack={createSoundTrack}
+            onDeleteSoundTrack={deleteSoundTrack}
+            onCreateSoundEvent={createSoundEvent}
+            onDeleteSoundEvent={deleteSoundEvent}
+            onEditSoundEvent={editSoundEventTimestamp}
             onSelectFrame={selectFrame}
           />
         </section>
@@ -372,4 +595,112 @@ function isSoundRow(row: AssetResponse["timeline_rows"][number]): boolean {
     row.kind !== "track" &&
     !row.lane.startsWith("visual: ")
   );
+}
+
+function inferFrameCount(rows: TimelineRow[]): number {
+  return rows.reduce((maxEnd, row) => Math.max(maxEnd, row.end_frame), 0);
+}
+
+function applyTimelineEdits(asset: VideoAsset, rows: TimelineRow[]): VideoAsset {
+  const editedAsset = cloneAsset(asset);
+  const editedRows = new Map(
+    rows
+      .filter((row) => row.sound_event_id)
+      .map((row) => [row.sound_event_id, row]),
+  );
+  const timeline = editedAsset.sound_timeline;
+  if (!timeline) {
+    return editedAsset;
+  }
+  timeline.sound_events = timeline.sound_events.map((event) => {
+    const row = editedRows.get(event.sound_event_id);
+    if (!row) {
+      return event;
+    }
+    return {
+      ...event,
+      start_frame_index: row.start_frame,
+      end_frame_index: row.end_frame,
+    };
+  });
+  return editedAsset;
+}
+
+function ensureTimeline(asset: VideoAsset): VideoAsset {
+  if (asset.sound_timeline) {
+    return asset;
+  }
+  asset.sound_timeline = {
+    sound_sources: [],
+    sound_tracks: [],
+    sound_events: [],
+    notes: null,
+  };
+  return asset;
+}
+
+function updateSoundEventInAsset(
+  asset: VideoAsset,
+  soundEventId: string,
+  update: (event: SoundEvent) => SoundEvent,
+): VideoAsset {
+  const nextAsset = cloneAsset(asset);
+  const timeline = nextAsset.sound_timeline;
+  if (!timeline) {
+    return nextAsset;
+  }
+  timeline.sound_events = timeline.sound_events.map((event) =>
+    event.sound_event_id === soundEventId ? update(event) : event,
+  );
+  return nextAsset;
+}
+
+function timelineRowFromSoundEvent(
+  event: SoundEvent,
+  track: SoundTrack,
+): TimelineRow {
+  return {
+    lane: soundLane(track),
+    label: event.description,
+    start_frame: event.start_frame_index,
+    end_frame: event.end_frame_index,
+    kind: track.track_type,
+    sound_event_id: event.sound_event_id,
+    sound_track_id: event.sound_track_id,
+  };
+}
+
+function soundLane(track: SoundTrack): string {
+  return `[${track.track_type}] ${track.label}`;
+}
+
+function normalizeCanonicalKey(value: string): string | null {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || null;
+}
+
+function makeId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function cloneAsset(asset: VideoAsset): VideoAsset {
+  return typeof structuredClone === "function"
+    ? structuredClone(asset)
+    : JSON.parse(JSON.stringify(asset));
+}
+
+function downloadJson(value: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(value, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

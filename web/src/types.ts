@@ -11,6 +11,10 @@ export interface AssetResponse {
   timeline_rows: TimelineRow[];
 }
 
+export interface FullAssetResponse extends AssetResponse {
+  asset: VideoAsset | null;
+}
+
 export interface AssetUpdateEvent {
   status: RunStatus;
   stage: string | null;
@@ -101,25 +105,37 @@ export interface VisualEvent {
 }
 
 export interface SoundTimeline {
-  sound_sources: unknown[];
+  sound_sources: SoundSource[];
   sound_tracks: SoundTrack[];
   sound_events: SoundEvent[];
+  notes?: string | null;
+}
+
+export interface SoundSource {
+  sound_source_id: string;
+  source_type: string;
+  label: string;
+  visual_object_id?: string | null;
+  notes?: string | null;
 }
 
 export interface SoundTrack {
   sound_track_id: string;
   track_type: string;
   label: string;
+  canonical_key?: string | null;
   sound_source_id?: string | null;
   generation_mode: string;
   notes?: string | null;
 }
 
 export interface SoundEvent {
+  sound_event_id: string;
   sound_track_id: string;
   start_frame_index: number;
   end_frame_index: number;
   description: string;
+  notes?: string | null;
 }
 
 export interface TimelineRow {
@@ -128,6 +144,8 @@ export interface TimelineRow {
   start_frame: number;
   end_frame: number;
   kind: string;
+  sound_event_id?: string;
+  sound_track_id?: string;
 }
 
 export interface CurrentFrameRows {
@@ -166,6 +184,7 @@ export interface VisualEventFrameRow {
 }
 
 export interface SoundEventFrameRow {
+  sound_event_id?: string;
   sound_track_id: string;
   track_label: string;
   track_type: string;

@@ -1,23 +1,63 @@
-import type { AssetResponse, CurrentFrameRows, TrackWindowResponse } from "./types";
+import { mockAssetSummary, mockCurrentFrameRows, mockFullAsset } from "./mockAsset";
+import type {
+  AssetResponse,
+  CurrentFrameRows,
+  FullAssetResponse,
+  TrackWindowResponse,
+  VideoAsset,
+} from "./types";
 
 export async function fetchAssetSummary(): Promise<AssetResponse> {
-  const response = await fetch("/api/asset-summary");
-  if (!response.ok) {
-    throw new Error(`Failed to fetch asset summary: ${response.status}`);
+  try {
+    const response = await fetch("/api/asset-summary");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch asset summary: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      return mockAssetSummary;
+    }
+    throw error;
   }
-  return response.json();
+}
+
+export async function fetchAssetForExport(): Promise<VideoAsset | null> {
+  try {
+    const response = await fetch("/api/asset");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch asset: ${response.status}`);
+    }
+    const payload = (await response.json()) as FullAssetResponse;
+    return payload.asset;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      return cloneAsset(mockFullAsset.asset);
+    }
+    throw error;
+  }
 }
 
 export async function fetchCurrentFrame(
   frame: number,
   signal?: AbortSignal,
 ): Promise<CurrentFrameRows | null> {
-  const response = await fetch(`/api/rows/current-frame?frame=${frame}`, { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch frame rows: ${response.status}`);
+  try {
+    const response = await fetch(`/api/rows/current-frame?frame=${frame}`, { signal });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch frame rows: ${response.status}`);
+    }
+    const payload = await response.json();
+    return payload.rows;
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+    if (import.meta.env.DEV) {
+      return mockCurrentFrameRows(frame);
+    }
+    throw error;
   }
-  const payload = await response.json();
-  return payload.rows;
 }
 
 export async function fetchTrackingWindow(
@@ -28,11 +68,23 @@ export async function fetchTrackingWindow(
     start_frame: String(startFrame),
     end_frame: String(endFrame),
   });
-  const response = await fetch(`/api/tracks/window?${params.toString()}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch tracking window: ${response.status}`);
+  try {
+    const response = await fetch(`/api/tracks/window?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tracking window: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      return {
+        version: mockAssetSummary.version,
+        start_frame: startFrame,
+        end_frame: endFrame,
+        tracks: [],
+      };
+    }
+    throw error;
   }
-  return response.json();
 }
 
 export async function startRun(form: HTMLFormElement): Promise<void> {
@@ -67,4 +119,13 @@ export async function resetSoundTimeline(): Promise<void> {
     const message = await response.text();
     throw new Error(message || `Failed to reset soundtrack: ${response.status}`);
   }
+}
+
+function cloneAsset(asset: VideoAsset | null): VideoAsset | null {
+  if (asset === null) {
+    return null;
+  }
+  return typeof structuredClone === "function"
+    ? structuredClone(asset)
+    : JSON.parse(JSON.stringify(asset));
 }
