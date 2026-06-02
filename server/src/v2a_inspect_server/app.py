@@ -11,17 +11,14 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from v2a_inspect_server.models import (
     DinoV2EmbedImagesRequest,
     LabelScoreRequest,
-    Sam3SegmentFramesRequest,
     Sam3TrackVideoRequest,
 )
-from v2a_inspect_server.inference.sam3_image import Sam3ImageInferenceClient
 from v2a_inspect_server.inference.sam3 import Sam3InferenceClient
 from v2a_inspect_server.inference.embed import DinoV2InferenceClient
 from v2a_inspect_server.inference.score import Siglip2InferenceClient
 from v2a_inspect_server.settings import settings
 
 sam3_client: Sam3InferenceClient | None = None
-sam3_image_client: Sam3ImageInferenceClient | None = None
 embed_client: DinoV2InferenceClient | None = None
 score_client: Siglip2InferenceClient | None = None
 logger = logging.getLogger("uvicorn.error")
@@ -37,19 +34,16 @@ def _exception_detail(error: Exception) -> dict[str, str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global sam3_client, sam3_image_client, embed_client, score_client
+    global sam3_client, embed_client, score_client
     # Initialize the clients on startup
     sam3_client = Sam3InferenceClient()
-    sam3_image_client = Sam3ImageInferenceClient()
     embed_client = DinoV2InferenceClient()
     score_client = Siglip2InferenceClient()
     yield
     # Cleanup on shutdown
     if sam3_client is not None:
         sam3_client.close()
-    if sam3_image_client is not None:
-        sam3_image_client.close()
-    sam3_client = sam3_image_client = embed_client = score_client = None
+    sam3_client = embed_client = score_client = None
 
 
 app = FastAPI(title="v2a-inspect-server", lifespan=lifespan)
@@ -96,20 +90,6 @@ async def track_video_sam3(request: Sam3TrackVideoRequest):
         raise HTTPException(status_code=404, detail=_exception_detail(e))
     except Exception as e:
         logger.exception("SAM3 track-video failed")
-        raise HTTPException(status_code=500, detail=_exception_detail(e))
-
-
-@app.post("/infer/sam3/segment-frames")
-async def segment_frames_sam3(request: Sam3SegmentFramesRequest):
-    if sam3_image_client is None:
-        raise HTTPException(status_code=503, detail="SAM3 image client not initialized")
-    try:
-        return sam3_image_client.segment_frames(request)
-    except FileNotFoundError as e:
-        logger.exception("SAM3 segment-frames file not found")
-        raise HTTPException(status_code=404, detail=_exception_detail(e))
-    except Exception as e:
-        logger.exception("SAM3 segment-frames failed")
         raise HTTPException(status_code=500, detail=_exception_detail(e))
 
 

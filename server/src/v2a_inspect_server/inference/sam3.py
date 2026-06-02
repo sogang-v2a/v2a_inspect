@@ -1,15 +1,28 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-import tempfile
+import json
 import threading
 import time
-import uuid
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import cv2
+import numpy as np
+from PIL import Image
+from pycocotools import mask as mask_utils
+import torch
+from transformers import Sam3VideoConfig, Sam3VideoModel, Sam3VideoProcessor
+
+from ..models import (
+    Sam3TextPrompt,
+    Sam3Track,
+    Sam3TrackPoint,
+    Sam3TrackVideoRequest,
+    Sam3TrackVideoResponse,
+)
 from ..settings import settings
 
 if settings.opencv_video_backend.lower() == "ffmpeg":
@@ -20,396 +33,246 @@ if settings.opencv_ffmpeg_capture_options:
         settings.opencv_ffmpeg_capture_options,
     )
 
-import cv2
-import numpy as np
-from pycocotools import mask as mask_utils
-import torch
-from sam3.model_builder import build_sam3_multiplex_video_predictor
-from torchvision.ops import masks_to_boxes
-
-from ..models import (
-    Sam3Seed,
-    Sam3Track,
-    Sam3TrackPoint,
-    Sam3TrackVideoRequest,
-    Sam3TrackVideoResponse,
-)
-
-
 logger = logging.getLogger("uvicorn.error")
 
 
 class Sam3InferenceClient:
     def __init__(self) -> None:
-        self.predictor = build_sam3_multiplex_video_predictor(
-            max_num_objects=settings.sam31_max_num_objects,
-            use_fa3=settings.sam31_use_fa3,
-            use_rope_real=settings.sam31_use_rope_real,
-            compile=settings.sam31_compile,
-            warm_up=settings.sam31_warm_up,
-        )
         self._lock = threading.Lock()
+        self.attention_implementation = ""
+        self.model = self._load_model()
+        self.processor = Sam3VideoProcessor.from_pretrained(
+            settings.sam3_model_id,
+            size={
+                "height": settings.sam3_image_size,
+                "width": settings.sam3_image_size,
+            },
+        )
+        self.device = _model_device(self.model)
+        self.dtype = _torch_dtype(settings.sam3_dtype)
+        logger.info(
+            "Loaded HF SAM3 video model model_id=%s image_size=%s dtype=%s attention=%s device=%s",
+            settings.sam3_model_id,
+            settings.sam3_image_size,
+            settings.sam3_dtype,
+            self.attention_implementation,
+            self.device,
+        )
 
     def close(self) -> None:
-        shutdown = getattr(self.predictor, "shutdown", None)
-        if shutdown is not None:
-            shutdown()
+        del self.model
+        del self.processor
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def track_video(self, request: Sam3TrackVideoRequest) -> Sam3TrackVideoResponse:
         request_started_at = time.perf_counter()
+        if not request.prompts:
+            return Sam3TrackVideoResponse(tracks=[])
+
         video_path = self._find_video_path(request.video_id)
+        frames = self._read_video_frame_range(
+            video_path,
+            start_frame_index=request.start_frame_index,
+            end_frame_index=request.end_frame_index,
+        )
+        logger.info(
+            "SAM3 loaded video range video_id=%s range=[%s,%s) frames=%s",
+            request.video_id,
+            request.start_frame_index,
+            request.end_frame_index,
+            len(frames),
+        )
 
-        if (
-            request.start_frame_index is not None
-            and request.end_frame_index is not None
-        ):
-            with tempfile.TemporaryDirectory() as temp_dir:
-                frame_dir = Path(temp_dir)
-                write_started_at = time.perf_counter()
-                frame_count, width, height = self._write_video_frame_range_to_directory(
-                    video_path,
-                    frame_dir=frame_dir,
-                    start_frame_index=request.start_frame_index,
-                    end_frame_index=request.end_frame_index,
-                )
-                logger.info(
-                    "SAM3 wrote frame range video_id=%s range=[%s,%s) frames=%s size=%sx%s dir=%s elapsed=%.3fs",
-                    request.video_id,
-                    request.start_frame_index,
-                    request.end_frame_index,
-                    frame_count,
-                    width,
-                    height,
-                    frame_dir,
-                    time.perf_counter() - write_started_at,
-                )
-                tracks = self._track_resource(
-                    resource_path=frame_dir,
-                    seeds=self._localize_seed_frame_indexes(
-                        request.seeds,
-                        start_frame_index=request.start_frame_index,
-                    ),
-                    width=width,
-                    height=height,
-                    output_prob_thresh=request.score_threshold,
-                    frame_index_offset=request.start_frame_index,
-                )
-            logger.info(
-                "SAM3 completed frame-range tracking video_id=%s range=[%s,%s) tracks=%s elapsed=%.3fs",
-                request.video_id,
-                request.start_frame_index,
-                request.end_frame_index,
-                len(tracks),
-                time.perf_counter() - request_started_at,
+        with self._lock:
+            tracks = self._track_frames(
+                frames,
+                prompts=request.prompts,
+                frame_index_offset=request.start_frame_index,
             )
-            return Sam3TrackVideoResponse(tracks=tracks)
 
-        size_started_at = time.perf_counter()
-        width, height = self._read_video_size(video_path)
         logger.info(
-            "SAM3 read video size video_id=%s size=%sx%s elapsed=%.3fs",
+            "SAM3 completed HF tracking video_id=%s range=[%s,%s) prompts=%s tracks=%s elapsed=%.3fs",
             request.video_id,
-            width,
-            height,
-            time.perf_counter() - size_started_at,
-        )
-        tracks = self._track_resource(
-            resource_path=video_path,
-            seeds=request.seeds,
-            width=width,
-            height=height,
-            output_prob_thresh=request.score_threshold,
-            frame_index_offset=0,
-        )
-        logger.info(
-            "SAM3 completed full-video tracking video_id=%s tracks=%s elapsed=%.3fs",
-            request.video_id,
+            request.start_frame_index,
+            request.end_frame_index,
+            len(request.prompts),
             len(tracks),
             time.perf_counter() - request_started_at,
         )
-
         return Sam3TrackVideoResponse(tracks=tracks)
 
-    def _track_resource(
+    def _load_model(self) -> Sam3VideoModel:
+        attempts = [settings.sam3_attention_implementation]
+        if settings.sam3_attention_implementation != "sdpa":
+            attempts.append("sdpa")
+
+        last_error: Exception | None = None
+        for attention_implementation in attempts:
+            try:
+                config = Sam3VideoConfig.from_pretrained(settings.sam3_model_id)
+                config.image_size = settings.sam3_image_size
+                model = Sam3VideoModel.from_pretrained(
+                    settings.sam3_model_id,
+                    config=config,
+                    device_map="auto",
+                    dtype=_torch_dtype(settings.sam3_dtype),
+                    attn_implementation=attention_implementation,
+                )
+                model.eval()
+                self.attention_implementation = attention_implementation
+                return model
+            except Exception as exc:
+                last_error = exc
+                logger.exception(
+                    "Failed to load SAM3 with attention=%s",
+                    attention_implementation,
+                )
+        assert last_error is not None
+        raise last_error
+
+    def _track_frames(
         self,
+        frames: list[Image.Image],
         *,
-        resource_path: Path,
-        seeds: list[Sam3Seed],
-        width: int,
-        height: int,
-        output_prob_thresh: float,
+        prompts: list[Sam3TextPrompt],
         frame_index_offset: int,
     ) -> list[Sam3Track]:
-        with self._lock:
-            session_started_at = time.perf_counter()
-            session_id = self._start_session(resource_path)
-            logger.info(
-                "SAM3 started tracking session session_id=%s resource=%s elapsed=%.3fs",
-                session_id,
-                _resource_description(resource_path),
-                time.perf_counter() - session_started_at,
+        prompt_texts = [prompt.prompt for prompt in prompts]
+        prompt_entries_by_text: dict[str, list[Sam3TextPrompt]] = defaultdict(list)
+        for prompt in prompts:
+            prompt_entries_by_text[prompt.prompt].append(prompt)
+        duplicate_prompts = [
+            prompt
+            for prompt, entries in prompt_entries_by_text.items()
+            if len(entries) > 1
+        ]
+        if duplicate_prompts:
+            logger.warning(
+                "SAM3 prompt texts are duplicated; tracks will be fanned out prompts=%s",
+                duplicate_prompts,
             )
-            try:
-                added_prompt_frames: list[int] = []
-                for seed_index, seed in enumerate(seeds):
-                    prompt_started_at = time.perf_counter()
-                    outputs = self._add_seed_prompt(
-                        session_id=session_id,
-                        seed=seed,
-                        seed_index=seed_index,
-                        width=width,
-                        height=height,
-                        output_prob_thresh=output_prob_thresh,
-                    )
-                    prompt_frame_index = _seed_frame_index(seed)
-                    added_prompt_frames.append(prompt_frame_index)
-                    prompt_objects = self._iter_output_objects(
-                        outputs,
-                        width=width,
-                        height=height,
-                    )
-                    if prompt_objects:
-                        logger.info(
-                            "SAM3 seed prompt produced objects session_id=%s seed_index=%s seed_type=%s frame_index=%s objects=%s",
-                            session_id,
-                            seed_index,
-                            _seed_type(seed),
-                            prompt_frame_index,
-                            len(prompt_objects),
-                        )
-                    else:
-                        logger.info(
-                            "SAM3 seed prompt produced no immediate objects session_id=%s seed_index=%s seed_type=%s frame_index=%s",
-                            session_id,
-                            seed_index,
-                            _seed_type(seed),
-                            prompt_frame_index,
-                        )
-                    logger.info(
-                        "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s frame_index=%s elapsed=%.3fs",
-                        session_id,
-                        seed_index,
-                        _seed_type(seed),
-                        prompt_frame_index,
-                        time.perf_counter() - prompt_started_at,
-                    )
-                if not added_prompt_frames:
-                    logger.info(
-                        "SAM3 skipping propagation because no seed prompts were added session_id=%s",
-                        session_id,
-                    )
-                    return []
 
-                start_frame_index = min(added_prompt_frames)
-                propagate_started_at = time.perf_counter()
-                tracks = self._propagate_tracks(
-                    session_id,
-                    width=width,
-                    height=height,
-                    output_prob_thresh=output_prob_thresh,
-                    frame_index_offset=frame_index_offset,
-                    start_frame_index=start_frame_index,
-                )
-                logger.info(
-                    "SAM3 propagated tracks session_id=%s start_frame_index=%s tracks=%s elapsed=%.3fs",
-                    session_id,
-                    start_frame_index,
-                    len(tracks),
-                    time.perf_counter() - propagate_started_at,
-                )
-            finally:
-                self._close_session(session_id)
-
-        return tracks
-
-    def _start_session(self, resource_path: Path) -> str:
-        init_kwargs: dict[str, Any] = {
-            "resource_path": str(resource_path),
-            "offload_video_to_cpu": False,
-        }
-        if hasattr(self.predictor, "async_loading_frames"):
-            init_kwargs["async_loading_frames"] = self.predictor.async_loading_frames
-        if hasattr(self.predictor, "video_loader_type"):
-            init_kwargs["video_loader_type"] = self.predictor.video_loader_type
-
-        # The current SAM3.1 request dispatcher passes offload_state_to_cpu to
-        # the multiplex initializer, but that initializer no longer accepts it.
-        inference_state = self.predictor.model.init_state(**init_kwargs)
-        session_id = str(uuid.uuid4())
-        self.predictor._all_inference_states[session_id] = {
-            "state": inference_state,
-            "session_id": session_id,
-            "start_time": time.time(),
-            "last_use_time": time.time(),
-        }
-        return session_id
-
-    def _close_session(self, session_id: str) -> None:
-        self.predictor.handle_request(
-            request={"type": "close_session", "session_id": session_id}
+        inference_session = self.processor.init_video_session(
+            video=frames,
+            inference_device=self.device,
+            processing_device="cpu",
+            video_storage_device="cpu",
+            dtype=self.dtype,
+        )
+        inference_session = self.processor.add_text_prompt(
+            inference_session=inference_session,
+            text=prompt_texts,
         )
 
-    def _add_seed_prompt(
-        self,
-        *,
-        session_id: str,
-        seed: Sam3Seed,
-        seed_index: int,
-        width: int,
-        height: int,
-        default_frame_index: int | None = None,
-        output_prob_thresh: float | None = None,
-    ) -> dict[str, Any]:
-        frame_index = seed.frame_index
-        if frame_index is None:
-            frame_index = 0 if default_frame_index is None else default_frame_index
-
-        request: dict[str, Any] = {
-            "type": "add_prompt",
-            "session_id": session_id,
-            "frame_index": frame_index,
-        }
-        if output_prob_thresh is not None:
-            request["output_prob_thresh"] = output_prob_thresh
-
-        if seed.prompt is not None:
-            request["text"] = seed.prompt
-        elif seed.points:
-            request["obj_id"] = seed_index + 1
-            request["points"] = self._relative_points(
-                seed,
-                width=width,
-                height=height,
-            )
-            request["point_labels"] = [
-                1 if point.is_positive else 0 for point in seed.points
-            ]
-        else:
-            raise ValueError("Seed must include prompt or points")
-
-        response = self.predictor.handle_request(request=request)
-        return dict(response["outputs"])
-
-    def _propagate_tracks(
-        self,
-        session_id: str,
-        *,
-        width: int,
-        height: int,
-        output_prob_thresh: float,
-        frame_index_offset: int,
-        start_frame_index: int,
-    ) -> list[Sam3Track]:
-        points_by_obj_id: dict[int, list[Sam3TrackPoint]] = {}
-
-        for response in self.predictor.handle_stream_request(
-            request={
-                "type": "propagate_in_video",
-                "session_id": session_id,
-                "start_frame_index": start_frame_index,
-                "output_prob_thresh": output_prob_thresh,
-            }
-        ):
-            frame_index = int(response["frame_index"]) + frame_index_offset
-            outputs = response["outputs"]
-            for obj_id, bbox_xyxy, confidence, mask_rle in self._iter_output_objects(
-                outputs,
-                width=width,
-                height=height,
+        points_by_track_key: dict[tuple[int, int], list[Sam3TrackPoint]] = {}
+        object_ids_by_prompt_index: dict[int, set[int]] = defaultdict(set)
+        max_frame_num_to_track = max(0, len(frames) - 1)
+        with torch.inference_mode():
+            for model_outputs in self.model.propagate_in_video_iterator(
+                inference_session=inference_session,
+                start_frame_idx=0,
+                max_frame_num_to_track=max_frame_num_to_track,
+                show_progress_bar=False,
             ):
-                points_by_obj_id.setdefault(obj_id, []).append(
-                    Sam3TrackPoint(
-                        frame_index=frame_index,
-                        bbox_xyxy=bbox_xyxy,
-                        mask_rle=mask_rle,
-                        confidence=confidence,
-                    )
+                processed = self.processor.postprocess_outputs(
+                    inference_session,
+                    model_outputs,
+                )
+                self._append_processed_frame(
+                    processed,
+                    frame_index=int(model_outputs.frame_idx) + frame_index_offset,
+                    prompt_entries_by_text=prompt_entries_by_text,
+                    object_ids_by_prompt_index=object_ids_by_prompt_index,
+                    points_by_track_key=points_by_track_key,
                 )
 
         tracks = []
-        for obj_id, points in sorted(points_by_obj_id.items()):
+        for (prompt_index, object_id), points in sorted(points_by_track_key.items()):
             if not points:
                 continue
             confidence = min(point.confidence for point in points)
             tracks.append(
                 Sam3Track(
-                    track_id=str(obj_id),
-                    seed_index=max(0, obj_id - 1),
+                    track_id=f"{prompt_index}:{object_id}",
+                    prompt_index=prompt_index,
                     points=points,
                     confidence=confidence,
                 )
             )
         return tracks
 
-    def _localize_seed_frame_indexes(
+    def _append_processed_frame(
         self,
-        seeds: list[Sam3Seed],
+        processed: dict[str, Any],
         *,
-        start_frame_index: int,
-    ) -> list[Sam3Seed]:
-        localized_seeds = []
-        for seed in seeds:
-            if seed.frame_index is None:
-                localized_seeds.append(seed)
+        frame_index: int,
+        prompt_entries_by_text: dict[str, list[Sam3TextPrompt]],
+        object_ids_by_prompt_index: dict[int, set[int]],
+        points_by_track_key: dict[tuple[int, int], list[Sam3TrackPoint]],
+    ) -> None:
+        object_ids = _to_int_list(processed.get("object_ids"))
+        scores = _to_float_list(processed.get("scores"))
+        boxes = _to_nested_float_list(processed.get("boxes"))
+        masks = processed.get("masks")
+
+        object_index_by_id = {
+            object_id: index for index, object_id in enumerate(object_ids)
+        }
+        prompt_to_obj_ids = processed.get("prompt_to_obj_ids") or {}
+        for prompt_text, object_ids_for_prompt in prompt_to_obj_ids.items():
+            prompt_entries = prompt_entries_by_text.get(prompt_text, [])
+            if not prompt_entries:
                 continue
-            localized_seeds.append(
-                seed.model_copy(
-                    update={"frame_index": seed.frame_index - start_frame_index}
-                )
+            for object_id in _to_int_list(object_ids_for_prompt):
+                object_index = object_index_by_id.get(object_id)
+                if object_index is None:
+                    continue
+                for prompt in prompt_entries:
+                    object_ids_by_prompt_index[prompt.prompt_index].add(object_id)
+                    point = self._track_point_from_processed_object(
+                        frame_index=frame_index,
+                        object_index=object_index,
+                        scores=scores,
+                        boxes=boxes,
+                        masks=masks,
+                    )
+                    if point is not None:
+                        points_by_track_key.setdefault(
+                            (prompt.prompt_index, object_id),
+                            [],
+                        ).append(point)
+
+    def _track_point_from_processed_object(
+        self,
+        *,
+        frame_index: int,
+        object_index: int,
+        scores: list[float],
+        boxes: list[list[float]],
+        masks: Any,
+    ) -> Sam3TrackPoint | None:
+        bbox_xyxy = None
+        if object_index < len(boxes) and len(boxes[object_index]) >= 4:
+            box = boxes[object_index]
+            bbox_xyxy = (
+                float(box[0]),
+                float(box[1]),
+                float(box[2]),
+                float(box[3]),
             )
-        return localized_seeds
-
-    def _iter_output_objects(
-        self, outputs: dict[str, Any], *, width: int, height: int
-    ) -> list[tuple[int, tuple[float, float, float, float], float, str | None]]:
-        obj_ids = self._to_python_list(outputs.get("out_obj_ids", []))
-        boxes_xywh = self._to_python_list(outputs.get("out_boxes_xywh", []))
-        probabilities = self._to_python_list(outputs.get("out_probs", []))
-        binary_masks = outputs.get("out_binary_masks")
-
-        objects = []
-        for index, obj_id in enumerate(obj_ids):
-            bbox_xyxy = None
-            mask_rle = None
-            if index < len(boxes_xywh):
-                bbox_xyxy = self._relative_xywh_to_absolute_xyxy(
-                    boxes_xywh[index],
-                    width=width,
-                    height=height,
-                )
-            elif binary_masks is not None:
-                bbox_xyxy = self._mask_to_bbox_xyxy(binary_masks[index])
-
-            if binary_masks is not None:
-                mask_rle = self._binary_mask_to_rle(binary_masks[index])
-
-            if bbox_xyxy is None:
-                continue
-
-            confidence = 1.0
-            if index < len(probabilities):
-                confidence = float(probabilities[index])
-
-            objects.append((int(obj_id), bbox_xyxy, confidence, mask_rle))
-
-        return objects
-
-    def _binary_mask_to_rle(self, mask: Any) -> str | None:
-        mask_tensor = mask
-        if not isinstance(mask_tensor, torch.Tensor):
-            mask_tensor = torch.as_tensor(np.asarray(mask_tensor))
-        mask_array = mask_tensor.detach().cpu().bool().numpy().squeeze()
-        if mask_array.ndim != 2:
+        mask_rle = _mask_to_rle(masks, object_index)
+        if bbox_xyxy is None and mask_rle is None:
             return None
-        encoded_mask = mask_utils.encode(np.asfortranarray(mask_array.astype(np.uint8)))
-        encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
-        return json.dumps(
-            {
-                "encoding": "coco_rle",
-                "size": encoded_mask["size"],
-                "counts": encoded_mask["counts"],
-            },
-            separators=(",", ":"),
+
+        confidence = 1.0
+        if object_index < len(scores):
+            confidence = scores[object_index]
+        return Sam3TrackPoint(
+            frame_index=frame_index,
+            bbox_xyxy=bbox_xyxy,
+            mask_rle=mask_rle,
+            confidence=confidence,
         )
 
     def _find_video_path(self, video_id: str) -> Path:
@@ -418,6 +281,37 @@ class Sam3InferenceClient:
             if path.exists():
                 return path
         raise FileNotFoundError(f"Video {video_id} not found")
+
+    def _read_video_frame_range(
+        self,
+        video_path: Path,
+        *,
+        start_frame_index: int,
+        end_frame_index: int,
+    ) -> list[Image.Image]:
+        cap = self._open_video_capture(video_path)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
+        try:
+            frames = []
+            frame_index = start_frame_index
+            while frame_index < end_frame_index:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(Image.fromarray(frame_rgb))
+                frame_index += 1
+        finally:
+            cap.release()
+
+        expected_frame_count = end_frame_index - start_frame_index
+        if len(frames) != expected_frame_count:
+            raise ValueError(
+                "Could not read requested frame range "
+                f"[{start_frame_index}, {end_frame_index}) from {video_path}; "
+                f"read {len(frames)} of {expected_frame_count} frames"
+            )
+        return frames
 
     def _open_video_capture(self, video_path: Path) -> cv2.VideoCapture:
         backend = self._opencv_video_backend()
@@ -450,124 +344,77 @@ class Sam3InferenceClient:
             raise ValueError(f"Unsupported OpenCV video backend: {backend}")
         return cv2.CAP_FFMPEG
 
-    def _read_video_size(self, video_path: Path) -> tuple[int, int]:
-        cap = self._open_video_capture(video_path)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        if width <= 0 or height <= 0:
-            raise ValueError(f"Could not read video dimensions from {video_path}")
-        return width, height
 
-    def _write_video_frame_range_to_directory(
-        self,
-        video_path: Path,
-        *,
-        frame_dir: Path,
-        start_frame_index: int,
-        end_frame_index: int,
-    ) -> tuple[int, int, int]:
-        if start_frame_index < 0:
-            raise ValueError("start_frame_index must be greater than or equal to 0")
-        if end_frame_index <= start_frame_index:
-            raise ValueError("end_frame_index must be greater than start_frame_index")
+def _torch_dtype(value: str) -> torch.dtype:
+    normalized = value.lower()
+    if normalized in {"bfloat16", "bf16"}:
+        return torch.bfloat16
+    if normalized in {"float16", "fp16"}:
+        return torch.float16
+    if normalized in {"float32", "fp32"}:
+        return torch.float32
+    raise ValueError(f"Unsupported SAM3 dtype: {value}")
 
-        cap = self._open_video_capture(video_path)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_index)
-        try:
-            frame_count = 0
-            width = 0
-            height = 0
-            frame_index = start_frame_index
-            while frame_index < end_frame_index:
-                ret, frame = cap.read()
-                if not ret:
-                    break
 
-                if frame_count == 0:
-                    height, width = frame.shape[:2]
+def _model_device(model: torch.nn.Module) -> torch.device:
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-                frame_path = frame_dir / f"{frame_count:06d}.jpg"
-                if not cv2.imwrite(str(frame_path), frame):
-                    raise ValueError(f"Could not write frame image: {frame_path}")
-                frame_count += 1
-                frame_index += 1
-        finally:
-            cap.release()
 
-        expected_frame_count = end_frame_index - start_frame_index
-        if frame_count != expected_frame_count:
-            raise ValueError(
-                "Could not read requested frame range "
-                f"[{start_frame_index}, {end_frame_index}) from {video_path}; "
-                f"read {frame_count} of {expected_frame_count} frames"
-            )
-        if width <= 0 or height <= 0:
-            raise ValueError(f"Could not read video dimensions from {video_path}")
-        return frame_count, width, height
+def _to_int_list(value: Any) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    return [int(item) for item in value]
 
-    def _relative_points(
-        self, seed: Sam3Seed, *, width: int, height: int
-    ) -> list[list[float]]:
-        points = []
-        if seed.points is None:
-            return points
-        for point in seed.points:
-            x = min(max(point.x, 0.0), float(width - 1))
-            y = min(max(point.y, 0.0), float(height - 1))
-            points.append([x / width, y / height])
-        return points
 
-    def _relative_xywh_to_absolute_xyxy(
-        self,
-        bbox_xywh: list[float],
-        *,
-        width: int,
-        height: int,
-    ) -> tuple[float, float, float, float]:
-        x, y, box_width, box_height = bbox_xywh
-        x1 = x * width
-        y1 = y * height
-        x2 = (x + box_width) * width
-        y2 = (y + box_height) * height
-        return (float(x1), float(y1), float(x2), float(y2))
+def _to_float_list(value: Any) -> list[float]:
+    if value is None:
+        return []
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    return [float(item) for item in value]
 
-    def _mask_to_bbox_xyxy(self, mask: Any) -> tuple[float, float, float, float] | None:
-        tensor = mask
-        if not isinstance(tensor, torch.Tensor):
-            tensor = torch.as_tensor(np.asarray(mask))
-        tensor = tensor.detach().cpu().bool()
-        if not tensor.any():
+
+def _to_nested_float_list(value: Any) -> list[list[float]]:
+    if value is None:
+        return []
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    return [[float(item) for item in row] for row in value]
+
+
+def _mask_to_rle(masks: Any, object_index: int) -> str | None:
+    if masks is None:
+        return None
+    if isinstance(masks, torch.Tensor):
+        if object_index >= masks.shape[0]:
             return None
-        box = masks_to_boxes(tensor.unsqueeze(0))[0].tolist()
-        return (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
-
-    def _to_python_list(self, value: Any) -> list[Any]:
-        if isinstance(value, torch.Tensor):
-            return value.detach().cpu().tolist()
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if value is None:
-            return []
-        try:
-            return list(value)
-        except TypeError:
-            return [value]
-
-
-def _resource_description(resource_path: Path) -> str:
-    return str(resource_path)
-
-
-def _seed_type(seed: Sam3Seed) -> str:
-    if seed.prompt is not None:
-        return "text"
-    if seed.points:
-        return "points"
-    return "unknown"
-
-
-def _seed_frame_index(seed: Sam3Seed) -> int:
-    if seed.frame_index is None:
-        return 0
-    return seed.frame_index
+        mask = masks[object_index].detach().cpu().bool().numpy()
+    else:
+        mask_array = np.asarray(masks)
+        if object_index >= mask_array.shape[0]:
+            return None
+        mask = mask_array[object_index].astype(bool)
+    mask = np.squeeze(mask)
+    if mask.ndim != 2 or not mask.any():
+        return None
+    encoded_mask = mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))
+    encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
+    return json.dumps(
+        {
+            "encoding": "coco_rle",
+            "size": encoded_mask["size"],
+            "counts": encoded_mask["counts"],
+        },
+        separators=(",", ":"),
+    )
