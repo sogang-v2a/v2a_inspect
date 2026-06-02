@@ -13,6 +13,8 @@ class ServerSettings(BaseSettings):
     sam3_image_size: int = 1008
     sam3_dtype: str = "bfloat16"
     sam3_attention_implementation: str = "sdpa"
+    sam3_score_threshold_detection: float = 0.35
+    sam3_new_det_thresh: float = 0.35
     opencv_video_backend: str = "ffmpeg"
     opencv_hw_acceleration: bool = True
     opencv_hw_device: int | None = None

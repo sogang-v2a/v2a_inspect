@@ -112,6 +112,10 @@ class Sam3InferenceClient:
             try:
                 config = Sam3VideoConfig.from_pretrained(settings.sam3_model_id)
                 config.image_size = settings.sam3_image_size
+                config.score_threshold_detection = (
+                    settings.sam3_score_threshold_detection
+                )
+                config.new_det_thresh = settings.sam3_new_det_thresh
                 model = Sam3VideoModel.from_pretrained(
                     settings.sam3_model_id,
                     config=config,
