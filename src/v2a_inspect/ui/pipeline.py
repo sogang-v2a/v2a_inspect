@@ -191,31 +191,26 @@ async def _track_objects(
             upload_response = await video_client.upload(str(tracking_video_path))
         except Exception as exc:
             raise RuntimeError(f"upload tracking video failed: {exc}") from exc
-    scene_count = len(video_asset.initial_scenes)
-
-    async def publish_tracked_scene(
-        tracked_asset: VideoAsset,
-        completed_scene_count: int,
-        total_scene_count: int,
-    ) -> VideoAsset:
-        tracked_asset = await _rebuild_visual_layers(tracked_asset)
-        await store.publish_asset_mutation(
-            tracked_asset,
-            stage=f"tracked objects {completed_scene_count}/{total_scene_count}",
-        )
-        return tracked_asset
-
     async with SAM3Client(base_url=server_url) as sam_client:
-        try:
-            video_asset = await track_initial_scenes_object_seeds(
+        for scene_index in range(len(video_asset.initial_scenes)):
+            scene_number = scene_index + 1
+            scene_count = len(video_asset.initial_scenes)
+            try:
+                video_asset = await track_initial_scenes_object_seeds(
+                    video_asset,
+                    video_id=upload_response.video_id,
+                    sam_client=sam_client,
+                    scene_indexes=[scene_index],
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"track objects scene {scene_number}/{scene_count} failed: {exc}"
+                ) from exc
+            video_asset = await _rebuild_visual_layers(video_asset)
+            await store.publish_asset_mutation(
                 video_asset,
-                video_id=upload_response.video_id,
-                sam_client=sam_client,
-                scene_indexes=range(scene_count),
-                on_scene_tracked=publish_tracked_scene,
+                stage=f"tracked objects {scene_number}/{scene_count}",
             )
-        except Exception as exc:
-            raise RuntimeError(f"track objects failed: {exc}") from exc
     return video_asset
 
 

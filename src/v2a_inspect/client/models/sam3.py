@@ -12,19 +12,20 @@ class PointPrompt(BaseModel):
 
 class Sam3Seed(BaseModel):
     frame_index: int | None = None
+    bbox_xyxy: tuple[float, float, float, float] | None = None
     points: list[PointPrompt] | None = None
     prompt: str | None = None
     label_hint: str | None = None
 
     @model_validator(mode="after")
     def check_prompt(self) -> Self:
-        has_spatial = bool(self.points)
+        has_spatial = self.bbox_xyxy is not None or bool(self.points)
         has_prompt = self.prompt is not None
 
         if has_spatial and has_prompt:
-            raise ValueError("Cannot combine text prompt with spatial prompts.")
+            raise ValueError("Cannot combine text prompt with bbox/points in one seed.")
         if not has_spatial and not has_prompt:
-            raise ValueError("Must provide either prompt or points.")
+            raise ValueError("Must provide either prompt, bbox, or points.")
         return self
 
 
@@ -61,6 +62,26 @@ class Sam3TrackVideoRequest(BaseModel):
         return self
 
 
+class Sam3SegmentImageRequest(BaseModel):
+    image_path: str | None = None
+    video_id: str | None = None
+    frame_index: int | None = None
+    seeds: list[Sam3Seed]
+    score_threshold: float = 0.35
+    max_masks: int = 5
+
+    @model_validator(mode="after")
+    def check_image_source(self) -> Self:
+        has_image_path = self.image_path is not None
+        has_video_frame = self.video_id is not None and self.frame_index is not None
+
+        if has_image_path == has_video_frame:
+            raise ValueError(
+                "Provide exactly one image source: image_path or video_id with frame_index."
+            )
+        return self
+
+
 class Sam3Mask(BaseModel):
     mask_id: str
     bbox_xyxy: tuple[float, float, float, float]
@@ -70,37 +91,6 @@ class Sam3Mask(BaseModel):
     )
     confidence: float
     source_seed_index: int | None = None
-
-
-class Sam3SegmentFrameItem(BaseModel):
-    request_index: int = Field(ge=0)
-    frame_index: int = Field(ge=0)
-    seed: Sam3Seed
-    max_masks: int = Field(default=5, ge=1)
-
-
-class Sam3SegmentFramesRequest(BaseModel):
-    video_id: str
-    items: list[Sam3SegmentFrameItem]
-    score_threshold: float = 0.35
-    batch_size: int = Field(default=32, ge=1)
-
-
-class Sam3SegmentFrameResult(BaseModel):
-    request_index: int
-    frame_index: int
-    masks: list[Sam3Mask] = Field(default_factory=list)
-
-
-class Sam3SegmentFrameError(BaseModel):
-    request_index: int
-    frame_index: int
-    message: str
-
-
-class Sam3SegmentFramesResponse(BaseModel):
-    results: list[Sam3SegmentFrameResult] = Field(default_factory=list)
-    errors: list[Sam3SegmentFrameError] = Field(default_factory=list)
 
 
 class Sam3TrackPoint(BaseModel):
@@ -122,3 +112,7 @@ class Sam3Track(BaseModel):
 
 class Sam3TrackVideoResponse(BaseModel):
     tracks: list[Sam3Track]
+
+
+class Sam3SegmentImageResponse(BaseModel):
+    masks: list[Sam3Mask]

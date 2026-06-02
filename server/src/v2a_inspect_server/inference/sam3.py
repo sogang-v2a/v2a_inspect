@@ -28,7 +28,10 @@ from sam3.model_builder import build_sam3_multiplex_video_predictor
 from torchvision.ops import masks_to_boxes
 
 from ..models import (
+    Sam3Mask,
     Sam3Seed,
+    Sam3SegmentImageRequest,
+    Sam3SegmentImageResponse,
     Sam3Track,
     Sam3TrackPoint,
     Sam3TrackVideoRequest,
@@ -150,7 +153,7 @@ class Sam3InferenceClient:
                 time.perf_counter() - session_started_at,
             )
             try:
-                added_prompt_frames: list[int] = []
+                has_prompt_outputs = False
                 for seed_index, seed in enumerate(seeds):
                     prompt_started_at = time.perf_counter()
                     outputs = self._add_seed_prompt(
@@ -161,46 +164,34 @@ class Sam3InferenceClient:
                         height=height,
                         output_prob_thresh=output_prob_thresh,
                     )
-                    prompt_frame_index = _seed_frame_index(seed)
-                    added_prompt_frames.append(prompt_frame_index)
                     prompt_objects = self._iter_output_objects(
                         outputs,
                         width=width,
                         height=height,
                     )
                     if prompt_objects:
-                        logger.info(
-                            "SAM3 seed prompt produced objects session_id=%s seed_index=%s seed_type=%s frame_index=%s objects=%s",
-                            session_id,
-                            seed_index,
-                            _seed_type(seed),
-                            prompt_frame_index,
-                            len(prompt_objects),
-                        )
+                        has_prompt_outputs = True
                     else:
                         logger.info(
-                            "SAM3 seed prompt produced no immediate objects session_id=%s seed_index=%s seed_type=%s frame_index=%s",
+                            "SAM3 seed prompt produced no objects session_id=%s seed_index=%s seed_type=%s",
                             session_id,
                             seed_index,
                             _seed_type(seed),
-                            prompt_frame_index,
                         )
                     logger.info(
-                        "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s frame_index=%s elapsed=%.3fs",
+                        "SAM3 added seed prompt session_id=%s seed_index=%s seed_type=%s elapsed=%.3fs",
                         session_id,
                         seed_index,
                         _seed_type(seed),
-                        prompt_frame_index,
                         time.perf_counter() - prompt_started_at,
                     )
-                if not added_prompt_frames:
+                if not has_prompt_outputs:
                     logger.info(
-                        "SAM3 skipping propagation because no seed prompts were added session_id=%s",
+                        "SAM3 skipping propagation because no seed prompts produced objects session_id=%s",
                         session_id,
                     )
                     return []
 
-                start_frame_index = min(added_prompt_frames)
                 propagate_started_at = time.perf_counter()
                 tracks = self._propagate_tracks(
                     session_id,
@@ -208,12 +199,10 @@ class Sam3InferenceClient:
                     height=height,
                     output_prob_thresh=output_prob_thresh,
                     frame_index_offset=frame_index_offset,
-                    start_frame_index=start_frame_index,
                 )
                 logger.info(
-                    "SAM3 propagated tracks session_id=%s start_frame_index=%s tracks=%s elapsed=%.3fs",
+                    "SAM3 propagated tracks session_id=%s tracks=%s elapsed=%.3fs",
                     session_id,
-                    start_frame_index,
                     len(tracks),
                     time.perf_counter() - propagate_started_at,
                 )
@@ -221,6 +210,94 @@ class Sam3InferenceClient:
                 self._close_session(session_id)
 
         return tracks
+
+    def segment_image(
+        self, request: Sam3SegmentImageRequest
+    ) -> Sam3SegmentImageResponse:
+        if request.video_id is not None and request.frame_index is not None:
+            video_path = self._find_video_path(request.video_id)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                frame_dir = Path(temp_dir)
+                width, height = self._write_video_frame_to_directory(
+                    video_path,
+                    frame_index=request.frame_index,
+                    frame_dir=frame_dir,
+                )
+                masks = self._segment_resource(
+                    resource_path=frame_dir,
+                    frame_index=0,
+                    seeds=request.seeds,
+                    width=width,
+                    height=height,
+                    max_masks=request.max_masks,
+                    output_prob_thresh=request.score_threshold,
+                )
+            return Sam3SegmentImageResponse(masks=masks)
+
+        if request.image_path is None:
+            raise ValueError("image_path is required for image segmentation")
+
+        image_path = Path(request.image_path)
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Image {image_path} not found")
+        width, height = self._read_image_size(image_path)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_dir = Path(temp_dir)
+            frame_path = frame_dir / "00000.jpg"
+            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise FileNotFoundError(f"Image {image_path} not found")
+            cv2.imwrite(str(frame_path), image)
+            masks = self._segment_resource(
+                resource_path=frame_dir,
+                frame_index=0,
+                seeds=request.seeds,
+                width=width,
+                height=height,
+                max_masks=request.max_masks,
+                output_prob_thresh=request.score_threshold,
+            )
+
+        return Sam3SegmentImageResponse(masks=masks)
+
+    def _segment_resource(
+        self,
+        *,
+        resource_path: Path,
+        frame_index: int,
+        seeds: list[Sam3Seed],
+        width: int,
+        height: int,
+        max_masks: int,
+        output_prob_thresh: float,
+    ) -> list[Sam3Mask]:
+        with self._lock:
+            session_id = self._start_session(resource_path)
+            try:
+                outputs = None
+                for seed_index, seed in enumerate(seeds):
+                    outputs = self._add_seed_prompt(
+                        session_id=session_id,
+                        seed=seed,
+                        seed_index=seed_index,
+                        width=width,
+                        height=height,
+                        default_frame_index=frame_index,
+                        output_prob_thresh=output_prob_thresh,
+                    )
+                if outputs is None:
+                    return []
+                masks = self._outputs_to_masks(
+                    outputs,
+                    width=width,
+                    height=height,
+                    max_masks=max_masks,
+                )
+            finally:
+                self._close_session(session_id)
+
+        return masks
 
     def _start_session(self, resource_path: Path) -> str:
         init_kwargs: dict[str, Any] = {
@@ -275,17 +352,23 @@ class Sam3InferenceClient:
         if seed.prompt is not None:
             request["text"] = seed.prompt
         elif seed.points:
-            request["obj_id"] = seed_index + 1
-            request["points"] = self._relative_points(
-                seed,
-                width=width,
-                height=height,
-            )
+            request["points"] = self._relative_points(seed, width=width, height=height)
             request["point_labels"] = [
                 1 if point.is_positive else 0 for point in seed.points
             ]
+            request["obj_id"] = seed_index + 1
+        elif seed.bbox_xyxy is not None:
+            request["bounding_boxes"] = [
+                self._bbox_xyxy_to_relative_xywh(
+                    seed.bbox_xyxy,
+                    width=width,
+                    height=height,
+                )
+            ]
+            request["bounding_box_labels"] = [1]
+            request["obj_id"] = seed_index + 1
         else:
-            raise ValueError("Seed must include prompt or points")
+            raise ValueError("Seed must include prompt, bbox, or points")
 
         response = self.predictor.handle_request(request=request)
         return dict(response["outputs"])
@@ -298,7 +381,6 @@ class Sam3InferenceClient:
         height: int,
         output_prob_thresh: float,
         frame_index_offset: int,
-        start_frame_index: int,
     ) -> list[Sam3Track]:
         points_by_obj_id: dict[int, list[Sam3TrackPoint]] = {}
 
@@ -306,7 +388,6 @@ class Sam3InferenceClient:
             request={
                 "type": "propagate_in_video",
                 "session_id": session_id,
-                "start_frame_index": start_frame_index,
                 "output_prob_thresh": output_prob_thresh,
             }
         ):
@@ -334,7 +415,7 @@ class Sam3InferenceClient:
             tracks.append(
                 Sam3Track(
                     track_id=str(obj_id),
-                    seed_index=max(0, obj_id - 1),
+                    seed_index=obj_id,
                     points=points,
                     confidence=confidence,
                 )
@@ -359,6 +440,33 @@ class Sam3InferenceClient:
             )
         return localized_seeds
 
+    def _outputs_to_masks(
+        self,
+        outputs: dict[str, Any],
+        *,
+        width: int,
+        height: int,
+        max_masks: int,
+    ) -> list[Sam3Mask]:
+        masks = []
+        for obj_id, bbox_xyxy, confidence, mask_rle in self._iter_output_objects(
+            outputs,
+            width=width,
+            height=height,
+        ):
+            masks.append(
+                Sam3Mask(
+                    mask_id=str(obj_id),
+                    bbox_xyxy=bbox_xyxy,
+                    mask_rle=mask_rle,
+                    confidence=confidence,
+                    source_seed_index=obj_id,
+                )
+            )
+            if len(masks) >= max_masks:
+                break
+        return masks
+
     def _iter_output_objects(
         self, outputs: dict[str, Any], *, width: int, height: int
     ) -> list[tuple[int, tuple[float, float, float, float], float, str | None]]:
@@ -381,7 +489,23 @@ class Sam3InferenceClient:
                 bbox_xyxy = self._mask_to_bbox_xyxy(binary_masks[index])
 
             if binary_masks is not None:
-                mask_rle = self._binary_mask_to_rle(binary_masks[index])
+                mask_tensor = binary_masks[index]
+                if not isinstance(mask_tensor, torch.Tensor):
+                    mask_tensor = torch.as_tensor(np.asarray(mask_tensor))
+                mask_array = mask_tensor.detach().cpu().bool().numpy().squeeze()
+                if mask_array.ndim == 2:
+                    encoded_mask = mask_utils.encode(
+                        np.asfortranarray(mask_array.astype(np.uint8))
+                    )
+                    encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
+                    mask_rle = json.dumps(
+                        {
+                            "encoding": "coco_rle",
+                            "size": encoded_mask["size"],
+                            "counts": encoded_mask["counts"],
+                        },
+                        separators=(",", ":"),
+                    )
 
             if bbox_xyxy is None:
                 continue
@@ -393,24 +517,6 @@ class Sam3InferenceClient:
             objects.append((int(obj_id), bbox_xyxy, confidence, mask_rle))
 
         return objects
-
-    def _binary_mask_to_rle(self, mask: Any) -> str | None:
-        mask_tensor = mask
-        if not isinstance(mask_tensor, torch.Tensor):
-            mask_tensor = torch.as_tensor(np.asarray(mask_tensor))
-        mask_array = mask_tensor.detach().cpu().bool().numpy().squeeze()
-        if mask_array.ndim != 2:
-            return None
-        encoded_mask = mask_utils.encode(np.asfortranarray(mask_array.astype(np.uint8)))
-        encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
-        return json.dumps(
-            {
-                "encoding": "coco_rle",
-                "size": encoded_mask["size"],
-                "counts": encoded_mask["counts"],
-            },
-            separators=(",", ":"),
-        )
 
     def _find_video_path(self, video_id: str) -> Path:
         for ext in [".mp4", ".mov", ".avi", ".mkv"]:
@@ -457,6 +563,29 @@ class Sam3InferenceClient:
         cap.release()
         if width <= 0 or height <= 0:
             raise ValueError(f"Could not read video dimensions from {video_path}")
+        return width, height
+
+    def _read_image_size(self, image_path: Path) -> tuple[int, int]:
+        image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise FileNotFoundError(f"Image {image_path} not found")
+        height, width = image.shape[:2]
+        return width, height
+
+    def _write_video_frame_to_directory(
+        self, video_path: Path, *, frame_index: int, frame_dir: Path
+    ) -> tuple[int, int]:
+        if frame_index < 0:
+            raise ValueError("frame_index must be greater than or equal to 0")
+        cap = self._open_video_capture(video_path)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            raise ValueError(f"Could not read frame {frame_index} from {video_path}")
+        frame_path = frame_dir / "00000.jpg"
+        cv2.imwrite(str(frame_path), frame)
+        height, width = frame.shape[:2]
         return width, height
 
     def _write_video_frame_range_to_directory(
@@ -513,10 +642,23 @@ class Sam3InferenceClient:
         if seed.points is None:
             return points
         for point in seed.points:
-            x = min(max(point.x, 0.0), float(width - 1))
-            y = min(max(point.y, 0.0), float(height - 1))
-            points.append([x / width, y / height])
+            points.append([point.x / width, point.y / height])
         return points
+
+    def _bbox_xyxy_to_relative_xywh(
+        self,
+        bbox_xyxy: tuple[float, float, float, float],
+        *,
+        width: int,
+        height: int,
+    ) -> list[float]:
+        x1, y1, x2, y2 = bbox_xyxy
+        return [
+            x1 / width,
+            y1 / height,
+            (x2 - x1) / width,
+            (y2 - y1) / height,
+        ]
 
     def _relative_xywh_to_absolute_xyxy(
         self,
@@ -549,10 +691,7 @@ class Sam3InferenceClient:
             return value.tolist()
         if value is None:
             return []
-        try:
-            return list(value)
-        except TypeError:
-            return [value]
+        return list(value)
 
 
 def _resource_description(resource_path: Path) -> str:
@@ -564,10 +703,6 @@ def _seed_type(seed: Sam3Seed) -> str:
         return "text"
     if seed.points:
         return "points"
+    if seed.bbox_xyxy is not None:
+        return "bbox"
     return "unknown"
-
-
-def _seed_frame_index(seed: Sam3Seed) -> int:
-    if seed.frame_index is None:
-        return 0
-    return seed.frame_index

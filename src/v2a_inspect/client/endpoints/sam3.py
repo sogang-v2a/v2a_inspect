@@ -4,9 +4,8 @@ from .base import BaseClient
 from ..models.sam3 import (
     PointPrompt,
     Sam3Seed,
-    Sam3SegmentFrameItem,
-    Sam3SegmentFramesRequest,
-    Sam3SegmentFramesResponse,
+    Sam3SegmentImageRequest,
+    Sam3SegmentImageResponse,
     Sam3TrackVideoRequest,
     Sam3TrackVideoResponse,
 )
@@ -41,23 +40,33 @@ class SAM3Client(BaseClient):
         )
         return Sam3TrackVideoResponse(**response.json())
 
-    async def segment_frames(
+    async def segment_image(
         self,
-        video_id: str,
-        items: list[Sam3SegmentFrameItem],
+        seeds: list[Sam3Seed],
+        image_path: str | None = None,
+        video_id: str | None = None,
+        frame_index: int | None = None,
         score_threshold: float = 0.35,
-        batch_size: int = 32,
-    ) -> Sam3SegmentFramesResponse:
-        request = Sam3SegmentFramesRequest(
+        max_masks: int = 5,
+    ) -> Sam3SegmentImageResponse:
+        request = Sam3SegmentImageRequest(
+            image_path=image_path,
             video_id=video_id,
-            items=items,
+            frame_index=frame_index,
+            seeds=seeds,
             score_threshold=score_threshold,
-            batch_size=batch_size,
+            max_masks=max_masks,
         )
         response = await self._request(
-            "POST", "/infer/sam3/segment-frames", json=request.model_dump()
+            "POST", "/infer/sam3/segment-image", json=request.model_dump()
         )
-        return Sam3SegmentFramesResponse(**response.json())
+        return Sam3SegmentImageResponse(**response.json())
+
+    @staticmethod
+    def seed_from_bbox(
+        bbox: tuple[float, float, float, float], frame_index: int | None = None
+    ) -> Sam3Seed:
+        return Sam3Seed(frame_index=frame_index, bbox_xyxy=bbox)
 
     @staticmethod
     def seed_from_prompt(prompt: str, frame_index: int | None = None) -> Sam3Seed:
