@@ -14,7 +14,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -113,7 +114,8 @@ label {
   gap: 5px;
 }
 
-input {
+input,
+select {
   background: #0d0f13;
   border: 1px solid #333844;
   border-radius: 5px;
@@ -173,6 +175,15 @@ button:disabled {
   padding: 9px 12px;
   text-align: center;
   text-decoration: none;
+  width: 100%;
+}
+
+.download-link.secondary {
+  background: #17191f;
+}
+
+button.download-link {
+  color: #d8dde6;
 }
 
 .asset-stats {
@@ -474,6 +485,41 @@ button:disabled {
   color: #f4f6fa;
 }
 
+.timeline-add-track {
+  background: #2f755a;
+  border: 1px solid #3b946f;
+  color: #eefaf5;
+  font-size: 11px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.timeline-add-track.active {
+  background: #d6a94a;
+  border-color: #d6a94a;
+  color: #15120b;
+}
+
+.timeline-create-track {
+  align-items: center;
+  border-bottom: 1px solid #2a2d35;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 110px minmax(140px, 1fr) 110px minmax(140px, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.timeline-create-track input,
+.timeline-create-track select {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.timeline-create-track button {
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
 .timeline-header span,
 .muted {
   color: #939cac;
@@ -555,11 +601,37 @@ button:disabled {
 
 .lane-label {
   color: #c7ceda;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
   font-size: 12px;
   overflow: hidden;
   padding-top: 7px;
+}
+
+.lane-label span {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lane-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.lane-actions button {
+  background: #242832;
+  border: 1px solid #3a4050;
+  border-radius: 4px;
+  color: #d8dde6;
+  font-size: 10px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  width: 20px;
 }
 
 .lane-track {
@@ -584,6 +656,72 @@ button:disabled {
   text-overflow: clip;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
+}
+
+.bar-editable {
+  cursor: grab;
+  padding: 0 24px 0 14px;
+  touch-action: none;
+  user-select: none;
+}
+
+.bar-editable:active {
+  cursor: grabbing;
+}
+
+.bar-resize-handle {
+  bottom: 0;
+  cursor: ew-resize;
+  position: absolute;
+  top: 0;
+  width: 12px;
+}
+
+.bar-resize-left {
+  left: 0;
+}
+
+.bar-resize-right {
+  right: 0;
+}
+
+.bar-resize-handle::after {
+  background: rgba(255, 255, 255, 0.74);
+  border-radius: 2px;
+  bottom: 4px;
+  content: "";
+  position: absolute;
+  top: 4px;
+  width: 2px;
+}
+
+.bar-resize-left::after {
+  left: 4px;
+}
+
+.bar-resize-right::after {
+  right: 4px;
+}
+
+.bar-delete {
+  background: rgba(16, 17, 20, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  color: #fff;
+  display: none;
+  font-size: 10px;
+  height: 15px;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  right: 3px;
+  top: 2px;
+  width: 15px;
+  z-index: 2;
+}
+
+.bar-editable:hover .bar-delete {
+  display: block;
 }
 
 .bar-scene {
@@ -641,6 +779,10 @@ button:disabled {
   .timeline {
     --timeline-label-width: 0px;
     --timeline-gap: 0px;
+  }
+
+  .timeline-create-track {
+    grid-template-columns: 1fr;
   }
 
   .lane {

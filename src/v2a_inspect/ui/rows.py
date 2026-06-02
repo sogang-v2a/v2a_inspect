@@ -252,6 +252,8 @@ def timeline_rows(video_asset: VideoAsset) -> list[TableRow]:
                 "start_frame": row["start_frame"],
                 "end_frame": row["end_frame"],
                 "kind": row["track_type"],
+                "sound_event_id": row["sound_event_id"],
+                "sound_track_id": row["sound_track_id"],
             }
         )
     return rows
@@ -335,6 +337,7 @@ def _sound_event_row(
     fps: int,
 ) -> TableRow:
     return {
+        "sound_event_id": str(event.sound_event_id),
         "sound_track_id": str(track.sound_track_id),
         "track_label": track.label,
         "track_type": track.track_type,

@@ -29,6 +29,11 @@ export default function App() {
     events.addEventListener("asset_update", () => {
       void refreshAssetSummary();
     });
+    events.onerror = () => {
+      if (import.meta.env.DEV) {
+        events.close();
+      }
+    };
     return () => events.close();
   }, []);
 
