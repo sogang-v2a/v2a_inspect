@@ -57,28 +57,28 @@ class Settings(BaseSettings):
         ),
     )
     llm_thinking_level: ThinkingLevel | None = Field(
-        default=None,
+        default="low",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_THINKING_LEVEL",
             "V2A_LLM_THINKING_LEVEL",
         ),
     )
     llm_small_thinking_level: ThinkingLevel | None = Field(
-        default=None,
+        default="medium",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_SMALL_THINKING_LEVEL",
             "V2A_LLM_SMALL_THINKING_LEVEL",
         ),
     )
     llm_medium_thinking_level: ThinkingLevel | None = Field(
-        default=None,
+        default="low",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_MEDIUM_THINKING_LEVEL",
             "V2A_LLM_MEDIUM_THINKING_LEVEL",
         ),
     )
     llm_large_thinking_level: ThinkingLevel | None = Field(
-        default=None,
+        default="low",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_LARGE_THINKING_LEVEL",
             "V2A_LLM_LARGE_THINKING_LEVEL",
@@ -124,14 +124,14 @@ class Settings(BaseSettings):
         ),
     )
     llm_timeout_seconds: float | None = Field(
-        default=None,
+        default=600.0,
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_TIMEOUT_SECONDS",
             "V2A_LLM_TIMEOUT_SECONDS",
         ),
     )
     llm_max_retries: int = Field(
-        default=3,
+        default=5,
         ge=1,
         validation_alias=AliasChoices(
             "V2A_INSPECT_LLM_MAX_RETRIES",
@@ -147,7 +147,7 @@ class Settings(BaseSettings):
         ),
     )
     agent_sound_timeline_recursion_limit: int = Field(
-        default=100,
+        default=500,
         ge=1,
         validation_alias=AliasChoices(
             "V2A_INSPECT_AGENT_SOUND_TIMELINE_RECURSION_LIMIT",
@@ -182,14 +182,14 @@ class Settings(BaseSettings):
         ),
     )
     langfuse_base_url: str | None = Field(
-        default=None,
+        default="https://langfuse.riverfog7.com",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LANGFUSE_BASE_URL",
             "LANGFUSE_BASE_URL",
         ),
     )
     langfuse_environment: str = Field(
-        default="local",
+        default="prod",
         validation_alias=AliasChoices(
             "V2A_INSPECT_LANGFUSE_ENVIRONMENT",
             "LANGFUSE_ENVIRONMENT",
