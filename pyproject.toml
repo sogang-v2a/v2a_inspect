@@ -31,6 +31,13 @@ dependencies = [
     "av>=17.0.1",
     "pillow>=11.3.0",
     "pycocotools>=2.0.11",
+    "moviepy>=2.2.1",
+    "openai>=2.29.0",
+    "elevenlabs>=2.51.0",
+    "scipy>=1.17.1",
+    "numpy>=2.4.3",
+    "imageio-ffmpeg>=0.6.0",
+    "langfuse>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +53,7 @@ ui = [
 [project.scripts]
 v2a-inspect = "v2a_inspect.cli:main"
 v2a-inspect-ui = "v2a_inspect.ui.cli:main"
+v2a-synthesize = "v2a_inspect.audio_generation.synthesize:main"
 
 [dependency-groups]
 dev = [
