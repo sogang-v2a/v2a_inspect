@@ -37,8 +37,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--timeline",
-        required=True,
+        required=False,
         help="Path to the timeline.json file containing the SoundTimeline",
+    )
+    parser.add_argument(
+        "--asset",
+        required=False,
+        help="Path to the video-asset.json file containing the VideoAsset (Overrides --timeline)",
     )
     parser.add_argument(
         "--video",
@@ -76,14 +81,39 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stderr,
     )
 
-    timeline_path = Path(args.timeline)
-    if not timeline_path.exists():
-        print(f"Error: timeline.json not found: {timeline_path}", file=sys.stderr)
+    if not args.timeline and not args.asset:
+        print("Error: Must provide either --timeline or --asset", file=sys.stderr)
         return 1
 
-    print(f"[1/4] Loading timeline: {timeline_path}", file=sys.stderr)
-    timeline_data = json.loads(timeline_path.read_text(encoding="utf-8"))
-    timeline = SoundTimeline(**timeline_data)
+    visual_events_context = []
+    initial_scenes_context = []
+
+    if args.asset:
+        asset_path = Path(args.asset)
+        if not asset_path.exists():
+            print(f"Error: asset json not found: {asset_path}", file=sys.stderr)
+            return 1
+        print(f"[1/4] Loading VideoAsset: {asset_path}", file=sys.stderr)
+        from v2a_inspect.models import VideoAsset
+        asset_data = json.loads(asset_path.read_text(encoding="utf-8"))
+        video_asset = VideoAsset(**asset_data)
+        timeline = video_asset.sound_timeline
+        if not timeline:
+            print("Error: VideoAsset does not contain a sound_timeline", file=sys.stderr)
+            return 1
+        
+        if video_asset.visual_identity_layer:
+            visual_events_context = video_asset.visual_identity_layer.visual_events
+        initial_scenes_context = video_asset.initial_scenes
+    else:
+        timeline_path = Path(args.timeline)
+        if not timeline_path.exists():
+            print(f"Error: timeline.json not found: {timeline_path}", file=sys.stderr)
+            return 1
+
+        print(f"[1/4] Loading timeline: {timeline_path}", file=sys.stderr)
+        timeline_data = json.loads(timeline_path.read_text(encoding="utf-8"))
+        timeline = SoundTimeline(**timeline_data)
 
     video_path = args.video
     if not Path(video_path).exists():
@@ -129,11 +159,13 @@ def main(argv: list[str] | None = None) -> int:
         else:
             gen_model = gen_mode
 
+        desc = f"[{track.label}] {event.description}"
+
         item = AudioPlanItem(
             item_id=str(event.sound_event_id),
             type=track.track_type,
             time=(start_time, end_time),
-            description=f"[{track.label}] {event.description}",
+            description=desc,
             volume=0.8,
             track_id=str(track.sound_track_id),
             generation_model=gen_model

@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 
 from moviepy import AudioFileClip, CompositeAudioClip, VideoFileClip
-from moviepy.audio.fx import MultiplyVolume
+from moviepy.audio.fx import MultiplyVolume, AudioFadeOut
 from dataclasses import dataclass, field
 
 @dataclass
@@ -91,11 +91,23 @@ def mix_audio_into_video(
             if not wav_path or not Path(wav_path).exists():
                 continue
 
-            clip = AudioFileClip(wav_path).with_start(item.time[0])
+            duration = item.time[1] - item.time[0]
+            clip = AudioFileClip(wav_path)
+            clip = clip.subclipped(0, min(clip.duration, duration))
+            clip = clip.with_start(item.time[0])
 
+            effects = []
             # 1. Volume 적용
             if item.volume != 1.0:
-                clip = clip.with_effects([MultiplyVolume(item.volume)])
+                effects.append(MultiplyVolume(item.volume))
+            
+            # 자연스러운 페이드아웃 추가 (0.15초)
+            fade_duration = min(0.15, clip.duration / 2)
+            if fade_duration > 0:
+                effects.append(AudioFadeOut(fade_duration))
+                
+            if effects:
+                clip = clip.with_effects(effects)
 
             # 2. Stereo Pan 적용
             if item.pan != 0.0:
@@ -111,6 +123,9 @@ def mix_audio_into_video(
 
         # 오디오 합성
         final_audio = CompositeAudioClip(audio_clips)
+        if final_audio.duration > video.duration:
+            final_audio = final_audio.subclipped(0, video.duration)
+            
         video = video.with_audio(final_audio)
 
         # 비디오 출력

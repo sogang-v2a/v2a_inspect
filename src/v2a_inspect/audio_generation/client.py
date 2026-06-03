@@ -204,10 +204,11 @@ def generate_v2a_mmaudio(
         
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         
-        # -ss (start time), -to (end time), -c:v libx264 (re-encode), -an (no audio)
+        # -ss (start time), -t 8.0 (exactly 8s), -vf tpad (pad to 8s with last frame)
         subprocess.run([
             ffmpeg_exe, "-y", "-i", video_path, 
-            "-ss", str(time[0]), "-to", str(time[1]),
+            "-ss", str(time[0]), "-t", "8.0",
+            "-vf", "tpad=stop_mode=clone:stop_duration=8",
             "-c:v", "libx264", "-an", tmp_video_path
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
