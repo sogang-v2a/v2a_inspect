@@ -31,6 +31,7 @@ dependencies = [
     "av>=17.0.1",
     "pillow>=11.3.0",
     "pycocotools>=2.0.11",
+    "typer>=0.20.0",
 ]
 
 [project.optional-dependencies]
