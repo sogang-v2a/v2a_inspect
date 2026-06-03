@@ -17,7 +17,7 @@ for file in "${INPUT_DIR}/"*.mp4 ; do
 	wd="${WORK_DIR}/${filename}"
 	mkdir -p "${wd}"
 	uv run v2a-inspect run \
-		-o "${file%%.*}.json" \
+		-o "$OUTPUT_DIR/$filename.json" \
 		--work-dir "${wd}" \
 		--server-url "${INFERENCE_SERVER_URL}" \
 		"${file}"
