@@ -224,7 +224,7 @@ def generate_v2a_hunyuan(
                 )
 
         tmp_audio_path = asyncio.run(_generate())
-        
+
         shutil.copy(tmp_audio_path, out_path)
         return out_path
     except Exception as e:
