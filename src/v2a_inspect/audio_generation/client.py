@@ -181,17 +181,17 @@ def generate_dummy_audio(
 
 
 
-def generate_v2a_mmaudio(
+def generate_v2a_hunyuan(
     video_path: str,
     time: tuple[float, float],
     text: str,
     out_path: str,
     duration: float | None = None,
 ) -> str:
-    """Generate audio using MMAudio via remote vast.ai API."""
-    api_url = os.getenv("MMAUDIO_V2A_API_URL")
+    """Generate audio using HunyuanVideo-Foley via remote vast.ai API."""
+    api_url = os.getenv("HUNYUAN_V2A_API_URL")
     if not api_url:
-        logger.warning("MMAUDIO_V2A_API_URL not found. Falling back to dummy audio.")
+        logger.warning("HUNYUAN_V2A_API_URL not found. Falling back to dummy audio.")
         return generate_dummy_audio(duration or 1.0, out_path)
 
     try:
@@ -204,18 +204,21 @@ def generate_v2a_mmaudio(
         
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         
-        # -ss (start time), -t 8.0 (exactly 8s), -vf tpad (pad to 8s with last frame)
+        actual_duration = time[1] - time[0]
+        # Hunyuan 최소 길이를 위해 1.5초 이하면 마지막 프레임 복사(Padding)
+        padded_duration = max(1.5, actual_duration)
+        
         subprocess.run([
             ffmpeg_exe, "-y", "-i", video_path, 
-            "-ss", str(time[0]), "-t", "8.0",
-            "-vf", "tpad=stop_mode=clone:stop_duration=8",
+            "-ss", str(time[0]), "-t", str(padded_duration),
+            "-vf", f"tpad=stop_mode=clone:stop_duration={padded_duration}",
             "-c:v", "libx264", "-an", tmp_video_path
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         with open(tmp_video_path, "rb") as f:
             files = {"video": f}
             data = {"prompt": text}
-            logger.info("Calling MMAudio V2A API: %s", api_url)
+            logger.info("Calling Hunyuan V2A API: %s", api_url)
             response = requests.post(f"{api_url}/generate_v2a", files=files, data=data)
             
         os.remove(tmp_video_path)
@@ -228,10 +231,10 @@ def generate_v2a_mmaudio(
 
             return out_path
         else:
-            logger.error("MMAudio API failed with %d: %s", response.status_code, response.text)
+            logger.error("Hunyuan API failed with %d: %s", response.status_code, response.text)
             return generate_dummy_audio(duration or 1.0, out_path)
     except Exception as e:
-        logger.error("Failed to call MMAudio API: %s", e)
+        logger.error("Failed to call Hunyuan API: %s", e)
         return generate_dummy_audio(duration or 1.0, out_path)
 
 
@@ -269,7 +272,7 @@ def generate_audio_for_item(
     """
     try:
         if generation_model == "v2a" and video_path and time:
-            return generate_v2a_mmaudio(video_path, time, description, out_path, duration)
+            return generate_v2a_hunyuan(video_path, time, description, out_path, duration)
 
         if kind == "dialogue":
             if '"' in description or "'" in description:
