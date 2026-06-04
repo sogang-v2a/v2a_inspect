@@ -22,7 +22,11 @@ from dotenv import load_dotenv
 
 from v2a_inspect.models.sound_timeline import SoundTimeline
 from v2a_inspect.audio_generation.client import generate_audio_for_item
-from v2a_inspect.audio_generation.mix import mix_audio_into_video, AudioPlan, AudioPlanItem
+from v2a_inspect.audio_generation.mix import (
+    mix_audio_into_video,
+    AudioPlan,
+    AudioPlanItem,
+)
 from moviepy import VideoFileClip
 
 load_dotenv(override=True)
@@ -63,7 +67,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Keep the original audio of the video (default: replace)",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         default=False,
         help="Detailed logging",
@@ -92,13 +97,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"[1/4] Loading VideoAsset: {asset_path}", file=sys.stderr)
         from v2a_inspect.models import VideoAsset
+
         asset_data = json.loads(asset_path.read_text(encoding="utf-8"))
         video_asset = VideoAsset(**asset_data)
         timeline = video_asset.sound_timeline
         if not timeline:
-            print("Error: VideoAsset does not contain a sound_timeline", file=sys.stderr)
+            print(
+                "Error: VideoAsset does not contain a sound_timeline", file=sys.stderr
+            )
             return 1
-        
+
     else:
         timeline_path = Path(args.timeline)
         if not timeline_path.exists():
@@ -113,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     if not Path(video_path).exists():
         print(f"Error: Video not found: {video_path}", file=sys.stderr)
         return 1
-        
+
     print("[2/4] Converting SoundTimeline to AudioPlan...", file=sys.stderr)
     try:
         video_clip = VideoFileClip(video_path)
@@ -123,27 +131,27 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"Error: Could not read video file: {e}", file=sys.stderr)
         return 1
-        
+
     if not fps or fps <= 0:
         fps = 30.0
-        
+
     audio_plan = AudioPlan(total_duration=video_duration)
-    
+
     # Map track_id to SoundTrack for easy lookup
     track_map = {track.sound_track_id: track for track in timeline.sound_tracks}
-    
+
     for event in timeline.sound_events:
         track = track_map.get(event.sound_track_id)
         if not track:
             continue
-            
+
         start_time = event.start_frame_index / fps
         end_time = event.end_frame_index / fps
-        
+
         # Adjust end_time if it's less than or equal to start_time
         if end_time <= start_time:
             end_time = start_time + 0.1
-            
+
         # Map generation mode (vta -> v2a, tta -> t2a)
         gen_mode = track.generation_mode
         if gen_mode == "vta":
@@ -162,15 +170,15 @@ def main(argv: list[str] | None = None) -> int:
             description=desc,
             volume=0.8,
             track_id=str(track.sound_track_id),
-            generation_model=gen_model
+            generation_model=gen_model,
         )
         audio_plan.items.append(item)
-        
+
     audio_plan.items.sort(key=lambda x: x.time[0])
-    
+
     n_items = len(audio_plan.items)
     print(f"  → {n_items} audio events scheduled.", file=sys.stderr)
-    
+
     if n_items == 0:
         print("Warning: No audio items to generate.", file=sys.stderr)
         return 0
@@ -183,7 +191,9 @@ def main(argv: list[str] | None = None) -> int:
         duration = item.time[1] - item.time[0]
         out_path = str(audio_dir / f"{item.item_id}.wav")
 
-        desc_preview = item.description[:60] + ("..." if len(item.description) > 60 else "")
+        desc_preview = item.description[:60] + (
+            "..." if len(item.description) > 60 else ""
+        )
         print(
             f"  [{i}/{n_items}] {item.item_id} ({item.type}, "
             f"{item.time[0]:.1f}s-{item.time[1]:.1f}s): {desc_preview}",
@@ -229,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("\n❌ Synthesis failed.", file=sys.stderr)
         return 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
