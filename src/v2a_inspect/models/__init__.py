@@ -1,3 +1,4 @@
+from .audio_plan import AudioPlan, AudioPlanItem
 from .base import SchemaModel
 from .initial_analysis import InitialSceneAnalysis, ObjectSeed
 from .initial_scene import InitialScene
@@ -13,6 +14,8 @@ from .visual_identity import (
 )
 
 __all__ = [
+    "AudioPlan",
+    "AudioPlanItem",
     "SchemaModel",
     "VideoAsset",
     "InitialScene",

@@ -110,37 +110,70 @@ class HunyuanInferenceClient:
             start_s = max(0.0, min(start_s, video_duration - 0.1))
             end_s = max(0.0, min(end_s, video_duration))
 
+        # Re-encoding을 피하기 위해 tpad 필터를 사용할 수 없으므로,
+        # 최소 1.5초가 필요하다면 원본 비디오 내에서 구간(window) 자체를 1.5초로 확장합니다.
         actual_duration = end_s - start_s
-        if actual_duration <= 0:
-            actual_duration = 0.1
+        if actual_duration < 1.5:
+            end_s = start_s + 1.5
+            if video_duration > 0 and end_s > video_duration:
+                end_s = video_duration
+                start_s = max(0.0, end_s - 1.5)
 
-        # Pad duration to at least 1.5s for Hunyuan minimum length requirement
-        padded_duration = max(1.5, actual_duration)
+        final_duration = end_s - start_s
+        if final_duration <= 0:
+            final_duration = 0.1
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            tmp_video_path = str(Path(temp_dir) / "cropped.mp4")
+            # -c copy 시 포맷 호환성을 위해 원본 확장자 유지
+            ext = video_path.suffix
+            tmp_video_path = str(Path(temp_dir) / f"cropped{ext}")
 
-            subprocess.run(
-                [
-                    ffmpeg_exe,
-                    "-y",
-                    "-i",
-                    str(video_path),
-                    "-ss",
-                    str(start_s),
-                    "-t",
-                    str(padded_duration),
-                    "-vf",
-                    f"tpad=stop_mode=clone:stop_duration={padded_duration}",
-                    "-c:v",
-                    "libx264",
-                    "-an",
-                    tmp_video_path,
-                ],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            if final_duration < 1.5:
+                # 원본 비디오 자체가 1.5초보다 짧은 극단적인 경우, 어쩔 수 없이 tpad와 재인코딩 사용
+                padded_duration = 1.5
+                codec = "h264_nvenc" if settings.enable_nvenc else "libx264"
+                subprocess.run(
+                    [
+                        ffmpeg_exe,
+                        "-y",
+                        "-i",
+                        str(video_path),
+                        "-ss",
+                        str(start_s),
+                        "-t",
+                        str(padded_duration),
+                        "-vf",
+                        f"tpad=stop_mode=clone:stop_duration={padded_duration}",
+                        "-c:v",
+                        codec,
+                        "-an",
+                        tmp_video_path,
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                # 길이가 충분한 경우 재인코딩 없이 빠르게 자르기 위해 -c:v copy 사용
+                subprocess.run(
+                    [
+                        ffmpeg_exe,
+                        "-y",
+                        "-ss",
+                        str(start_s),
+                        "-t",
+                        str(final_duration),
+                        "-i",
+                        str(video_path),
+                        "-c:v",
+                        "copy",
+                        "-an",
+                        tmp_video_path,
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
 
             # Generate audio using the cropped video
             audio_tensor, sample_rate = self._infer(

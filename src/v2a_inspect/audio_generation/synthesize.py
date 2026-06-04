@@ -21,13 +21,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from v2a_inspect.models.sound_timeline import SoundTimeline
+from v2a_inspect.models import SoundTimeline, AudioPlan, AudioPlanItem
 from v2a_inspect.audio_generation.client import generate_audio_for_item
-from v2a_inspect.audio_generation.mix import (
-    mix_audio_into_video,
-    AudioPlan,
-    AudioPlanItem,
-)
+from v2a_inspect.audio_generation.mix import mix_audio_into_video
 from moviepy import VideoFileClip
 
 load_dotenv(override=True)
@@ -173,6 +169,18 @@ def main(argv: list[str] | None = None) -> int:
         if end_time <= start_time:
             end_time = start_time + 0.1
 
+        source_label = ""
+        if track.sound_source_id and "timeline" in locals():
+            for source in timeline.sound_sources:
+                if source.sound_source_id == track.sound_source_id:
+                    source_label = source.label
+                    break
+
+        if source_label and source_label.lower() not in track.label.lower():
+            desc = f"{source_label}, [{track.label}] {event.description}"
+        else:
+            desc = f"[{track.label}] {event.description}"
+
         # Map generation mode (vta -> v2a, tta -> t2a)
         gen_mode = track.generation_mode
         vol = 1.0
@@ -184,8 +192,6 @@ def main(argv: list[str] | None = None) -> int:
             vol = 0.8  # TTA (텍스트 기반)는 기존 크기 유지
         else:
             gen_model = gen_mode
-
-        desc = f"[{track.label}] {event.description}"
 
         item = AudioPlanItem(
             item_id=str(event.sound_event_id),

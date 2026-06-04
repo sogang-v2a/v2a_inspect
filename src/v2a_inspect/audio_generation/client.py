@@ -18,7 +18,6 @@ import re
 
 import numpy as np
 import scipy.io.wavfile as wavfile
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +191,7 @@ def generate_dummy_audio(
     return out_path
 
 
-# ── V2A MMAudio API ───────────────────────────────────────────────────────────
+# ── V2A Hunyuan API ───────────────────────────────────────────────────────────
 
 
 def generate_v2a_hunyuan(
@@ -203,43 +202,31 @@ def generate_v2a_hunyuan(
     out_path: str,
     duration: float | None = None,
 ) -> str:
-    """Generate audio using HunyuanVideo-Foley via remote API."""
-    api_url = os.getenv("V2A_INSPECT_SERVER_URL", "http://localhost:8000")
-    # If the user explicitly set the old variable, use it.
-    if os.getenv("HUNYUAN_V2A_API_URL"):
-        api_url = os.getenv("HUNYUAN_V2A_API_URL")
+    """Generate audio using HunyuanVideo-Foley via unified client."""
+    import asyncio
+    import shutil
+    from v2a_inspect.client import HunyuanClient
 
     try:
-        data = {
-            "video_id": video_id,
-            "prompt": text,
-            "start_frame_index": int(time[0] * fps),
-            "end_frame_index": int(time[1] * fps),
-            "guidance_scale": 4.5,
-            "num_inference_steps": 50,
-        }
-        logger.info("Calling Hunyuan V2A API: %s", api_url)
+        logger.info("Calling Hunyuan V2A API via unified client...")
+        start_idx = int(time[0] * fps)
+        end_idx = int(time[1] * fps)
 
-        endpoint = f"{api_url}/infer/hunyuan/generate-v2a"
-        if api_url and api_url.endswith("/generate_v2a"):
-            # They might have put the old endpoint directly
-            endpoint = api_url
-            # Fallback to the old logic if they explicitly wanted the old API that accepts files.
-            # But we don't have the file here. This will probably fail if it's the old API.
-            # We assume it's the new API.
+        async def _generate():
+            async with HunyuanClient() as client:
+                return await client.generate_v2a(
+                    video_id=video_id,
+                    start_frame_index=start_idx,
+                    end_frame_index=end_idx,
+                    prompt=text,
+                    guidance_scale=4.5,
+                    num_inference_steps=50,
+                )
 
-        response = requests.post(endpoint, json=data)
-
-        if response.status_code == 200:
-            with open(out_path, "wb") as f_out:
-                f_out.write(response.content)
-
-            return out_path
-        else:
-            logger.error(
-                "Hunyuan API failed with %d: %s", response.status_code, response.text
-            )
-            return generate_dummy_audio(duration or 1.0, out_path)
+        tmp_audio_path = asyncio.run(_generate())
+        
+        shutil.copy(tmp_audio_path, out_path)
+        return out_path
     except Exception as e:
         logger.error("Failed to call Hunyuan API: %s", e)
         return generate_dummy_audio(duration or 1.0, out_path)

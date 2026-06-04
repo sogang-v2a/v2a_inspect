@@ -16,27 +16,8 @@ from pathlib import Path
 
 from moviepy import AudioFileClip, CompositeAudioClip, VideoFileClip
 from moviepy.audio.fx import MultiplyVolume, AudioFadeOut
-from dataclasses import dataclass, field
 
-
-@dataclass
-class AudioPlanItem:
-    item_id: str
-    type: str
-    time: tuple[float, float]
-    description: str
-    volume: float = 0.8
-    intensity: float = 0.5
-    pan: float = 0.0
-    confidence: float = 1.0
-    track_id: str | None = None
-    generation_model: str = "t2a"
-
-
-@dataclass
-class AudioPlan:
-    items: list[AudioPlanItem] = field(default_factory=list)
-    total_duration: float = 0.0
+from v2a_inspect.models.audio_plan import AudioPlan
 
 
 logger = logging.getLogger(__name__)
