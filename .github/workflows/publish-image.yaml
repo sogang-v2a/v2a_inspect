@@ -40,8 +40,8 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
           outputs: |
             type=image,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
 
@@ -81,7 +81,7 @@ jobs:
             ${{ env.SERVER_IMAGE_NAME }}:${{ steps.meta.outputs.ref_slug }}
             ${{ env.SERVER_IMAGE_NAME }}:sha-${{ github.sha }}
             ${{ env.SERVER_IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.SERVER_IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.SERVER_IMAGE_NAME }}:buildcache,mode=max
           outputs: |
             type=image,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
