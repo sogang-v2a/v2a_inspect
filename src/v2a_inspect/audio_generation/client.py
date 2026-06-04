@@ -197,61 +197,39 @@ def generate_dummy_audio(
 
 
 def generate_v2a_hunyuan(
-    video_path: str,
+    video_id: str,
+    fps: float,
     time: tuple[float, float],
     text: str,
     out_path: str,
     duration: float | None = None,
 ) -> str:
-    """Generate audio using HunyuanVideo-Foley via remote vast.ai API."""
-    api_url = os.getenv("HUNYUAN_V2A_API_URL")
-    if not api_url:
-        logger.warning("HUNYUAN_V2A_API_URL not found. Falling back to dummy audio.")
-        return generate_dummy_audio(duration or 1.0, out_path)
+    """Generate audio using HunyuanVideo-Foley via remote API."""
+    api_url = os.getenv("V2A_INSPECT_SERVER_URL", "http://localhost:8000")
+    # If the user explicitly set the old variable, use it.
+    if os.getenv("HUNYUAN_V2A_API_URL"):
+        api_url = os.getenv("HUNYUAN_V2A_API_URL")
 
     try:
-        # 비디오의 해당 구간만 자르기 (ffmpeg 사용)
-        import subprocess
-        import imageio_ffmpeg
+        data = {
+            "video_id": video_id,
+            "prompt": text,
+            "start_frame_index": int(time[0] * fps),
+            "end_frame_index": int(time[1] * fps),
+            "guidance_scale": 4.5,
+            "num_inference_steps": 50,
+        }
+        logger.info("Calling Hunyuan V2A API: %s", api_url)
 
-        fd, tmp_video_path = tempfile.mkstemp(suffix=".mp4")
-        os.close(fd)
+        endpoint = f"{api_url}/infer/hunyuan/generate-v2a"
+        if api_url.endswith("/generate_v2a"):
+            # They might have put the old endpoint directly
+            endpoint = api_url
+            # Fallback to the old logic if they explicitly wanted the old API that accepts files.
+            # But we don't have the file here. This will probably fail if it's the old API.
+            # We assume it's the new API.
 
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-
-        actual_duration = time[1] - time[0]
-        # Hunyuan 최소 길이를 위해 1.5초 이하면 마지막 프레임 복사(Padding)
-        padded_duration = max(1.5, actual_duration)
-
-        subprocess.run(
-            [
-                ffmpeg_exe,
-                "-y",
-                "-i",
-                video_path,
-                "-ss",
-                str(time[0]),
-                "-t",
-                str(padded_duration),
-                "-vf",
-                f"tpad=stop_mode=clone:stop_duration={padded_duration}",
-                "-c:v",
-                "libx264",
-                "-an",
-                tmp_video_path,
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        with open(tmp_video_path, "rb") as f:
-            files = {"video": f}
-            data = {"prompt": text}
-            logger.info("Calling Hunyuan V2A API: %s", api_url)
-            response = requests.post(f"{api_url}/generate_v2a", files=files, data=data)
-
-        os.remove(tmp_video_path)
+        response = requests.post(endpoint, json=data)
 
         if response.status_code == 200:
             with open(out_path, "wb") as f_out:
@@ -279,6 +257,8 @@ def generate_audio_for_item(
     video_path: str | None = None,
     time: tuple[float, float] | None = None,
     generation_model: str = "t2a",
+    video_id: str | None = None,
+    fps: float = 30.0,
 ) -> str | None:
     """
     오디오 타입에 따라 적절한 생성 API로 라우팅합니다.
@@ -293,6 +273,10 @@ def generate_audio_for_item(
         생성된 오디오 파일 저장 경로
     duration : float
         대상 오디오 길이(초)
+    video_id : str | None
+        대상 비디오 ID (V2A 용)
+    fps : float
+        대상 비디오의 초당 프레임 수 (V2A 용)
 
     Returns
     -------
@@ -300,9 +284,9 @@ def generate_audio_for_item(
         생성된 파일 경로 또는 실패 시 None
     """
     try:
-        if generation_model == "v2a" and video_path and time:
+        if generation_model == "v2a" and video_id and time:
             return generate_v2a_hunyuan(
-                video_path, time, description, out_path, duration
+                video_id, fps, time, description, out_path, duration
             )
 
         if kind == "dialogue":

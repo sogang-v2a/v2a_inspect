@@ -3,9 +3,9 @@ import random
 import numpy as np
 import torch  # type: ignore
 import torchaudio  # type: ignore
-from fastapi import FastAPI, UploadFile, File, Form  # type: ignore
-from fastapi.responses import FileResponse  # type: ignore
-import uvicorn  # type: ignore
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import FileResponse
+import uvicorn
 import shutil
 import tempfile
 import uuid
@@ -28,7 +28,9 @@ def set_manual_seed(global_seed):
     torch.manual_seed(global_seed)
 
 
-@app.on_event("startup")
+from contextlib import asynccontextmanager
+
+
 def startup_event():
     global model_dict, cfg
     logger.info("Initializing HunyuanVideo-Foley model...")
@@ -50,6 +52,15 @@ def startup_event():
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         # Not exiting so the server can start and show errors on request
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    startup_event()
+    yield
+
+
+app.router.lifespan_context = lifespan
 
 
 def infer(
@@ -79,7 +90,7 @@ async def generate_v2a_endpoint(
     num_inference_steps: int = Form(50),
 ):
     if model_dict is None:
-        from fastapi import HTTPException  # type: ignore
+        from fastapi import HTTPException
 
         raise HTTPException(status_code=500, detail="Model is not loaded.")
 
@@ -115,7 +126,7 @@ async def generate_v2a_endpoint(
 
     except Exception as e:
         logger.exception("Error during generation")
-        from fastapi import HTTPException  # type: ignore
+        from fastapi import HTTPException
 
         raise HTTPException(status_code=500, detail=str(e))
 
