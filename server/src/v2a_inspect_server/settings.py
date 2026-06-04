@@ -20,7 +20,7 @@ class ServerSettings(BaseSettings):
     opencv_ffmpeg_capture_options: str | None = "hw_decoders_any;cuda"
     embedding_model_id: str = "facebook/dinov2-base"
     label_model_id: str = "google/siglip2-base-patch16-224"
-    enable_nvenc: bool = False
+    enable_nvenc: bool = True
 
     class Config:
         env_prefix = "V2A_SERVER_"
