@@ -7,6 +7,9 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md ./
+
+RUN uv sync --locked --no-dev --no-install-project --extra ui --extra observability
+
 COPY src ./src
 
 RUN uv sync --locked --no-dev --no-editable --extra ui --extra observability
