@@ -9,6 +9,7 @@ import uvicorn
 import shutil
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 
 from loguru import logger  # type: ignore
 from hunyuanvideo_foley.utils.model_utils import load_model  # type: ignore
@@ -26,9 +27,6 @@ def set_manual_seed(global_seed):
     random.seed(global_seed)
     np.random.seed(global_seed)
     torch.manual_seed(global_seed)
-
-
-from contextlib import asynccontextmanager
 
 
 def startup_event():

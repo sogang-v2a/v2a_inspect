@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import tempfile
 
 import numpy as np
 import scipy.io.wavfile as wavfile
