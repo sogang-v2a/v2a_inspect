@@ -221,7 +221,7 @@ def generate_v2a_hunyuan(
         logger.info("Calling Hunyuan V2A API: %s", api_url)
 
         endpoint = f"{api_url}/infer/hunyuan/generate-v2a"
-        if api_url.endswith("/generate_v2a"):
+        if api_url and api_url.endswith("/generate_v2a"):
             # They might have put the old endpoint directly
             endpoint = api_url
             # Fallback to the old logic if they explicitly wanted the old API that accepts files.
