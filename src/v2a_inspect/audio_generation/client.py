@@ -94,14 +94,13 @@ def generate_dialogue_openai(
         raw_speed = standard_duration / duration
         speed = max(0.25, min(raw_speed, 4.0))
 
-    response = client.audio.speech.create(
+    with client.audio.speech.with_streaming_response.create(
         model="tts-1",
         voice=voice,
         input=spoken_text,
         speed=speed,
-    )
-
-    response.stream_to_file(out_path)
+    ) as response:
+        response.stream_to_file(out_path)
     return out_path
 
 

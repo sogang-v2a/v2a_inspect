@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         video_clip = VideoFileClip(video_path)
         fps = video_clip.fps
-        video_duration = video_clip.duration
+        video_duration = video_clip.duration or 0.0
         video_clip.close()
     except Exception as e:
         print(f"Error: Could not read video file: {e}", file=sys.stderr)

@@ -95,7 +95,8 @@ def mix_audio_into_video(
 
             duration = item.time[1] - item.time[0]
             clip = AudioFileClip(wav_path)
-            clip = clip.subclipped(0, min(clip.duration, duration))
+            clip_dur = clip.duration or duration
+            clip = clip.subclipped(0, min(clip_dur, duration))
             clip = clip.with_start(item.time[0])
 
             effects = []
@@ -104,7 +105,7 @@ def mix_audio_into_video(
                 effects.append(MultiplyVolume(item.volume))
 
             # 자연스러운 페이드아웃 추가 (0.15초)
-            fade_duration = min(0.15, clip.duration / 2)
+            fade_duration = min(0.15, clip_dur / 2.0)
             if fade_duration > 0:
                 effects.append(AudioFadeOut(fade_duration))
 
@@ -125,7 +126,7 @@ def mix_audio_into_video(
 
         # 오디오 합성
         final_audio = CompositeAudioClip(audio_clips)
-        if final_audio.duration > video.duration:
+        if final_audio.duration is not None and video.duration is not None and final_audio.duration > video.duration:
             final_audio = final_audio.subclipped(0, video.duration)
 
         video = video.with_audio(final_audio)

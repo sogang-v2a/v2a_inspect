@@ -1,22 +1,22 @@
 import os
 import tempfile
-import torch
-import torchaudio
+import torch  # type: ignore
+import torchaudio  # type: ignore
 import logging
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse
 import uvicorn
 
-from mmaudio.eval_utils import (
+from mmaudio.eval_utils import (  # type: ignore
     ModelConfig,
     all_model_cfg,
     generate,
     load_video,
     setup_eval_logging,
 )
-from mmaudio.model.flow_matching import FlowMatching
-from mmaudio.model.networks import get_my_mmaudio
-from mmaudio.model.utils.features_utils import FeaturesUtils
+from mmaudio.model.flow_matching import FlowMatching  # type: ignore
+from mmaudio.model.networks import get_my_mmaudio  # type: ignore
+from mmaudio.model.utils.features_utils import FeaturesUtils  # type: ignore
 
 # Basic Setup
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -36,7 +36,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.bfloat16
 
 
-@app.on_event("startup")
+@app.on_event("startup")  # type: ignore
 def load_model():
     global net, feature_utils, fm, seq_cfg
     log.info("Loading MMAudio model...")
@@ -91,6 +91,8 @@ async def generate_v2a_endpoint(
         sync_frames = video_info.sync_frames.unsqueeze(0)
         duration = video_info.duration_sec
 
+        assert seq_cfg is not None
+        assert net is not None
         seq_cfg.duration = duration
         net.update_seq_lengths(
             seq_cfg.latent_seq_len, seq_cfg.clip_seq_len, seq_cfg.sync_seq_len
