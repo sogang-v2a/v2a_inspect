@@ -126,7 +126,11 @@ def mix_audio_into_video(
 
         # 오디오 합성
         final_audio = CompositeAudioClip(audio_clips)
-        if final_audio.duration is not None and video.duration is not None and final_audio.duration > video.duration:
+        if (
+            final_audio.duration is not None
+            and video.duration is not None
+            and final_audio.duration > video.duration
+        ):
             final_audio = final_audio.subclipped(0, video.duration)
 
         video = video.with_audio(final_audio)
