@@ -3,14 +3,13 @@ import tempfile
 import torch
 import torchaudio
 import logging
-from pathlib import Path
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse
 import uvicorn
 
 from mmaudio.eval_utils import (ModelConfig, all_model_cfg, generate, load_video, setup_eval_logging)
 from mmaudio.model.flow_matching import FlowMatching
-from mmaudio.model.networks import MMAudio, get_my_mmaudio
+from mmaudio.model.networks import get_my_mmaudio
 from mmaudio.model.utils.features_utils import FeaturesUtils
 
 # Basic Setup

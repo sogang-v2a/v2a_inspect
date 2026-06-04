@@ -19,13 +19,13 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv(override=True)
-
 
 from v2a_inspect.models.sound_timeline import SoundTimeline
 from v2a_inspect.audio_generation.client import generate_audio_for_item
 from v2a_inspect.audio_generation.mix import mix_audio_into_video, AudioPlan, AudioPlanItem
 from moviepy import VideoFileClip
+
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,6 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: Must provide either --timeline or --asset", file=sys.stderr)
         return 1
 
-    visual_events_context = []
-    initial_scenes_context = []
-
     if args.asset:
         asset_path = Path(args.asset)
         if not asset_path.exists():
@@ -102,9 +99,6 @@ def main(argv: list[str] | None = None) -> int:
             print("Error: VideoAsset does not contain a sound_timeline", file=sys.stderr)
             return 1
         
-        if video_asset.visual_identity_layer:
-            visual_events_context = video_asset.visual_identity_layer.visual_events
-        initial_scenes_context = video_asset.initial_scenes
     else:
         timeline_path = Path(args.timeline)
         if not timeline_path.exists():
@@ -120,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: Video not found: {video_path}", file=sys.stderr)
         return 1
         
-    print(f"[2/4] Converting SoundTimeline to AudioPlan...", file=sys.stderr)
+    print("[2/4] Converting SoundTimeline to AudioPlan...", file=sys.stderr)
     try:
         video_clip = VideoFileClip(video_path)
         fps = video_clip.fps
