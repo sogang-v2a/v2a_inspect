@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import tempfile
-from pathlib import Path
 
 import numpy as np
 import scipy.io.wavfile as wavfile
@@ -26,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 # ── OpenAI TTS ────────────────────────────────────────────────────────────────
-
 
 
 def generate_dialogue_openai(
@@ -40,17 +38,44 @@ def generate_dialogue_openai(
 
     # 화자 설명 키워드에 따라 음성 선택
     desc_lower = text.lower()
-    if any(w in desc_lower for w in [
-        "female", "woman", "girl", "lady", "여성", "여자", "소녀",
-    ]):
+    if any(
+        w in desc_lower
+        for w in [
+            "female",
+            "woman",
+            "girl",
+            "lady",
+            "여성",
+            "여자",
+            "소녀",
+        ]
+    ):
         voice = "nova"
-    elif any(w in desc_lower for w in [
-        "deep", "monster", "large man", "giant", "괴물", "거인", "거친",
-    ]):
+    elif any(
+        w in desc_lower
+        for w in [
+            "deep",
+            "monster",
+            "large man",
+            "giant",
+            "괴물",
+            "거인",
+            "거친",
+        ]
+    ):
         voice = "onyx"
-    elif any(w in desc_lower for w in [
-        "male", "man", "boy", "guy", "남성", "남자", "소년",
-    ]):
+    elif any(
+        w in desc_lower
+        for w in [
+            "male",
+            "man",
+            "boy",
+            "guy",
+            "남성",
+            "남자",
+            "소년",
+        ]
+    ):
         voice = "echo"
     else:
         voice = "alloy"
@@ -69,21 +94,17 @@ def generate_dialogue_openai(
         raw_speed = standard_duration / duration
         speed = max(0.25, min(raw_speed, 4.0))
 
-    response = client.audio.speech.create(
+    with client.audio.speech.with_streaming_response.create(
         model="tts-1",
         voice=voice,
         input=spoken_text,
         speed=speed,
-    )
-
-
-
-    response.stream_to_file(out_path)
+    ) as response:
+        response.stream_to_file(out_path)
     return out_path
 
 
 # ── ElevenLabs SFX ────────────────────────────────────────────────────────────
-
 
 
 def generate_sfx_elevenlabs(
@@ -106,8 +127,6 @@ def generate_sfx_elevenlabs(
             duration_seconds=dur_seconds,
         )
 
-
-
         with open(out_path, "wb") as f:
             for chunk in audio_generator:
                 f.write(chunk)
@@ -118,7 +137,6 @@ def generate_sfx_elevenlabs(
 
 
 # ── ElevenLabs Music ──────────────────────────────────────────────────────────
-
 
 
 def generate_music_elevenlabs(
@@ -140,8 +158,6 @@ def generate_music_elevenlabs(
             prompt=text,
             music_length_ms=dur_ms,
         )
-
-
 
         with open(out_path, "wb") as f:
             for chunk in audio_generator:
@@ -180,7 +196,6 @@ def generate_dummy_audio(
 # ── V2A MMAudio API ───────────────────────────────────────────────────────────
 
 
-
 def generate_v2a_hunyuan(
     video_path: str,
     time: tuple[float, float],
@@ -198,40 +213,55 @@ def generate_v2a_hunyuan(
         # 비디오의 해당 구간만 자르기 (ffmpeg 사용)
         import subprocess
         import imageio_ffmpeg
-        
+
         fd, tmp_video_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd)
-        
+
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        
+
         actual_duration = time[1] - time[0]
         # Hunyuan 최소 길이를 위해 1.5초 이하면 마지막 프레임 복사(Padding)
         padded_duration = max(1.5, actual_duration)
-        
-        subprocess.run([
-            ffmpeg_exe, "-y", "-i", video_path, 
-            "-ss", str(time[0]), "-t", str(padded_duration),
-            "-vf", f"tpad=stop_mode=clone:stop_duration={padded_duration}",
-            "-c:v", "libx264", "-an", tmp_video_path
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        subprocess.run(
+            [
+                ffmpeg_exe,
+                "-y",
+                "-i",
+                video_path,
+                "-ss",
+                str(time[0]),
+                "-t",
+                str(padded_duration),
+                "-vf",
+                f"tpad=stop_mode=clone:stop_duration={padded_duration}",
+                "-c:v",
+                "libx264",
+                "-an",
+                tmp_video_path,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
         with open(tmp_video_path, "rb") as f:
             files = {"video": f}
             data = {"prompt": text}
             logger.info("Calling Hunyuan V2A API: %s", api_url)
             response = requests.post(f"{api_url}/generate_v2a", files=files, data=data)
-            
+
         os.remove(tmp_video_path)
 
         if response.status_code == 200:
             with open(out_path, "wb") as f_out:
                 f_out.write(response.content)
-            
-
 
             return out_path
         else:
-            logger.error("Hunyuan API failed with %d: %s", response.status_code, response.text)
+            logger.error(
+                "Hunyuan API failed with %d: %s", response.status_code, response.text
+            )
             return generate_dummy_audio(duration or 1.0, out_path)
     except Exception as e:
         logger.error("Failed to call Hunyuan API: %s", e)
@@ -239,7 +269,6 @@ def generate_v2a_hunyuan(
 
 
 # ── Router ────────────────────────────────────────────────────────────────────
-
 
 
 def generate_audio_for_item(
@@ -272,11 +301,15 @@ def generate_audio_for_item(
     """
     try:
         if generation_model == "v2a" and video_path and time:
-            return generate_v2a_hunyuan(video_path, time, description, out_path, duration)
+            return generate_v2a_hunyuan(
+                video_path, time, description, out_path, duration
+            )
 
         if kind == "dialogue":
             if '"' in description or "'" in description:
-                return generate_dialogue_openai(description, out_path, duration=duration)
+                return generate_dialogue_openai(
+                    description, out_path, duration=duration
+                )
             else:
                 return generate_sfx_elevenlabs(description, out_path, duration=duration)
         elif kind in ("sfx", "ambience"):

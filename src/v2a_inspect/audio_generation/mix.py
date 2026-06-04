@@ -18,6 +18,7 @@ from moviepy import AudioFileClip, CompositeAudioClip, VideoFileClip
 from moviepy.audio.fx import MultiplyVolume, AudioFadeOut
 from dataclasses import dataclass, field
 
+
 @dataclass
 class AudioPlanItem:
     item_id: str
@@ -30,6 +31,7 @@ class AudioPlanItem:
     confidence: float = 1.0
     track_id: str | None = None
     generation_model: str = "t2a"
+
 
 @dataclass
 class AudioPlan:
@@ -93,19 +95,20 @@ def mix_audio_into_video(
 
             duration = item.time[1] - item.time[0]
             clip = AudioFileClip(wav_path)
-            clip = clip.subclipped(0, min(clip.duration, duration))
+            clip_dur = clip.duration or duration
+            clip = clip.subclipped(0, min(clip_dur, duration))
             clip = clip.with_start(item.time[0])
 
             effects = []
             # 1. Volume 적용
             if item.volume != 1.0:
                 effects.append(MultiplyVolume(item.volume))
-            
+
             # 자연스러운 페이드아웃 추가 (0.15초)
-            fade_duration = min(0.15, clip.duration / 2)
+            fade_duration = min(0.15, clip_dur / 2.0)
             if fade_duration > 0:
                 effects.append(AudioFadeOut(fade_duration))
-                
+
             if effects:
                 clip = clip.with_effects(effects)
 
@@ -123,15 +126,21 @@ def mix_audio_into_video(
 
         # 오디오 합성
         final_audio = CompositeAudioClip(audio_clips)
-        if final_audio.duration > video.duration:
+        if (
+            final_audio.duration is not None
+            and video.duration is not None
+            and final_audio.duration > video.duration
+        ):
             final_audio = final_audio.subclipped(0, video.duration)
-            
+
         video = video.with_audio(final_audio)
 
         # 비디오 출력
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info("Writing mixed video: %s (%d tracks)", output_path, n_mixed)
-        video.write_videofile(output_path, audio_codec="aac", fps=video.fps, logger=None)
+        video.write_videofile(
+            output_path, audio_codec="aac", fps=video.fps, logger=None
+        )
 
         # 리소스 정리
         video.close()

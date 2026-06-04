@@ -33,3 +33,4 @@ Current HTTP endpoints:
 - `POST /infer/sam3-extract`
 - `POST /infer/embed-crops`
 - `POST /infer/score-labels`
+- `POST /infer/hunyuan/generate-v2a`

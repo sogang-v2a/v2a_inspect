@@ -15,25 +15,32 @@ from v2a_inspect_server.models import (
 from v2a_inspect_server.inference.sam3 import Sam3InferenceClient
 from v2a_inspect_server.inference.embed import DinoV2InferenceClient
 from v2a_inspect_server.inference.score import Siglip2InferenceClient
+from v2a_inspect_server.inference.hunyuan import HunyuanInferenceClient
 from v2a_inspect_server.settings import settings
+from v2a_inspect_server.models.hunyuan import HunyuanGenerateV2ARequest
+from fastapi.responses import FileResponse
 
 sam3_client: Sam3InferenceClient | None = None
 embed_client: DinoV2InferenceClient | None = None
 score_client: Siglip2InferenceClient | None = None
+hunyuan_client: HunyuanInferenceClient | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global sam3_client, embed_client, score_client
+    global sam3_client, embed_client, score_client, hunyuan_client
     # Initialize the clients on startup
     sam3_client = Sam3InferenceClient()
     embed_client = DinoV2InferenceClient()
     score_client = Siglip2InferenceClient()
+    hunyuan_client = HunyuanInferenceClient()
     yield
     # Cleanup on shutdown
     if sam3_client is not None:
         sam3_client.close()
-    sam3_client = embed_client = score_client = None
+    if hunyuan_client is not None:
+        hunyuan_client.close()
+    sam3_client = embed_client = score_client = hunyuan_client = None
 
 
 app = FastAPI(title="v2a-inspect-server", lifespan=lifespan)
@@ -114,5 +121,19 @@ async def score_labels(request: LabelScoreRequest):
         return score_client.score(request)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/infer/hunyuan/generate-v2a")
+async def generate_v2a_hunyuan(request: HunyuanGenerateV2ARequest):
+    if hunyuan_client is None:
+        raise HTTPException(status_code=503, detail="Hunyuan client not initialized")
+    try:
+        audio_path = hunyuan_client.generate_v2a(request)
+        return FileResponse(audio_path, media_type="audio/wav")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

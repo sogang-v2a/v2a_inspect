@@ -23,6 +23,7 @@ from .sam3 import (
     Sam3TrackVideoRequest,
     Sam3TrackVideoResponse,
 )
+from .hunyuan import HunyuanGenerateV2ARequest
 
 __all__ = [
     "DinoV2Embedding",
@@ -42,4 +43,5 @@ __all__ = [
     "Sam3TrackPoint",
     "Sam3TrackVideoRequest",
     "Sam3TrackVideoResponse",
+    "HunyuanGenerateV2ARequest",
 ]

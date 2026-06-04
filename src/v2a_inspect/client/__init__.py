@@ -4,6 +4,7 @@ from .endpoints.video import VideoClient
 from .endpoints.sam3 import SAM3Client
 from .endpoints.embed import EmbeddingClient
 from .endpoints.score import ScoringClient
+from .endpoints.hunyuan import HunyuanClient
 from .config import settings
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "SAM3Client",
     "EmbeddingClient",
     "ScoringClient",
+    "HunyuanClient",
     "settings",
 ]
