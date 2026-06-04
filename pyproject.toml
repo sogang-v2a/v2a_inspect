@@ -36,8 +36,6 @@ dependencies = [
     "elevenlabs>=2.51.0",
     "scipy>=1.17.1",
     "numpy>=2.4.3",
-    "imageio-ffmpeg>=0.6.0",
-    "langfuse>=4.0.0",
     "typer>=0.20.0",
 ]
 
