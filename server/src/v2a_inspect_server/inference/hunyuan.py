@@ -6,8 +6,8 @@ import random
 import tempfile
 import time
 import subprocess
+import uuid
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -21,6 +21,7 @@ try:
     import torchaudio
     from hunyuanvideo_foley.utils.model_utils import load_model, denoise_process
     from hunyuanvideo_foley.utils.feature_utils import feature_process
+
     HUNYUAN_AVAILABLE = True
 except ImportError:
     HUNYUAN_AVAILABLE = False
@@ -29,7 +30,9 @@ except ImportError:
 class HunyuanInferenceClient:
     def __init__(self) -> None:
         if not HUNYUAN_AVAILABLE:
-            logger.warning("HunyuanVideo-Foley is not installed. V2A generation will fail.")
+            logger.warning(
+                "HunyuanVideo-Foley is not installed. V2A generation will fail."
+            )
             self.model_dict = None
             self.cfg = None
             return
@@ -37,15 +40,20 @@ class HunyuanInferenceClient:
         logger.info("Initializing HunyuanVideo-Foley model...")
         model_path = os.environ.get("HUNYUAN_MODEL_PATH", "HunyuanVideo-Foley")
         model_size = os.environ.get("HUNYUAN_MODEL_SIZE", "xl")
-        enable_offload = os.environ.get("HUNYUAN_ENABLE_OFFLOAD", "true").lower() == "true"
-        
+        enable_offload = (
+            os.environ.get("HUNYUAN_ENABLE_OFFLOAD", "true").lower() == "true"
+        )
+
         # Enable expandable segments to avoid CUDA OOM on smaller GPUs
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
         config_path = f"configs/hunyuanvideo-foley-{model_size}.yaml"
         # If absolute path is needed, or if we need to resolve it from model_path:
         # Assuming the configs are within the current working directory or site-packages.
-        if not Path(config_path).exists() and Path(model_path).parent.joinpath(config_path).exists():
+        if (
+            not Path(config_path).exists()
+            and Path(model_path).parent.joinpath(config_path).exists()
+        ):
             config_path = str(Path(model_path).parent.joinpath(config_path))
 
         try:
@@ -79,11 +87,13 @@ class HunyuanInferenceClient:
 
         # We need to crop the video to the requested frame range.
         import imageio_ffmpeg
+
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
         # Assuming 24 fps or we can just pass time. But the request provides frame index.
         # Let's extract FPS from video.
         import cv2
+
         cap = cv2.VideoCapture(str(video_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0:
@@ -94,7 +104,7 @@ class HunyuanInferenceClient:
 
         start_s = request.start_frame_index / fps
         end_s = request.end_frame_index / fps
-        
+
         # Clamp to avoid ffmpeg seeking past EOF
         if video_duration > 0:
             start_s = max(0.0, min(start_s, video_duration - 0.1))
@@ -109,16 +119,21 @@ class HunyuanInferenceClient:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             tmp_video_path = str(Path(temp_dir) / "cropped.mp4")
-            
+
             subprocess.run(
                 [
                     ffmpeg_exe,
                     "-y",
-                    "-i", str(video_path),
-                    "-ss", str(start_s),
-                    "-t", str(padded_duration),
-                    "-vf", f"tpad=stop_mode=clone:stop_duration={padded_duration}",
-                    "-c:v", "libx264",
+                    "-i",
+                    str(video_path),
+                    "-ss",
+                    str(start_s),
+                    "-t",
+                    str(padded_duration),
+                    "-vf",
+                    f"tpad=stop_mode=clone:stop_duration={padded_duration}",
+                    "-c:v",
+                    "libx264",
                     "-an",
                     tmp_video_path,
                 ],
@@ -135,24 +150,32 @@ class HunyuanInferenceClient:
                 num_inference_steps=request.num_inference_steps,
                 neg_prompt=request.negative_prompt,
             )
-            
+
             # Save audio to a temp file
             out_audio_path = str(Path(temp_dir) / "output.wav")
             torchaudio.save(out_audio_path, audio_tensor.cpu(), sample_rate)
-            
-            logger.info(f"Hunyuan generation took {time.perf_counter() - start_time:.2f}s")
-            
+
+            logger.info(
+                f"Hunyuan generation took {time.perf_counter() - start_time:.2f}s"
+            )
+
             # Read bytes to return or save to permanent storage.
             # In v2a_inspect_server, we usually return JSON, but for audio, we can return the path
             # or upload it to settings.upload_dir.
             final_audio_path = settings.upload_dir / f"audio_{uuid.uuid4().hex}.wav"
             import shutil
+
             shutil.copy(out_audio_path, final_audio_path)
-            
+
         return str(final_audio_path)
 
     def _infer(
-        self, video_path: str, prompt: str, guidance_scale: float = 4.5, num_inference_steps: int = 50, neg_prompt: str | None = None
+        self,
+        video_path: str,
+        prompt: str,
+        guidance_scale: float = 4.5,
+        num_inference_steps: int = 50,
+        neg_prompt: str | None = None,
     ) -> tuple[torch.Tensor, int]:
         self._set_manual_seed(42)
         visual_feats, text_feats, audio_len_in_s = feature_process(
@@ -181,5 +204,3 @@ class HunyuanInferenceClient:
             if path.exists():
                 return path
         raise FileNotFoundError(f"Video {video_id} not found")
-
-import uuid

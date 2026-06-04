@@ -124,6 +124,7 @@ async def score_labels(request: LabelScoreRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/infer/hunyuan/generate-v2a")
 async def generate_v2a_hunyuan(request: HunyuanGenerateV2ARequest):
     if hunyuan_client is None:

@@ -151,7 +151,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         video_id = asyncio.run(_upload_video(video_path))
     except Exception as e:
-        print(f"Warning: Could not upload video to server. V2A might fail. ({e})", file=sys.stderr)
+        print(
+            f"Warning: Could not upload video to server. V2A might fail. ({e})",
+            file=sys.stderr,
+        )
         video_id = "dummy"
 
     for event in timeline.sound_events:
@@ -161,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
 
         start_time = event.start_frame_index / fps
         end_time = event.end_frame_index / fps
-        
+
         # 클램핑: 시작 시간이 비디오 길이를 초과하지 않도록 보정 (ffmpeg 에러 방지)
         start_time = max(0.0, min(start_time, video_duration - 0.1))
         end_time = max(0.0, min(end_time, video_duration))

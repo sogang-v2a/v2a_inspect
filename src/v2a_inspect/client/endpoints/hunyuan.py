@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .base import BaseClient
 
+
 class HunyuanClient(BaseClient):
     """Client for HunyuanVideo-Foley V2A generation."""
 
@@ -31,15 +32,15 @@ class HunyuanClient(BaseClient):
             "num_inference_steps": num_inference_steps,
             "negative_prompt": negative_prompt,
         }
-        
+
         # BaseClient._request assumes returning httpx.Response
         response = await self._request(
             "POST", "/infer/hunyuan/generate-v2a", json=request
         )
-        
+
         # Save the audio stream to a temporary file
         out_path = str(Path(tempfile.gettempdir()) / f"hunyuan_{uuid.uuid4().hex}.wav")
         with open(out_path, "wb") as f:
             f.write(response.content)
-            
+
         return out_path
