@@ -40,27 +40,66 @@ class HunyuanInferenceClient:
         logger.info("Initializing HunyuanVideo-Foley model...")
         model_path = os.environ.get("HUNYUAN_MODEL_PATH", "HunyuanVideo-Foley")
         model_size = os.environ.get("HUNYUAN_MODEL_SIZE", "xl")
+        
+        # Auto-download the weights using huggingface_hub if not found locally
+        required_weights = [
+            f"hunyuanvideo_foley_{model_size}.pth",
+            "vae_128d_48k.pth",
+            "synchformer_state_dict.pth"
+        ]
+        
+        for weight_file in required_weights:
+            if not (Path(model_path) / weight_file).exists():
+                logger.info(f"Weights not found locally. Downloading {weight_file} from HuggingFace to {model_path}...")
+                try:
+                    import huggingface_hub
+                    Path(model_path).mkdir(parents=True, exist_ok=True)
+                    huggingface_hub.hf_hub_download(
+                        repo_id="tencent/HunyuanVideo-Foley",
+                        filename=weight_file,
+                        local_dir=model_path,
+                    )
+                    logger.info(f"{weight_file} downloaded successfully.")
+                except Exception as e:
+                    logger.error(f"Failed to download {weight_file} from HuggingFace: {e}")
         enable_offload = (
             os.environ.get("HUNYUAN_ENABLE_OFFLOAD", "true").lower() == "true"
         )
 
-        # Enable expandable segments to avoid CUDA OOM on smaller GPUs
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+        import urllib.request
+        import hunyuanvideo_foley
+        pkg_dir = Path(hunyuanvideo_foley.__file__).parent
+        
+        # Hunyuan load_model is very strict about where it finds the configs.
+        # We aggressively place the downloaded config in all possible locations it might check.
+        target_paths = [
+            Path.cwd() / f"configs/hunyuanvideo-foley-{model_size}.yaml",
+            pkg_dir / "configs" / f"hunyuanvideo-foley-{model_size}.yaml",
+            pkg_dir.parent / "configs" / f"hunyuanvideo-foley-{model_size}.yaml",
+            Path(model_path) / f"configs/hunyuanvideo-foley-{model_size}.yaml",
+        ]
+        
+        url = f"https://raw.githubusercontent.com/Tencent-Hunyuan/HunyuanVideo-Foley/main/configs/hunyuanvideo-foley-{model_size}.yaml"
+        
+        for p in target_paths:
+            if not p.exists():
+                try:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    urllib.request.urlretrieve(url, str(p))
+                    print(f"✅ [Hunyuan Fix] Downloaded config to: {p}")
+                except Exception as e:
+                    print(f"❌ [Hunyuan Fix] Failed to write config to {p}: {e}")
+        
+        # Use the absolute path from CWD for the explicit argument
+        config_path_str = str(target_paths[0].resolve())
 
-        config_path = f"configs/hunyuanvideo-foley-{model_size}.yaml"
-        # If absolute path is needed, or if we need to resolve it from model_path:
-        # Assuming the configs are within the current working directory or site-packages.
-        if (
-            not Path(config_path).exists()
-            and Path(model_path).parent.joinpath(config_path).exists()
-        ):
-            config_path = str(Path(model_path).parent.joinpath(config_path))
+        device_name = "cuda" if torch.cuda.is_available() else "cpu"
 
         try:
             self.model_dict, self.cfg = load_model(
                 model_path=model_path,
-                config_path=config_path,
-                device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+                config_path=config_path_str,
+                device=torch.device(device_name),
                 enable_offload=enable_offload,
                 model_size=model_size,
             )
@@ -211,6 +250,7 @@ class HunyuanInferenceClient:
         neg_prompt: str | None = None,
     ) -> tuple[torch.Tensor, int]:
         self._set_manual_seed(42)
+        
         visual_feats, text_feats, audio_len_in_s = feature_process(
             video_path, prompt, self.model_dict, self.cfg, neg_prompt=neg_prompt
         )

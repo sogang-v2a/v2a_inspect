@@ -13,6 +13,23 @@ DEFAULT_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts" / "files"
 ThinkingLevel = Literal["minimal", "low", "medium", "high"]
 
 
+def _is_nvenc_available() -> bool:
+    import subprocess
+    import shutil
+    if not shutil.which("ffmpeg"):
+        return False
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-f", "lavfi", "-i", "color=black:s=64x64:r=1:d=0.1", "-c:v", "h264_nvenc", "-f", "null", "-"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 class Settings(BaseSettings):
     prompts_dir: Path = DEFAULT_PROMPTS_DIR
     prompt_file_suffix: str = ".txt"
@@ -203,7 +220,7 @@ class Settings(BaseSettings):
         ),
     )
     video_encode_use_nvenc: bool = Field(
-        default=True,
+        default_factory=_is_nvenc_available,
         validation_alias=AliasChoices(
             "V2A_INSPECT_VIDEO_ENCODE_USE_NVENC",
             "V2A_VIDEO_ENCODE_USE_NVENC",
