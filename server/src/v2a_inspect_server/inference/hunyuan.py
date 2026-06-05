@@ -262,7 +262,9 @@ class HunyuanInferenceClient:
     ) -> tuple[torch.Tensor, int]:
         self._set_manual_seed(42)
 
-        device_idx = 1 if (torch.cuda.is_available() and torch.cuda.device_count() > 1) else 0
+        device_idx = (
+            1 if (torch.cuda.is_available() and torch.cuda.device_count() > 1) else 0
+        )
 
         with torch.cuda.device(device_idx):
             visual_feats, text_feats, audio_len_in_s = feature_process(

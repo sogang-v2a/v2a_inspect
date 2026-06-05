@@ -1,8 +1,6 @@
 from __future__ import annotations
 import os
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
 import shutil
 import uuid
 from pathlib import Path
