@@ -75,8 +75,10 @@ export default function VideoEditor({
   );
 
   useEffect(() => {
+    if (hasTimelineEdits) {
+      return;
+    }
     setTimelineRows(state.timeline_rows);
-    setHasTimelineEdits(false);
     setExportStatus(null);
     let alive = true;
     void fetchAssetForExport()
@@ -96,7 +98,7 @@ export default function VideoEditor({
     return () => {
       alive = false;
     };
-  }, [state.asset_version]);
+  }, [state.timeline_rows, state.version]);
 
   useEffect(() => {
     if (frame !== selectedFrame) {
@@ -300,6 +302,33 @@ export default function VideoEditor({
     ]);
     setHasTimelineEdits(true);
     setExportStatus(`Created sound event on "${track.label}".`);
+  }
+
+  function editSoundEventDescription(
+    soundEventId: string,
+    description: string,
+  ) {
+    const nextDescription = description.trim();
+    if (!nextDescription) {
+      return;
+    }
+    setTimelineRows((currentRows) =>
+      currentRows.map((row) =>
+        row.sound_event_id === soundEventId
+          ? { ...row, label: nextDescription }
+          : row,
+      ),
+    );
+    setDraftAsset((currentAsset) =>
+      currentAsset
+        ? updateSoundEventInAsset(currentAsset, soundEventId, (event) => ({
+            ...event,
+            description: nextDescription,
+          }))
+        : currentAsset,
+    );
+    setHasTimelineEdits(true);
+    setExportStatus("Updated sound event description.");
   }
 
   function deleteSoundEvent(soundEventId: string) {
@@ -572,6 +601,7 @@ export default function VideoEditor({
             onDeleteSoundTrack={deleteSoundTrack}
             onCreateSoundEvent={createSoundEvent}
             onDeleteSoundEvent={deleteSoundEvent}
+            onEditSoundEventDescription={editSoundEventDescription}
             onEditSoundEvent={editSoundEventTimestamp}
             onSelectFrame={selectFrame}
           />
@@ -621,6 +651,7 @@ function applyTimelineEdits(asset: VideoAsset, rows: TimelineRow[]): VideoAsset 
       ...event,
       start_frame_index: row.start_frame,
       end_frame_index: row.end_frame,
+      description: row.label,
     };
   });
   return editedAsset;
