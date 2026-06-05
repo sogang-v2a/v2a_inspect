@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 import os
 import random
+import shutil
+import subprocess
 import tempfile
 import time
-import subprocess
 import uuid
 from pathlib import Path
 
+import cv2
+import imageio_ffmpeg
 import numpy as np
 
 from ..settings import settings
@@ -38,35 +41,23 @@ class HunyuanInferenceClient:
             return
 
         logger.info("Initializing HunyuanVideo-Foley model...")
-        model_path = os.environ.get("HUNYUAN_MODEL_PATH", "HunyuanVideo-Foley")
-        model_size = os.environ.get("HUNYUAN_MODEL_SIZE", "xl")
-        enable_offload = (
-            os.environ.get("HUNYUAN_ENABLE_OFFLOAD", "true").lower() == "true"
-        )
+        model_size = settings.hunyuan_model_size
 
-        # Enable expandable segments to avoid CUDA OOM on smaller GPUs
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = settings.pytorch_cuda_alloc_conf
 
         config_path = f"configs/hunyuanvideo-foley-{model_size}.yaml"
-        # If absolute path is needed, or if we need to resolve it from model_path:
-        # Assuming the configs are within the current working directory or site-packages.
-        if (
-            not Path(config_path).exists()
-            and Path(model_path).parent.joinpath(config_path).exists()
-        ):
-            config_path = str(Path(model_path).parent.joinpath(config_path))
 
         try:
             self.model_dict, self.cfg = load_model(
-                model_path=model_path,
+                model_path=settings.hunyuan_model_id,
                 config_path=config_path,
                 device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                enable_offload=enable_offload,
+                enable_offload=settings.hunyuan_enable_offload,
                 model_size=model_size,
             )
             logger.info("HunyuanVideo-Foley model loaded successfully.")
         except Exception as e:
-            logger.error(f"Failed to load HunyuanVideo-Foley model: {e}")
+            logger.error("Failed to load HunyuanVideo-Foley model: %s", e)
             self.model_dict = None
             self.cfg = None
 
@@ -85,14 +76,7 @@ class HunyuanInferenceClient:
         start_time = time.perf_counter()
         video_path = self._find_video_path(request.video_id)
 
-        # We need to crop the video to the requested frame range.
-        import imageio_ffmpeg
-
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-
-        # Assuming 24 fps or we can just pass time. But the request provides frame index.
-        # Let's extract FPS from video.
-        import cv2
 
         cap = cv2.VideoCapture(str(video_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -192,11 +176,7 @@ class HunyuanInferenceClient:
                 f"Hunyuan generation took {time.perf_counter() - start_time:.2f}s"
             )
 
-            # Read bytes to return or save to permanent storage.
-            # In v2a_inspect_server, we usually return JSON, but for audio, we can return the path
-            # or upload it to settings.upload_dir.
             final_audio_path = settings.upload_dir / f"audio_{uuid.uuid4().hex}.wav"
-            import shutil
 
             shutil.copy(out_audio_path, final_audio_path)
 
