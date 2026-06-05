@@ -82,4 +82,4 @@ USER appuser
 EXPOSE 8501
 VOLUME ["/data"]
 
-CMD ["/opt/venv/bin/v2a-inspect-ui"]
+CMD ["/opt/venv/bin/v2a", "ui"]
