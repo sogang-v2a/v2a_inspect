@@ -75,8 +75,10 @@ export default function VideoEditor({
   );
 
   useEffect(() => {
+    if (hasTimelineEdits) {
+      return;
+    }
     setTimelineRows(state.timeline_rows);
-    setHasTimelineEdits(false);
     setExportStatus(null);
     let alive = true;
     void fetchAssetForExport()
@@ -96,7 +98,7 @@ export default function VideoEditor({
     return () => {
       alive = false;
     };
-  }, [state.asset_version]);
+  }, [state.timeline_rows, state.version]);
 
   useEffect(() => {
     if (frame !== selectedFrame) {

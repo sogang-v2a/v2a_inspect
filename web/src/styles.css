@@ -230,8 +230,11 @@ button.download-link {
 }
 
 .video-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .preview-toolbar {
@@ -258,10 +261,11 @@ button.download-link {
 
 .video-frame,
 .empty-video {
-  aspect-ratio: 16 / 9;
   background: #050609;
   border: 1px solid #303642;
   border-radius: 6px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   position: relative;
   width: 100%;

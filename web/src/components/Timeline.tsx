@@ -335,8 +335,8 @@ export default function Timeline({
                   style={{ minHeight: `${depthCount * 24 + 8}px` }}
                 >
                   {laneRows.map((row, index) => {
-                    const bar = barStyle(row, timelineEndFrame);
                     const kind = rowKind(row);
+                    const bar = barStyle(row, timelineEndFrame, kind);
                     const editable = isEditableSoundRow(row) && !!onEditSoundEvent;
                     const visualStyle =
                       kind === "visual"
@@ -480,12 +480,14 @@ function safeClass(value: string): string {
 function barStyle(
   row: TimelineRow,
   timelineEndFrame: number,
+  kind: LaneKind,
 ): { left: number; width: number } {
   const start = clamp(row.start_frame, 0, timelineEndFrame);
   const end = clamp(row.end_frame, start, timelineEndFrame);
   const left = (start / timelineEndFrame) * 100;
   const rawWidth = ((end - start) / timelineEndFrame) * 100;
-  const width = Math.min(100 - left, Math.max(0.4, rawWidth));
+  const minWidth = kind === "sound" ? 0.12 : 0.4;
+  const width = Math.min(100 - left, Math.max(minWidth, rawWidth));
   return { left, width };
 }
 
