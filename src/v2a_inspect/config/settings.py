@@ -16,11 +16,23 @@ ThinkingLevel = Literal["minimal", "low", "medium", "high"]
 def _is_nvenc_available() -> bool:
     import subprocess
     import shutil
+
     if not shutil.which("ffmpeg"):
         return False
     try:
         result = subprocess.run(
-            ["ffmpeg", "-f", "lavfi", "-i", "color=black:s=64x64:r=1:d=0.1", "-c:v", "h264_nvenc", "-f", "null", "-"],
+            [
+                "ffmpeg",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:s=64x64:r=1:d=0.1",
+                "-c:v",
+                "h264_nvenc",
+                "-f",
+                "null",
+                "-",
+            ],
             capture_output=True,
             text=True,
             check=False,

@@ -40,19 +40,22 @@ class HunyuanInferenceClient:
         logger.info("Initializing HunyuanVideo-Foley model...")
         model_path = os.environ.get("HUNYUAN_MODEL_PATH", "HunyuanVideo-Foley")
         model_size = os.environ.get("HUNYUAN_MODEL_SIZE", "xl")
-        
+
         # Auto-download the weights using huggingface_hub if not found locally
         required_weights = [
             f"hunyuanvideo_foley_{model_size}.pth",
             "vae_128d_48k.pth",
-            "synchformer_state_dict.pth"
+            "synchformer_state_dict.pth",
         ]
-        
+
         for weight_file in required_weights:
             if not (Path(model_path) / weight_file).exists():
-                logger.info(f"Weights not found locally. Downloading {weight_file} from HuggingFace to {model_path}...")
+                logger.info(
+                    f"Weights not found locally. Downloading {weight_file} from HuggingFace to {model_path}..."
+                )
                 try:
                     import huggingface_hub
+
                     Path(model_path).mkdir(parents=True, exist_ok=True)
                     huggingface_hub.hf_hub_download(
                         repo_id="tencent/HunyuanVideo-Foley",
@@ -61,15 +64,18 @@ class HunyuanInferenceClient:
                     )
                     logger.info(f"{weight_file} downloaded successfully.")
                 except Exception as e:
-                    logger.error(f"Failed to download {weight_file} from HuggingFace: {e}")
+                    logger.error(
+                        f"Failed to download {weight_file} from HuggingFace: {e}"
+                    )
         enable_offload = (
             os.environ.get("HUNYUAN_ENABLE_OFFLOAD", "true").lower() == "true"
         )
 
         import urllib.request
         import hunyuanvideo_foley
+
         pkg_dir = Path(hunyuanvideo_foley.__file__).parent
-        
+
         # Hunyuan load_model is very strict about where it finds the configs.
         # We aggressively place the downloaded config in all possible locations it might check.
         target_paths = [
@@ -78,9 +84,9 @@ class HunyuanInferenceClient:
             pkg_dir.parent / "configs" / f"hunyuanvideo-foley-{model_size}.yaml",
             Path(model_path) / f"configs/hunyuanvideo-foley-{model_size}.yaml",
         ]
-        
+
         url = f"https://raw.githubusercontent.com/Tencent-Hunyuan/HunyuanVideo-Foley/main/configs/hunyuanvideo-foley-{model_size}.yaml"
-        
+
         for p in target_paths:
             if not p.exists():
                 try:
@@ -89,20 +95,25 @@ class HunyuanInferenceClient:
                     print(f"✅ [Hunyuan Fix] Downloaded config to: {p}")
                 except Exception as e:
                     print(f"❌ [Hunyuan Fix] Failed to write config to {p}: {e}")
-        
+
         # Use the absolute path from CWD for the explicit argument
         config_path_str = str(target_paths[0].resolve())
 
         device_name = "cuda" if torch.cuda.is_available() else "cpu"
+        device_idx = 0
+        if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+            device_name = "cuda:1"
+            device_idx = 1
 
         try:
-            self.model_dict, self.cfg = load_model(
-                model_path=model_path,
-                config_path=config_path_str,
-                device=torch.device(device_name),
-                enable_offload=enable_offload,
-                model_size=model_size,
-            )
+            with torch.cuda.device(device_idx):
+                self.model_dict, self.cfg = load_model(
+                    model_path=model_path,
+                    config_path=config_path_str,
+                    device=torch.device(device_name),
+                    enable_offload=enable_offload,
+                    model_size=model_size,
+                )
             logger.info("HunyuanVideo-Foley model loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load HunyuanVideo-Foley model: {e}")
@@ -250,19 +261,22 @@ class HunyuanInferenceClient:
         neg_prompt: str | None = None,
     ) -> tuple[torch.Tensor, int]:
         self._set_manual_seed(42)
-        
-        visual_feats, text_feats, audio_len_in_s = feature_process(
-            video_path, prompt, self.model_dict, self.cfg, neg_prompt=neg_prompt
-        )
-        audio, sample_rate = denoise_process(
-            visual_feats,
-            text_feats,
-            audio_len_in_s,
-            self.model_dict,
-            self.cfg,
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-        )
+
+        device_idx = 1 if (torch.cuda.is_available() and torch.cuda.device_count() > 1) else 0
+
+        with torch.cuda.device(device_idx):
+            visual_feats, text_feats, audio_len_in_s = feature_process(
+                video_path, prompt, self.model_dict, self.cfg, neg_prompt=neg_prompt
+            )
+            audio, sample_rate = denoise_process(
+                visual_feats,
+                text_feats,
+                audio_len_in_s,
+                self.model_dict,
+                self.cfg,
+                guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps,
+            )
         return audio[0], sample_rate
 
     def _set_manual_seed(self, global_seed: int) -> None:
