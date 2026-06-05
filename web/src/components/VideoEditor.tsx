@@ -304,6 +304,33 @@ export default function VideoEditor({
     setExportStatus(`Created sound event on "${track.label}".`);
   }
 
+  function editSoundEventDescription(
+    soundEventId: string,
+    description: string,
+  ) {
+    const nextDescription = description.trim();
+    if (!nextDescription) {
+      return;
+    }
+    setTimelineRows((currentRows) =>
+      currentRows.map((row) =>
+        row.sound_event_id === soundEventId
+          ? { ...row, label: nextDescription }
+          : row,
+      ),
+    );
+    setDraftAsset((currentAsset) =>
+      currentAsset
+        ? updateSoundEventInAsset(currentAsset, soundEventId, (event) => ({
+            ...event,
+            description: nextDescription,
+          }))
+        : currentAsset,
+    );
+    setHasTimelineEdits(true);
+    setExportStatus("Updated sound event description.");
+  }
+
   function deleteSoundEvent(soundEventId: string) {
     setDraftAsset((currentAsset) => {
       if (!currentAsset?.sound_timeline) {
@@ -574,6 +601,7 @@ export default function VideoEditor({
             onDeleteSoundTrack={deleteSoundTrack}
             onCreateSoundEvent={createSoundEvent}
             onDeleteSoundEvent={deleteSoundEvent}
+            onEditSoundEventDescription={editSoundEventDescription}
             onEditSoundEvent={editSoundEventTimestamp}
             onSelectFrame={selectFrame}
           />
@@ -623,6 +651,7 @@ function applyTimelineEdits(asset: VideoAsset, rows: TimelineRow[]): VideoAsset 
       ...event,
       start_frame_index: row.start_frame,
       end_frame_index: row.end_frame,
+      description: row.label,
     };
   });
   return editedAsset;

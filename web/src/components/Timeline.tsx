@@ -23,6 +23,10 @@ interface TimelineProps {
   onDeleteSoundTrack?: (soundTrackId: string) => void;
   onCreateSoundEvent?: (soundTrackId: string, startFrame: number) => void;
   onDeleteSoundEvent?: (soundEventId: string) => void;
+  onEditSoundEventDescription?: (
+    soundEventId: string,
+    description: string,
+  ) => void;
 }
 
 type LaneKind = "scene" | "tracking" | "visual" | "sound";
@@ -74,6 +78,7 @@ export default function Timeline({
   onDeleteSoundTrack,
   onCreateSoundEvent,
   onDeleteSoundEvent,
+  onEditSoundEventDescription,
 }: TimelineProps) {
   const [enabledKinds, setEnabledKinds] = useState<Record<LaneKind, boolean>>({
     scene: true,
@@ -365,17 +370,44 @@ export default function Timeline({
                         title={`${row.label}: ${row.start_frame}-${row.end_frame}`}
                       >
                         {editable && onDeleteSoundEvent ? (
-                          <button
-                            className="bar-delete"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDeleteSoundEvent(row.sound_event_id ?? "");
-                            }}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            type="button"
-                          >
-                            x
-                          </button>
+                          <span className="bar-actions">
+                            {onEditSoundEventDescription ? (
+                              <button
+                                className="bar-action-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  const nextDescription = window.prompt(
+                                    "Edit sound event description",
+                                    row.label,
+                                  );
+                                  const trimmed = nextDescription?.trim();
+                                  if (trimmed) {
+                                    onEditSoundEventDescription(
+                                      row.sound_event_id ?? "",
+                                      trimmed,
+                                    );
+                                  }
+                                }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                title="Edit description"
+                                type="button"
+                              >
+                                e
+                              </button>
+                            ) : null}
+                            <button
+                              className="bar-action-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onDeleteSoundEvent(row.sound_event_id ?? "");
+                              }}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              title="Delete sound event"
+                              type="button"
+                            >
+                              x
+                            </button>
+                          </span>
                         ) : null}
                         {editable ? (
                           <span
