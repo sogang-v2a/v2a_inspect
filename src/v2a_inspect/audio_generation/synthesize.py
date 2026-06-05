@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 def synthesize(
+    video: Annotated[
+        str,
+        typer.Option("--video", help="Path to the original video file."),
+    ],
     timeline: Annotated[
         str | None,
         typer.Option(
@@ -46,10 +50,6 @@ def synthesize(
             help="Path to the video-asset.json file containing the VideoAsset (overrides --timeline).",
         ),
     ] = None,
-    video: Annotated[
-        str,
-        typer.Option("--video", help="Path to the original video file."),
-    ] = ...,
     output: Annotated[
         str | None,
         typer.Option(
@@ -82,6 +82,7 @@ def synthesize(
         typer.echo("Error: Must provide either --timeline or --asset", err=True)
         raise typer.Exit(code=1)
 
+    sound_timeline: SoundTimeline
     if asset:
         asset_path = Path(asset)
         if not asset_path.exists():
@@ -91,11 +92,14 @@ def synthesize(
 
         asset_data = json.loads(asset_path.read_text(encoding="utf-8"))
         video_asset = VideoAsset(**asset_data)
-        timeline = video_asset.sound_timeline
-        if not timeline:
+        if video_asset.sound_timeline is None:
             typer.echo("Error: VideoAsset does not contain a sound_timeline", err=True)
             raise typer.Exit(code=1)
+        sound_timeline = video_asset.sound_timeline
     else:
+        if timeline is None:
+            typer.echo("Error: Must provide either --timeline or --asset", err=True)
+            raise typer.Exit(code=1)
         timeline_path = Path(timeline)
         if not timeline_path.exists():
             typer.echo(f"Error: timeline.json not found: {timeline_path}", err=True)
@@ -103,7 +107,7 @@ def synthesize(
 
         typer.echo(f"[1/4] Loading timeline: {timeline_path}", err=True)
         timeline_data = json.loads(timeline_path.read_text(encoding="utf-8"))
-        timeline = SoundTimeline(**timeline_data)
+        sound_timeline = SoundTimeline(**timeline_data)
 
     video_path = video
     if not Path(video_path).exists():
@@ -126,7 +130,7 @@ def synthesize(
     audio_plan = AudioPlan(total_duration=video_duration)
 
     # Map track_id to SoundTrack for easy lookup
-    track_map = {track.sound_track_id: track for track in timeline.sound_tracks}
+    track_map = {track.sound_track_id: track for track in sound_timeline.sound_tracks}
 
     typer.echo("[3/4] Uploading video to server for V2A generation...", err=True)
     from v2a_inspect.client import VideoClient
@@ -145,7 +149,7 @@ def synthesize(
         )
         video_id = "dummy"
 
-    for event in timeline.sound_events:
+    for event in sound_timeline.sound_events:
         track = track_map.get(event.sound_track_id)
         if not track:
             continue
@@ -162,8 +166,8 @@ def synthesize(
             end_time = start_time + 0.1
 
         source_label = ""
-        if track.sound_source_id and "timeline" in locals():
-            for source in timeline.sound_sources:
+        if track.sound_source_id:
+            for source in sound_timeline.sound_sources:
                 if source.sound_source_id == track.sound_source_id:
                     source_label = source.label
                     break
