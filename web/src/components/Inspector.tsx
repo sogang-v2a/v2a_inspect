@@ -109,7 +109,7 @@ function activeSoundEventRows(
         frame < row.end_frame,
     )
     .map((row) => {
-      const match = /^\[(?<trackType>[^\]]+)\] (?<trackLabel>.*)$/.exec(row.lane);
+      const match = /^\[(?<trackType>[^ |\]]+)(?: \| [^\]]+)?\] (?<trackLabel>.*)$/.exec(row.lane);
       return {
         sound_event_id: row.sound_event_id,
         sound_track_id: row.sound_track_id ?? "",
@@ -119,7 +119,7 @@ function activeSoundEventRows(
         start_frame: row.start_frame,
         end_frame: row.end_frame,
         duration_sec: Number(((row.end_frame - row.start_frame) / fps).toFixed(2)),
-        generation_mode: "unknown",
+        generation_mode: row.generation_mode || "unknown",
         description: row.label,
         notes: null,
       };

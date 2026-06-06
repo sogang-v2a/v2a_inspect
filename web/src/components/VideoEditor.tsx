@@ -18,6 +18,7 @@ interface VideoEditorProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onImport: (event: FormEvent<HTMLFormElement>) => void;
   onResetSoundTimeline: () => void;
+  onGenerateAudio?: (event: FormEvent<HTMLFormElement>, draftAsset: VideoAsset | null) => void;
 }
 
 export default function VideoEditor({
@@ -26,6 +27,7 @@ export default function VideoEditor({
   onSubmit,
   onImport,
   onResetSoundTimeline,
+  onGenerateAudio,
 }: VideoEditorProps) {
   const [frame, setFrame] = useState(0);
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(false);
@@ -35,6 +37,7 @@ export default function VideoEditor({
   const [timelineRows, setTimelineRows] = useState<TimelineRow[]>(state.timeline_rows);
   const [baseAsset, setBaseAsset] = useState<VideoAsset | null>(null);
   const [draftAsset, setDraftAsset] = useState<VideoAsset | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [hasTimelineEdits, setHasTimelineEdits] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -324,6 +327,49 @@ export default function VideoEditor({
     setExportStatus("Deleted sound event.");
   }
 
+  function startEditingSoundEventDetails(soundEventId: string) {
+    setEditingEventId(soundEventId);
+  }
+
+  function submitEditSoundEventDetails(soundEventId: string, newPrompt: string, newModeRaw: string) {
+    const row = timelineRows.find((r) => r.sound_event_id === soundEventId);
+    if (!row) return;
+
+    const newMode = newModeRaw.toLowerCase().trim() as any;
+
+    setDraftAsset((currentAsset) => {
+      if (!currentAsset?.sound_timeline) return currentAsset;
+      const nextAsset = cloneAsset(currentAsset);
+      
+      const track = nextAsset.sound_timeline?.sound_tracks.find(t => t.sound_track_id === row.sound_track_id);
+      if (track) {
+        track.generation_mode = newMode;
+      }
+      
+      const event = nextAsset.sound_timeline?.sound_events.find(e => e.sound_event_id === soundEventId);
+      if (event) {
+        event.description = newPrompt.trim();
+      }
+      return nextAsset;
+    });
+
+    setTimelineRows((currentRows) =>
+      currentRows.map((r) => {
+        if (r.sound_track_id === row.sound_track_id) {
+          return {
+            ...r,
+            generation_mode: newMode,
+            label: r.sound_event_id === soundEventId ? newPrompt.trim() : r.label
+          };
+        }
+        return r;
+      }),
+    );
+    setHasTimelineEdits(true);
+    setExportStatus("Updated sound event details.");
+    setEditingEventId(null);
+  }
+
   async function exportEditedAsset() {
     try {
       const asset = draftAsset ?? (await fetchAssetForExport());
@@ -470,6 +516,29 @@ export default function VideoEditor({
               </>
             ) : null}
           </section>
+            <form onSubmit={(e) => { if (onGenerateAudio) onGenerateAudio(e, draftAsset); }}>
+              <label>
+                Inference server URL
+                <input name="server_url" type="url" placeholder="http://..." />
+              </label>
+              <button type="submit" disabled={state.status === "running" || !video}>
+                Generate Audio
+              </button>
+              {state.status === "complete" && baseAsset?.synthesized_video_path && !hasTimelineEdits ? (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <a
+                    href={`/api/synthesized-video?asset_version=${state.asset_version}`}
+                    download={`synthesized_${state.asset_version}.mp4`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <button type="button" style={{ width: "100%" }}>
+                      Download Video(MP4)
+                    </button>
+                  </a>
+                </div>
+              ) : null}
+            </form>
+
           <dl className="asset-stats">
             <div>
               <dt>Version</dt>
@@ -525,7 +594,11 @@ export default function VideoEditor({
                 <div className="video-frame">
                   <video
                     ref={videoRef}
-                    src={`/api/video?asset_version=${state.asset_version}`}
+                    src={
+                      state.status === "complete" && baseAsset?.synthesized_video_path && !hasTimelineEdits
+                        ? `/api/synthesized-video?asset_version=${state.asset_version}`
+                        : `/api/video?asset_version=${state.asset_version}`
+                    }
                     onPause={() => setIsPlaying(false)}
                     onPlay={() => setIsPlaying(true)}
                     onSeeked={syncFrameFromVideo}
@@ -541,6 +614,22 @@ export default function VideoEditor({
               ) : (
                 <div className="empty-video">Upload a video to start</div>
               )}
+
+              {state.status === "complete" && baseAsset?.synthesized_video_path && !hasTimelineEdits ? (
+                <section className="export-panel" style={{ marginTop: "1rem", borderTop: "2px solid #333", paddingTop: "1rem" }}>
+                  <button className="toggle active" type="button" style={{ cursor: "default" }}>
+                    Synthesized Video
+                  </button>
+                  <a
+                    className="download-link"
+                    href={`/api/synthesized-video?asset_version=${state.asset_version}`}
+                    download={`synthesized_${state.asset_version}.mp4`}
+                  >
+                    Save Video (MP4)
+                  </a>
+                </section>
+              ) : null}
+
               <label className="playhead">
                 <span>
                   Frame {selectedFrame} / {maxFrame} ({timeSec.toFixed(2)}s)
@@ -573,11 +662,48 @@ export default function VideoEditor({
             onCreateSoundEvent={createSoundEvent}
             onDeleteSoundEvent={deleteSoundEvent}
             onEditSoundEvent={editSoundEventTimestamp}
+            onEditSoundEventDetails={startEditingSoundEventDetails}
             onSelectFrame={selectFrame}
           />
+          </section>
         </section>
-      </section>
-    </main>
+
+        {editingEventId && (() => {
+          const row = timelineRows.find((r) => r.sound_event_id === editingEventId);
+          if (!row) return null;
+          return (
+            <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <form 
+                style={{ background: "#222", padding: "1.5rem", borderRadius: "8px", width: "450px", display: "flex", flexDirection: "column", gap: "1.2rem", boxShadow: "0 10px 25px rgba(0,0,0,0.5)", border: "1px solid #444" }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const fd = new FormData(e.currentTarget);
+                  submitEditSoundEventDetails(editingEventId, fd.get("description") as string, fd.get("generation_mode") as string);
+                }}
+              >
+                <h3 style={{ margin: 0, fontSize: "1.2rem" }}>Edit Sound Event</h3>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.9rem", color: "#ccc" }}>Prompt (Description)</span>
+                  <textarea name="description" defaultValue={row.label} rows={4} style={{ width: "100%", padding: "0.75rem", background: "#111", color: "#fff", border: "1px solid #444", borderRadius: "4px", resize: "vertical" }} required />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.9rem", color: "#ccc" }}>Generation Mode</span>
+                  <select name="generation_mode" defaultValue={row.generation_mode || "vta"} style={{ padding: "0.75rem", background: "#111", color: "#fff", border: "1px solid #444", borderRadius: "4px" }}>
+                    <option value="vta">VTA (Video-to-Audio)</option>
+                    <option value="tta">TTA (Text-to-Audio)</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
+                </label>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+                  <button type="button" className="secondary" onClick={() => setEditingEventId(null)} style={{ padding: "0.5rem 1rem", background: "transparent", border: "1px solid #555", borderRadius: "4px", cursor: "pointer", color: "#eee" }}>Cancel</button>
+                  <button type="submit" style={{ padding: "0.5rem 1rem", background: "#3b82f6", border: "none", borderRadius: "4px", cursor: "pointer", color: "white", fontWeight: "bold" }}>Save Changes</button>
+                </div>
+              </form>
+            </div>
+          );
+        })()}
+
+      </main>
   );
 }
 
@@ -667,6 +793,7 @@ function timelineRowFromSoundEvent(
     kind: track.track_type,
     sound_event_id: event.sound_event_id,
     sound_track_id: event.sound_track_id,
+    generation_mode: track.generation_mode,
   };
 }
 

@@ -33,6 +33,7 @@ dependencies = [
   "psutil>=7.2.2",
   "flash-attn-3",
   "hunyuanvideo-foley @ git+https://github.com/Tencent-Hunyuan/HunyuanVideo-Foley.git",
+  "torchcodec",
 ]
 
 [project.scripts]

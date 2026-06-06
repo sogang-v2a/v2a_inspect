@@ -83,3 +83,20 @@ export async function resetSoundTimeline(): Promise<void> {
     throw new Error(message || `Failed to reset soundtrack: ${response.status}`);
   }
 }
+
+export async function generateAudio(form: HTMLFormElement, asset: VideoAsset | null): Promise<void> {
+  const formData = new FormData(form);
+  if (asset) {
+    const assetBlob = new Blob([JSON.stringify(asset)], { type: "application/json" });
+    formData.append("asset", assetBlob, "edited-asset.json");
+  }
+  const response = await fetch("/api/audio/generate", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to generate audio: ${response.status}`);
+  }
+}
+

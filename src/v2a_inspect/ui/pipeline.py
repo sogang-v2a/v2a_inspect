@@ -8,7 +8,11 @@ from typing import Callable
 from v2a_inspect.agents.sound_timeline import run_sound_timeline_agent_parallel
 from v2a_inspect.client import SAM3Client, VideoClient
 from v2a_inspect.config import settings
-from v2a_inspect.models import InitialScene, VideoAsset
+from v2a_inspect.models import InitialScene, VideoAsset, AudioPlan, AudioPlanItem
+from v2a_inspect.audio_generation.client import generate_audio_for_item
+from v2a_inspect.audio_generation.mix import mix_audio_into_video
+import tempfile
+from datetime import datetime
 from v2a_inspect.preprocessing import (
     analyze_initial_scene,
     build_visual_identity_layer,
@@ -232,3 +236,124 @@ def _threadsafe_publish_callback(
         future.result()
 
     return publish
+async def run_audio_generation_pipeline(
+    video_asset: VideoAsset,
+    store: VideoAssetStore,
+    server_url: str | None,
+) -> None:
+    try:
+        timeline = video_asset.sound_timeline
+        if not timeline:
+            raise ValueError("No sound timeline found in video asset.")
+        if not timeline.sound_events:
+            raise ValueError("No audio items to generate.")
+
+        await store.set_running(stage="preparing audio plan")
+        video_duration = video_asset.duration_sec
+        fps = video_asset.fps
+
+        audio_plan = AudioPlan(total_duration=video_duration)
+        track_map = {track.sound_track_id: track for track in timeline.sound_tracks}
+
+        await store.touch(stage="uploading video to inference server")
+        async with VideoClient(base_url=server_url) as video_client:
+            try:
+                res = await video_client.upload(str(video_asset.source_path))
+                video_id = res.video_id
+            except Exception as exc:
+                video_id = "dummy"
+
+        for event in timeline.sound_events:
+            track = track_map.get(event.sound_track_id)
+            if not track:
+                continue
+
+            start_time = event.start_frame_index / fps
+            end_time = event.end_frame_index / fps
+            start_time = max(0.0, min(start_time, video_duration - 0.1))
+            end_time = max(0.0, min(end_time, video_duration))
+            if end_time <= start_time:
+                end_time = start_time + 0.1
+
+            source_label = ""
+            if track.sound_source_id:
+                for source in timeline.sound_sources:
+                    if source.sound_source_id == track.sound_source_id:
+                        source_label = source.label
+                        break
+
+            if source_label and source_label.lower() not in track.label.lower():
+                desc = f"{source_label}, [{track.label}] {event.description}"
+            else:
+                desc = f"[{track.label}] {event.description}"
+
+            gen_mode = track.generation_mode
+            vol = 1.0
+            if gen_mode == "vta":
+                gen_model = "v2a"
+                vol = 1.5
+            elif gen_mode == "tta":
+                gen_model = "t2a"
+                vol = 0.8
+            else:
+                gen_model = gen_mode
+
+            item = AudioPlanItem(
+                item_id=str(event.sound_event_id),
+                type=track.track_type,
+                time=(start_time, end_time),
+                description=desc,
+                volume=vol,
+                track_id=str(track.sound_track_id),
+                generation_model=gen_model,
+            )
+            audio_plan.items.append(item)
+
+        audio_plan.items.sort(key=lambda x: x.time[0])
+        n_items = len(audio_plan.items)
+
+        generated_audio: dict[str, str] = {}
+        with tempfile.TemporaryDirectory(prefix="v2a_synth_audio_") as temp_dir_name:
+            audio_dir = Path(temp_dir_name)
+
+            for i, item in enumerate(audio_plan.items, 1):
+                await store.touch(stage=f"generating audio {i}/{n_items}")
+                duration = item.time[1] - item.time[0]
+                out_path = str(audio_dir / f"{item.item_id}.wav")
+
+                audio_file = await asyncio.to_thread(
+                    generate_audio_for_item,
+                    kind=item.type,
+                    description=item.description,
+                    out_path=out_path,
+                    duration=duration,
+                    video_id=video_id,
+                    fps=fps,
+                    time=item.time,
+                    generation_model=item.generation_model,
+                )
+                if audio_file:
+                    generated_audio[item.item_id] = audio_file
+
+            if not generated_audio:
+                raise ValueError("No audio files were generated.")
+
+            await store.touch(stage="mixing audio")
+            output_path = str(video_asset.source_path.parent / "preview.mp4")
+
+            result = await asyncio.to_thread(
+                mix_audio_into_video,
+                video_path=str(video_asset.source_path),
+                audio_plan=audio_plan,
+                generated_audio=generated_audio,
+                output_path=output_path,
+                keep_original_audio=False,
+            )
+
+        if not result or not Path(result).exists():
+            raise RuntimeError("Audio synthesis and mixing failed.")
+
+        video_asset.synthesized_video_path = Path(result)
+        await store.set_complete_asset(video_asset, stage="Audio generation complete. Ready for preview.")
+    except Exception as exc:
+        await store.set_error(str(exc))

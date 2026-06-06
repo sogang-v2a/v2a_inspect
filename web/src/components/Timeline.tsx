@@ -23,6 +23,7 @@ interface TimelineProps {
   onDeleteSoundTrack?: (soundTrackId: string) => void;
   onCreateSoundEvent?: (soundTrackId: string, startFrame: number) => void;
   onDeleteSoundEvent?: (soundEventId: string) => void;
+  onEditSoundEventDetails?: (soundEventId: string) => void;
 }
 
 type LaneKind = "scene" | "tracking" | "visual" | "sound";
@@ -74,6 +75,7 @@ export default function Timeline({
   onDeleteSoundTrack,
   onCreateSoundEvent,
   onDeleteSoundEvent,
+  onEditSoundEventDetails,
 }: TimelineProps) {
   const [enabledKinds, setEnabledKinds] = useState<Record<LaneKind, boolean>>({
     scene: true,
@@ -84,7 +86,7 @@ export default function Timeline({
   const dragRef = useRef<ActiveDrag | null>(null);
   const [showCreateTrack, setShowCreateTrack] = useState(false);
   const [trackType, setTrackType] = useState<TrackType>("sfx");
-  const [generationMode, setGenerationMode] = useState<GenerationMode>("unknown");
+  const [generationMode, setGenerationMode] = useState<GenerationMode>("vta");
   const [trackLabel, setTrackLabel] = useState("");
   const [canonicalKey, setCanonicalKey] = useState("");
   const visibleRows = rows.filter((row) => enabledKinds[rowKind(row)]);
@@ -261,11 +263,12 @@ export default function Timeline({
           <select
             value={generationMode}
             onChange={(event) => setGenerationMode(event.target.value as GenerationMode)}
+            title="Generation Mode"
           >
-            <option value="unknown">unknown</option>
-            <option value="tta">tta</option>
-            <option value="vta">vta</option>
-            <option value="hybrid">hybrid</option>
+            <option value="vta">VTA (Video-to-Audio)</option>
+            <option value="tta">TTA (Text-to-Audio)</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="unknown">Unknown</option>
           </select>
           <input
             value={canonicalKey}
@@ -342,6 +345,7 @@ export default function Timeline({
                       kind === "visual"
                         ? ({ "--bar-color": visualEventColor(row.kind) } as CSSProperties)
                         : {};
+                    const genPrefix = row.generation_mode && row.generation_mode !== 'unknown' ? `[${row.generation_mode.toUpperCase()}] ` : "";
                     return (
                       <div
                         className={`bar bar-${kind} bar-${safeClass(row.kind)}${
@@ -362,7 +366,15 @@ export default function Timeline({
                           top: `${row.depth * 24 + 4}px`,
                           ...visualStyle,
                         }}
-                        title={`${row.label}: ${row.start_frame}-${row.end_frame}`}
+                        title={`${genPrefix}${row.label}: ${row.start_frame}-${row.end_frame}`}
+                        onDoubleClick={
+                          editable && onEditSoundEventDetails
+                            ? (event) => {
+                                event.stopPropagation();
+                                onEditSoundEventDetails(row.sound_event_id!);
+                              }
+                            : undefined
+                        }
                       >
                         {editable && onDeleteSoundEvent ? (
                           <button

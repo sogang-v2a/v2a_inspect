@@ -4,7 +4,9 @@ import {
   importAsset,
   resetSoundTimeline,
   startRun,
+  generateAudio,
 } from "./api";
+import type { VideoAsset } from "./types";
 import VideoEditor from "./components/VideoEditor";
 import type { AssetResponse } from "./types";
 
@@ -69,6 +71,17 @@ export default function App() {
     }
   }
 
+  async function handleGenerateAudio(event: FormEvent<HTMLFormElement>, draftAsset: VideoAsset | null) {
+    event.preventDefault();
+    setSubmitError(null);
+    try {
+      await generateAudio(event.currentTarget, draftAsset);
+      await refreshAssetSummary();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <VideoEditor
       state={state}
@@ -76,6 +89,7 @@ export default function App() {
       onSubmit={handleSubmit}
       onImport={handleImport}
       onResetSoundTimeline={handleResetSoundTimeline}
+      onGenerateAudio={handleGenerateAudio}
     />
   );
 }

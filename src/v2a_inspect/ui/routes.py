@@ -21,6 +21,7 @@ from .pipeline import (
     PipelineOptions,
     run_sound_timeline_pipeline,
     run_uploaded_video_pipeline,
+    run_audio_generation_pipeline,
 )
 from .rows import current_frame_rows, timeline_rows, tracking_window_rows
 from .store import VideoAssetSnapshot, VideoAssetStore
@@ -69,6 +70,13 @@ def create_router(store: VideoAssetStore) -> APIRouter:
         if snapshot.asset is None:
             raise HTTPException(status_code=404, detail="No video asset loaded")
         return FileResponse(snapshot.asset.source_path)
+
+    @router.get("/api/synthesized-video")
+    async def get_synthesized_video() -> FileResponse:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None or not snapshot.asset.synthesized_video_path or not snapshot.asset.synthesized_video_path.exists():
+            raise HTTPException(status_code=404, detail="No synthesized video available")
+        return FileResponse(snapshot.asset.synthesized_video_path, media_type="video/mp4", headers={"Accept-Ranges": "bytes"})
 
     @router.get("/api/rows/timeline")
     async def get_timeline_rows() -> dict[str, object]:
@@ -163,7 +171,7 @@ def create_router(store: VideoAssetStore) -> APIRouter:
     ) -> dict[str, object]:
         snapshot = await store.snapshot()
         if snapshot.status == "running":
-            raise HTTPException(status_code=409, detail="Pipeline is running")
+            return {"status": "ignored", "detail": "Pipeline is already running"}
         if not video.filename:
             raise HTTPException(status_code=400, detail="No video filename provided")
         if not asset.filename:
@@ -218,7 +226,7 @@ def create_router(store: VideoAssetStore) -> APIRouter:
     ) -> dict[str, object]:
         snapshot = await store.snapshot()
         if snapshot.status == "running":
-            raise HTTPException(status_code=409, detail="Pipeline is running")
+            return {"status": "ignored", "detail": "Pipeline is already running"}
         if snapshot.asset is None:
             raise HTTPException(status_code=404, detail="No video asset loaded")
         video_asset = snapshot.asset.model_copy(update={"sound_timeline": None})
@@ -227,6 +235,35 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             stage="reset sound timeline",
         )
         background_tasks.add_task(run_sound_timeline_pipeline, video_asset, store)
+        return {"status": "queued"}
+
+    @router.post("/api/audio/generate")
+    async def generate_audio(
+        background_tasks: BackgroundTasks,
+        server_url: Annotated[str | None, Form()] = None,
+        asset: Annotated[UploadFile | None, File()] = None,
+    ) -> dict[str, object]:
+        snapshot = await store.snapshot()
+        if snapshot.status == "running":
+            return {"status": "ignored", "detail": "Pipeline is already running"}
+
+        if asset is not None:
+            try:
+                import_asset = VideoAsset.model_validate_json(await asset.read())
+                await store.set_complete_asset(import_asset, stage="applied timeline edits")
+                video_asset = import_asset
+            except ValidationError as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid VideoAsset JSON: {exc}") from exc
+        else:
+            if snapshot.asset is None:
+                raise HTTPException(status_code=404, detail="No video asset loaded")
+            video_asset = snapshot.asset
+
+        await store.publish_asset_mutation(
+            video_asset,
+            stage="queued audio generation",
+        )
+        background_tasks.add_task(run_audio_generation_pipeline, video_asset, store, server_url)
         return {"status": "queued"}
 
     @router.get("/events")

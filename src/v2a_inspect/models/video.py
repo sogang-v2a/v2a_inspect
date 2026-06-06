@@ -29,6 +29,7 @@ class VideoAsset(SchemaModel):
     initial_scenes: list[InitialScene] = Field(default_factory=list)
     visual_identity_layer: VisualIdentityLayer | None = None
     sound_timeline: SoundTimeline | None = None
+    synthesized_video_path: Path | None = None
 
     @computed_field
     @property

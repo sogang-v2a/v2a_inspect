@@ -234,9 +234,13 @@ class HunyuanInferenceClient:
                 neg_prompt=request.negative_prompt,
             )
 
-            # Save audio to a temp file
+            # Save audio to a temp file using soundfile to bypass torchcodec bugs
             out_audio_path = str(Path(temp_dir) / "output.wav")
-            torchaudio.save(out_audio_path, audio_tensor.cpu(), sample_rate)
+            import soundfile as sf
+            
+            # audio_tensor is (channels, frames)
+            audio_np = audio_tensor.cpu().numpy().T
+            sf.write(out_audio_path, audio_np, sample_rate)
 
             logger.info(
                 f"Hunyuan generation took {time.perf_counter() - start_time:.2f}s"

@@ -1,7 +1,12 @@
 from __future__ import annotations
 import shutil
 import uuid
+import multiprocessing
 from pathlib import Path
+
+# Fix for PyTorch CUDA DataLoader deadlock in FastAPI/Uvicorn
+if multiprocessing.get_start_method(allow_none=True) != "spawn":
+    multiprocessing.set_start_method("spawn", force=True)
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException

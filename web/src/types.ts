@@ -33,6 +33,7 @@ export interface VideoAsset {
   initial_scenes: InitialScene[];
   visual_identity_layer?: VisualIdentityLayer | null;
   sound_timeline?: SoundTimeline | null;
+  synthesized_video_path?: string | null;
 }
 
 export interface VideoSummary {
@@ -146,6 +147,7 @@ export interface TimelineRow {
   kind: string;
   sound_event_id?: string;
   sound_track_id?: string;
+  generation_mode?: string;
 }
 
 export interface CurrentFrameRows {
