@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 import os
 import random
+import shutil
+import subprocess
 import tempfile
 import time
-import subprocess
 import uuid
 from pathlib import Path
 
+import cv2
+import imageio_ffmpeg
 import numpy as np
 
 from ..settings import settings
@@ -116,7 +119,7 @@ class HunyuanInferenceClient:
                 )
             logger.info("HunyuanVideo-Foley model loaded successfully.")
         except Exception as e:
-            logger.error(f"Failed to load HunyuanVideo-Foley model: {e}")
+            logger.error("Failed to load HunyuanVideo-Foley model: %s", e)
             self.model_dict = None
             self.cfg = None
 
@@ -135,14 +138,7 @@ class HunyuanInferenceClient:
         start_time = time.perf_counter()
         video_path = self._find_video_path(request.video_id)
 
-        # We need to crop the video to the requested frame range.
-        import imageio_ffmpeg
-
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-
-        # Assuming 24 fps or we can just pass time. But the request provides frame index.
-        # Let's extract FPS from video.
-        import cv2
 
         cap = cv2.VideoCapture(str(video_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -246,11 +242,7 @@ class HunyuanInferenceClient:
                 f"Hunyuan generation took {time.perf_counter() - start_time:.2f}s"
             )
 
-            # Read bytes to return or save to permanent storage.
-            # In v2a_inspect_server, we usually return JSON, but for audio, we can return the path
-            # or upload it to settings.upload_dir.
             final_audio_path = settings.upload_dir / f"audio_{uuid.uuid4().hex}.wav"
-            import shutil
 
             shutil.copy(out_audio_path, final_audio_path)
 

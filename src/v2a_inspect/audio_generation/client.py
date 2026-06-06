@@ -12,12 +12,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
 import re
+import shutil
 
 import numpy as np
+import openai
 import scipy.io.wavfile as wavfile
+from elevenlabs.client import ElevenLabs
+
+from v2a_inspect.client import HunyuanClient
+from v2a_inspect.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +35,6 @@ def generate_dialogue_openai(
     text: str, out_path: str, duration: float | None = None
 ) -> str:
     """Generate speech using OpenAI TTS API with adaptive speed and voice."""
-    import openai
-
     match = re.search(r'["\'](.+?)["\']', text)
     spoken_text = match.group(1) if match else text
 
@@ -78,12 +82,12 @@ def generate_dialogue_openai(
     else:
         voice = "alloy"
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    api_key = get_settings().openai_api_key
+    if api_key is None:
         logger.warning("OPENAI_API_KEY not found. Falling back to dummy audio.")
         return generate_dummy_audio(duration or 1.0, out_path)
 
-    client = openai.OpenAI(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key.get_secret_value())
 
     # 발화 속도 자동 조절: 주어진 duration에 맞춤
     speed = 1.0
@@ -109,15 +113,13 @@ def generate_sfx_elevenlabs(
     text: str, out_path: str, duration: float | None = None
 ) -> str:
     """Generate sound effects using ElevenLabs API."""
-    api_key = os.getenv("ELEVENLABS_API_KEY")
-    if not api_key:
+    api_key = get_settings().elevenlabs_api_key
+    if api_key is None:
         logger.warning("ELEVENLABS_API_KEY not found. Falling back to dummy audio.")
         return generate_dummy_audio(duration or 1.0, out_path)
 
     try:
-        from elevenlabs.client import ElevenLabs
-
-        client = ElevenLabs(api_key=api_key)
+        client = ElevenLabs(api_key=api_key.get_secret_value())
         dur_seconds = min(max(duration, 0.5), 30.0) if duration else None
 
         audio_generator = client.text_to_sound_effects.convert(
@@ -141,15 +143,13 @@ def generate_music_elevenlabs(
     text: str, out_path: str, duration: float | None = None
 ) -> str:
     """Generate background music using ElevenLabs API."""
-    api_key = os.getenv("ELEVENLABS_API_KEY")
-    if not api_key:
+    api_key = get_settings().elevenlabs_api_key
+    if api_key is None:
         logger.warning("ELEVENLABS_API_KEY not found. Falling back to dummy audio.")
         return generate_dummy_audio(duration or 1.0, out_path)
 
     try:
-        from elevenlabs.client import ElevenLabs
-
-        client = ElevenLabs(api_key=api_key)
+        client = ElevenLabs(api_key=api_key.get_secret_value())
         dur_ms = int(min(max(duration, 3.0), 30.0) * 1000) if duration else 10000
 
         audio_generator = client.music.compose(
@@ -203,10 +203,6 @@ def generate_v2a_hunyuan(
     duration: float | None = None,
 ) -> str:
     """Generate audio using HunyuanVideo-Foley via unified client."""
-    import asyncio
-    import shutil
-    from v2a_inspect.client import HunyuanClient
-
     try:
         logger.info("Calling Hunyuan V2A API via unified client...")
         start_idx = int(time[0] * fps)

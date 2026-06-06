@@ -175,6 +175,14 @@ class Settings(BaseSettings):
             "V2A_LLM_INITIAL_SCENE_ANALYSIS_BATCH_SIZE",
         ),
     )
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY"),
+    )
+    elevenlabs_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ELEVENLABS_API_KEY"),
+    )
     agent_sound_timeline_recursion_limit: int = Field(
         default=500,
         ge=1,

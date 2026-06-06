@@ -338,8 +338,8 @@ export default function Timeline({
                   style={{ minHeight: `${depthCount * 24 + 8}px` }}
                 >
                   {laneRows.map((row, index) => {
-                    const bar = barStyle(row, timelineEndFrame);
                     const kind = rowKind(row);
+                    const bar = barStyle(row, timelineEndFrame, kind);
                     const editable = isEditableSoundRow(row) && !!onEditSoundEvent;
                     const visualStyle =
                       kind === "visual"
@@ -377,17 +377,44 @@ export default function Timeline({
                         }
                       >
                         {editable && onDeleteSoundEvent ? (
-                          <button
-                            className="bar-delete"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDeleteSoundEvent(row.sound_event_id ?? "");
-                            }}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            type="button"
-                          >
-                            x
-                          </button>
+                          <span className="bar-actions">
+                            {onEditSoundEventDescription ? (
+                              <button
+                                className="bar-action-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  const nextDescription = window.prompt(
+                                    "Edit sound event description",
+                                    row.label,
+                                  );
+                                  const trimmed = nextDescription?.trim();
+                                  if (trimmed) {
+                                    onEditSoundEventDescription(
+                                      row.sound_event_id ?? "",
+                                      trimmed,
+                                    );
+                                  }
+                                }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                title="Edit description"
+                                type="button"
+                              >
+                                e
+                              </button>
+                            ) : null}
+                            <button
+                              className="bar-action-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onDeleteSoundEvent(row.sound_event_id ?? "");
+                              }}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              title="Delete sound event"
+                              type="button"
+                            >
+                              x
+                            </button>
+                          </span>
                         ) : null}
                         {editable ? (
                           <span
@@ -492,12 +519,14 @@ function safeClass(value: string): string {
 function barStyle(
   row: TimelineRow,
   timelineEndFrame: number,
+  kind: LaneKind,
 ): { left: number; width: number } {
   const start = clamp(row.start_frame, 0, timelineEndFrame);
   const end = clamp(row.end_frame, start, timelineEndFrame);
   const left = (start / timelineEndFrame) * 100;
   const rawWidth = ((end - start) / timelineEndFrame) * 100;
-  const width = Math.min(100 - left, Math.max(0.4, rawWidth));
+  const minWidth = kind === "sound" ? 0.12 : 0.4;
+  const width = Math.min(100 - left, Math.max(minWidth, rawWidth));
   return { left, width };
 }
 

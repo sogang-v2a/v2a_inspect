@@ -9,13 +9,15 @@ import typer
 
 from v2a_inspect.models import VideoAsset
 from v2a_inspect.pipeline import VideoAssetPipelineOptions, run_video_asset_pipeline
+from v2a_inspect.audio_generation.synthesize import synthesize
+from v2a_inspect.ui.cli import ui
 
-app = typer.Typer(no_args_is_help=True, help="Run v2a-inspect pipelines.")
+app = typer.Typer(no_args_is_help=True, help="Run v2a-inspect.")
 
 
 @app.callback()
 def callback() -> None:
-    """Run v2a-inspect pipelines."""
+    """Run v2a-inspect."""
 
 
 @app.command()
@@ -128,6 +130,10 @@ def _video_asset_json(video_asset: VideoAsset, *, indent: int) -> str:
         indent=None if indent < 1 else indent,
         exclude_computed_fields=True,
     )
+
+
+app.command(name="synthesize")(synthesize)
+app.command(name="ui")(ui)
 
 
 if __name__ == "__main__":
