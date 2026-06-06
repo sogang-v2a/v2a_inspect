@@ -12,7 +12,6 @@ from v2a_inspect.models import InitialScene, VideoAsset, AudioPlan, AudioPlanIte
 from v2a_inspect.audio_generation.client import generate_audio_for_item
 from v2a_inspect.audio_generation.mix import mix_audio_into_video
 import tempfile
-from datetime import datetime
 from v2a_inspect.preprocessing import (
     analyze_initial_scene,
     build_visual_identity_layer,
@@ -236,6 +235,8 @@ def _threadsafe_publish_callback(
         future.result()
 
     return publish
+
+
 async def run_audio_generation_pipeline(
     video_asset: VideoAsset,
     store: VideoAssetStore,
@@ -260,7 +261,7 @@ async def run_audio_generation_pipeline(
             try:
                 res = await video_client.upload(str(video_asset.source_path))
                 video_id = res.video_id
-            except Exception as exc:
+            except Exception:
                 video_id = "dummy"
 
         for event in timeline.sound_events:
@@ -354,6 +355,8 @@ async def run_audio_generation_pipeline(
             raise RuntimeError("Audio synthesis and mixing failed.")
 
         video_asset.synthesized_video_path = Path(result)
-        await store.set_complete_asset(video_asset, stage="Audio generation complete. Ready for preview.")
+        await store.set_complete_asset(
+            video_asset, stage="Audio generation complete. Ready for preview."
+        )
     except Exception as exc:
         await store.set_error(str(exc))

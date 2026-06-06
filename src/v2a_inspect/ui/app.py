@@ -32,8 +32,9 @@ def create_app() -> FastAPI:
         return FileResponse(index_path)
 
     @app.get("/favicon.ico")
-    async def favicon() -> Response:
+    async def favicon():
         from fastapi.responses import Response
+
         return Response(status_code=204)
 
     return app

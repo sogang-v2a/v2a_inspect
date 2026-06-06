@@ -245,7 +245,6 @@ def timeline_rows(video_asset: VideoAsset) -> list[TableRow]:
             }
         )
     for row in sound_event_rows(video_asset):
-        gen_mode = str(row.get("generation_mode", "unknown")).upper()
         rows.append(
             {
                 "lane": f"[{row['track_type']}] {row['track_label']}",

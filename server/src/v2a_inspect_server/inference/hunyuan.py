@@ -21,7 +21,6 @@ logger = logging.getLogger("uvicorn.error")
 
 try:
     import torch
-    import torchaudio
     from hunyuanvideo_foley.utils.model_utils import load_model, denoise_process
     from hunyuanvideo_foley.utils.feature_utils import feature_process
 
@@ -233,7 +232,7 @@ class HunyuanInferenceClient:
             # Save audio to a temp file using soundfile to bypass torchcodec bugs
             out_audio_path = str(Path(temp_dir) / "output.wav")
             import soundfile as sf
-            
+
             # audio_tensor is (channels, frames)
             audio_np = audio_tensor.cpu().numpy().T
             sf.write(out_audio_path, audio_np, sample_rate)
