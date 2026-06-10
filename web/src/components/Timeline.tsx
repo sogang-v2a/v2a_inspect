@@ -23,6 +23,10 @@ interface TimelineProps {
   onDeleteSoundTrack?: (soundTrackId: string) => void;
   onCreateSoundEvent?: (soundTrackId: string, startFrame: number) => void;
   onDeleteSoundEvent?: (soundEventId: string) => void;
+  onEditSoundEventDescription?: (
+    soundEventId: string,
+    description: string,
+  ) => void;
   onEditSoundEventDetails?: (soundEventId: string) => void;
 }
 
@@ -75,6 +79,7 @@ export default function Timeline({
   onDeleteSoundTrack,
   onCreateSoundEvent,
   onDeleteSoundEvent,
+  onEditSoundEventDescription,
   onEditSoundEventDetails,
 }: TimelineProps) {
   const [enabledKinds, setEnabledKinds] = useState<Record<LaneKind, boolean>>({
