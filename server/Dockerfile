@@ -5,7 +5,9 @@ FROM python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
+    UV_HTTP_TIMEOUT=600 \
     UV_LINK_MODE=copy \
+    GIT_HTTP_VERSION=HTTP/1.1 \
     PATH="/app/server/.venv/bin:$PATH" \
     V2A_SERVER_HOST=0.0.0.0 \
     V2A_SERVER_PORT=8080 \
@@ -27,13 +29,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir uv
 
+RUN git config --global http.version HTTP/1.1
+
 COPY server/pyproject.toml server/uv.lock server/README.md ./
 
-RUN uv sync --locked --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    for attempt in 1 2 3; do \
+      uv sync --locked --no-dev --no-install-project && break; \
+      if [ "$attempt" = "3" ]; then exit 1; fi; \
+      sleep 10; \
+    done
 
 COPY server/src ./src
 
-RUN uv sync --locked --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    for attempt in 1 2 3; do \
+      uv sync --locked --no-dev && break; \
+      if [ "$attempt" = "3" ]; then exit 1; fi; \
+      sleep 10; \
+    done
 
 
 FROM base AS runtime
