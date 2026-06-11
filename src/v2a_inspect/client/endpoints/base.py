@@ -19,7 +19,7 @@ class BaseClient:
     """Base client for interacting with the inference server."""
 
     def __init__(self, base_url: Optional[str] = None, timeout: Optional[float] = None):
-        self.base_url = base_url or settings.server_url
+        self.base_url = (base_url or settings.server_url).rstrip("/")
         self.timeout = timeout or settings.timeout
         self._client: Optional[httpx.AsyncClient] = None
 
