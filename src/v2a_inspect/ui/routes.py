@@ -88,6 +88,40 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             headers={"Accept-Ranges": "bytes"},
         )
 
+    @router.get("/api/audio/tracks/{sound_track_id}")
+    async def get_audio_track(sound_track_id: str) -> FileResponse:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            raise HTTPException(status_code=404, detail="No video asset loaded")
+        artifact = next(
+            (
+                item
+                for item in snapshot.asset.sound_track_audio_artifacts
+                if str(item.sound_track_id) == sound_track_id
+            ),
+            None,
+        )
+        if artifact is None:
+            raise HTTPException(status_code=404, detail="No track audio available")
+        return _audio_file_response(artifact.path, "No track audio file available")
+
+    @router.get("/api/audio/events/{sound_event_id}")
+    async def get_audio_event(sound_event_id: str) -> FileResponse:
+        snapshot = await store.snapshot()
+        if snapshot.asset is None:
+            raise HTTPException(status_code=404, detail="No video asset loaded")
+        artifact = next(
+            (
+                item
+                for item in snapshot.asset.sound_event_audio_artifacts
+                if str(item.sound_event_id) == sound_event_id
+            ),
+            None,
+        )
+        if artifact is None:
+            raise HTTPException(status_code=404, detail="No event audio available")
+        return _audio_file_response(artifact.path, "No event audio file available")
+
     @router.get("/api/rows/timeline")
     async def get_timeline_rows() -> dict[str, object]:
         snapshot = await store.snapshot()
@@ -239,7 +273,14 @@ def create_router(store: VideoAssetStore) -> APIRouter:
             return {"status": "ignored", "detail": "Pipeline is already running"}
         if snapshot.asset is None:
             raise HTTPException(status_code=404, detail="No video asset loaded")
-        video_asset = snapshot.asset.model_copy(update={"sound_timeline": None})
+        video_asset = snapshot.asset.model_copy(
+            update={
+                "sound_timeline": None,
+                "synthesized_video_path": None,
+                "sound_event_audio_artifacts": [],
+                "sound_track_audio_artifacts": [],
+            }
+        )
         await store.publish_asset_mutation(
             video_asset,
             stage="reset sound timeline",
@@ -344,7 +385,29 @@ def _summary_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:
             "height": asset.height,
         },
         "timeline_rows": [] if asset is None else timeline_rows(asset),
+        "audio_tracks": []
+        if asset is None
+        else [
+            item.model_dump(mode="json")
+            for item in asset.sound_track_audio_artifacts
+        ],
+        "audio_events": []
+        if asset is None
+        else [
+            item.model_dump(mode="json")
+            for item in asset.sound_event_audio_artifacts
+        ],
     }
+
+
+def _audio_file_response(path: Path, missing_detail: str) -> FileResponse:
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=missing_detail)
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        headers={"Accept-Ranges": "bytes"},
+    )
 
 
 def _full_snapshot_payload(snapshot: VideoAssetSnapshot) -> dict[str, object]:

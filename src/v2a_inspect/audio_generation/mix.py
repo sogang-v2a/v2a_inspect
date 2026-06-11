@@ -12,12 +12,13 @@ AudioPlan 기반으로 생성된 오디오 파일들을 원본 비디오에 합�
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 from moviepy import AudioFileClip, CompositeAudioClip, VideoFileClip
 from moviepy.audio.fx import MultiplyVolume, AudioFadeOut
 
-from v2a_inspect.models.audio_plan import AudioPlan
+from v2a_inspect.models.audio_plan import AudioPlan, AudioPlanItem
 
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,8 @@ def mix_audio_into_video(
             duration = item.time[1] - item.time[0]
             clip = AudioFileClip(wav_path)
             clip_dur = clip.duration or duration
-            clip = clip.subclipped(0, min(clip_dur, duration))
+            target_duration = max(0.01, min(clip_dur, duration))
+            clip = clip.subclipped(0, target_duration).with_duration(target_duration)
             clip = clip.with_start(item.time[0])
 
             effects = []
@@ -85,9 +87,10 @@ def mix_audio_into_video(
             if item.volume != 1.0:
                 effects.append(MultiplyVolume(item.volume))
 
-            # 자연스러운 페이드아웃 추가 (0.15초)
-            fade_duration = min(0.15, clip_dur / 2.0)
-            if fade_duration > 0:
+            # 자연스러운 페이드아웃 추가. Very short clips can trip MoviePy's
+            # bounds checks during composite rendering, so leave them untouched.
+            fade_duration = min(0.15, target_duration / 2.0)
+            if target_duration >= 0.3 and fade_duration > 0:
                 effects.append(AudioFadeOut(fade_duration))
 
             if effects:
@@ -134,6 +137,75 @@ def mix_audio_into_video(
     except Exception as e:
         logger.error("Failed to mix video: %s", e)
         return None
+
+
+def mix_audio_items_to_wav(
+    items: Iterable[AudioPlanItem],
+    generated_audio: dict[str, str],
+    output_path: str,
+    *,
+    total_duration: float,
+    fps: int = 44100,
+) -> str | None:
+    """Mix selected AudioPlan items into one full-duration WAV stem."""
+
+    audio_clips: list = []
+    try:
+        n_mixed = 0
+        for item in items:
+            if item.type == "silence":
+                continue
+
+            wav_path = generated_audio.get(item.item_id)
+            if not wav_path or not Path(wav_path).exists():
+                continue
+
+            duration = item.time[1] - item.time[0]
+            clip = AudioFileClip(wav_path)
+            clip_dur = clip.duration or duration
+            target_duration = max(0.01, min(clip_dur, duration))
+            clip = clip.subclipped(0, target_duration).with_duration(target_duration)
+            clip = clip.with_start(item.time[0])
+
+            effects = []
+            if item.volume != 1.0:
+                effects.append(MultiplyVolume(item.volume))
+
+            fade_duration = min(0.15, target_duration / 2.0)
+            if target_duration >= 0.3 and fade_duration > 0:
+                effects.append(AudioFadeOut(fade_duration))
+
+            if effects:
+                clip = clip.with_effects(effects)
+
+            if item.pan != 0.0:
+                clip = _apply_pan(clip, item.pan)
+
+            audio_clips.append(clip)
+            n_mixed += 1
+
+        if not audio_clips:
+            logger.warning("No audio clips to mix into stem: %s", output_path)
+            return None
+
+        final_audio = CompositeAudioClip(audio_clips).with_duration(total_duration)
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Writing audio stem: %s (%d clips)", output_path, n_mixed)
+        final_audio.write_audiofile(
+            output_path,
+            fps=fps,
+            codec="pcm_s16le",
+            logger=None,
+        )
+        final_audio.close()
+        return output_path
+    except Exception as e:
+        logger.error("Failed to mix audio stem: %s", e)
+        return None
+    finally:
+        for clip in audio_clips:
+            if hasattr(clip, "close"):
+                clip.close()
 
 
 # ── Pan 효과 ──────────────────────────────────────────────────────────────────
