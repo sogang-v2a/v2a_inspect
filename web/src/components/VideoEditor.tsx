@@ -5,6 +5,8 @@ import TrackingOverlay from "./TrackingOverlay";
 import { fetchAssetForExport, fetchTrackingWindow } from "../api";
 import type {
   AssetResponse,
+  AudioEventArtifact,
+  AudioTrackArtifact,
   SoundEvent,
   SoundTrack,
   TimelineRow,
@@ -18,7 +20,7 @@ interface VideoEditorProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onImport: (event: FormEvent<HTMLFormElement>) => void;
   onResetSoundTimeline: () => void;
-  onGenerateAudio?: (event: FormEvent<HTMLFormElement>, draftAsset: VideoAsset | null) => void;
+  onGenerateAudio?: (event: FormEvent<HTMLFormElement>, draftAsset: VideoAsset | null) => Promise<void> | void;
 }
 
 export default function VideoEditor({
@@ -41,6 +43,8 @@ export default function VideoEditor({
   const [hasTimelineEdits, setHasTimelineEdits] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const audioPreviewMutedRestoreRef = useRef<boolean | null>(null);
   const animationRef = useRef<number | null>(null);
   const trackWindowRequestRef = useRef<string | null>(null);
   const video = state.video;
@@ -52,6 +56,20 @@ export default function VideoEditor({
   const soundTracks = useMemo(
     () => draftAsset?.sound_timeline?.sound_tracks ?? [],
     [draftAsset],
+  );
+  const audioTrackArtifacts = useMemo<AudioTrackArtifact[]>(
+    () =>
+      hasTimelineEdits
+        ? []
+        : (baseAsset?.sound_track_audio_artifacts ?? state.audio_tracks ?? []),
+    [baseAsset, hasTimelineEdits, state.audio_tracks],
+  );
+  const audioEventArtifacts = useMemo<AudioEventArtifact[]>(
+    () =>
+      hasTimelineEdits
+        ? []
+        : (baseAsset?.sound_event_audio_artifacts ?? state.audio_events ?? []),
+    [baseAsset, hasTimelineEdits, state.audio_events],
   );
   const counts = useMemo(() => {
     const scenes = countRows(timelineRows, "scene");
@@ -67,6 +85,7 @@ export default function VideoEditor({
   }, [timelineRows]);
   const selectFrame = useCallback(
     (nextFrame: number) => {
+      stopPreviewAudio(true);
       const next = clamp(nextFrame, 0, maxFrame);
       setFrame(next);
       const videoElement = videoRef.current;
@@ -102,6 +121,12 @@ export default function VideoEditor({
       alive = false;
     };
   }, [state.timeline_rows, state.version]);
+
+  useEffect(() => {
+    return () => {
+      stopPreviewAudio(true);
+    };
+  }, []);
 
   useEffect(() => {
     if (frame !== selectedFrame) {
@@ -167,7 +192,89 @@ export default function VideoEditor({
     setFrame(clamp(Math.round(video.currentTime * fps), 0, maxFrame));
   }
 
+  function stopPreviewAudio(pauseVideo: boolean) {
+    const audio = audioPreviewRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audioPreviewRef.current = null;
+    }
+
+    const videoElement = videoRef.current;
+    if (videoElement && audioPreviewMutedRestoreRef.current !== null) {
+      videoElement.muted = audioPreviewMutedRestoreRef.current;
+      if (pauseVideo) {
+        videoElement.pause();
+      }
+    }
+    audioPreviewMutedRestoreRef.current = null;
+  }
+
+  function playSyncedAudio(url: string, audioStartTime: number, videoStartFrame: number) {
+    const videoElement = videoRef.current;
+    stopPreviewAudio(true);
+
+    const nextFrame = clamp(videoStartFrame, 0, maxFrame);
+    const videoStartTime = nextFrame / fps;
+    setFrame(nextFrame);
+
+    const audio = new Audio(url);
+    audio.currentTime = Math.max(0, audioStartTime);
+    audioPreviewRef.current = audio;
+
+    if (videoElement) {
+      audioPreviewMutedRestoreRef.current = videoElement.muted;
+      videoElement.muted = true;
+      videoElement.currentTime = videoStartTime;
+    }
+
+    const cleanup = () => {
+      if (audioPreviewRef.current !== audio) {
+        return;
+      }
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audioPreviewRef.current = null;
+      if (videoElement && audioPreviewMutedRestoreRef.current !== null) {
+        videoElement.muted = audioPreviewMutedRestoreRef.current;
+        videoElement.pause();
+      }
+      audioPreviewMutedRestoreRef.current = null;
+    };
+
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+
+    if (videoElement) {
+      void videoElement.play().catch(() => {
+        cleanup();
+      });
+    }
+    void audio.play().catch(() => {
+      cleanup();
+    });
+  }
+
+  function playTrackAudio(soundTrackId: string, startFrame: number) {
+    playSyncedAudio(
+      `/api/audio/tracks/${soundTrackId}?asset_version=${state.asset_version}`,
+      startFrame / fps,
+      startFrame,
+    );
+  }
+
+  function playEventAudio(soundEventId: string, startFrame: number) {
+    playSyncedAudio(
+      `/api/audio/events/${soundEventId}?asset_version=${state.asset_version}`,
+      0,
+      startFrame,
+    );
+  }
+
   function togglePlayback() {
+    stopPreviewAudio(true);
     const video = videoRef.current;
     if (!video) {
       return;
@@ -399,6 +506,27 @@ export default function VideoEditor({
     setEditingEventId(null);
   }
 
+  async function submitGenerateAudio(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!onGenerateAudio) {
+      return;
+    }
+    const committedAsset = draftAsset
+      ? clearGeneratedAudio(applyTimelineEdits(draftAsset, timelineRows))
+      : null;
+    try {
+      await onGenerateAudio(event, committedAsset);
+    } catch {
+      return;
+    }
+    if (committedAsset) {
+      setBaseAsset(cloneAsset(committedAsset));
+      setDraftAsset(cloneAsset(committedAsset));
+    }
+    setHasTimelineEdits(false);
+    setExportStatus("Queued audio generation.");
+  }
+
   async function exportEditedAsset() {
     try {
       const asset = draftAsset ?? (await fetchAssetForExport());
@@ -545,7 +673,7 @@ export default function VideoEditor({
               </>
             ) : null}
           </section>
-            <form onSubmit={(e) => { if (onGenerateAudio) onGenerateAudio(e, draftAsset); }}>
+            <form onSubmit={submitGenerateAudio}>
               <label>
                 Inference server URL
                 <input name="server_url" type="url" placeholder="http://..." />
@@ -684,6 +812,9 @@ export default function VideoEditor({
           <Timeline
             rows={timelineRows}
             soundTracks={soundTracks}
+            audioTracks={audioTrackArtifacts}
+            audioEvents={audioEventArtifacts}
+            assetVersion={state.asset_version}
             frame={selectedFrame}
             frameCount={timelineFrameCount}
             onCreateSoundTrack={createSoundTrack}
@@ -693,6 +824,8 @@ export default function VideoEditor({
             onEditSoundEventDescription={editSoundEventDescription}
             onEditSoundEvent={editSoundEventTimestamp}
             onEditSoundEventDetails={startEditingSoundEventDetails}
+            onPlayTrackAudio={playTrackAudio}
+            onPlayEventAudio={playEventAudio}
             onSelectFrame={selectFrame}
           />
           </section>
@@ -701,6 +834,7 @@ export default function VideoEditor({
         {editingEventId && (() => {
           const row = timelineRows.find((r) => r.sound_event_id === editingEventId);
           if (!row) return null;
+          const eventAudio = audioEventArtifacts.find((item) => item.sound_event_id === editingEventId);
           return (
             <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <form 
@@ -724,6 +858,24 @@ export default function VideoEditor({
                     <option value="hybrid">Hybrid</option>
                   </select>
                 </label>
+                {eventAudio ? (
+                  <div className="event-audio-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => playEventAudio(editingEventId, row.start_frame)}
+                    >
+                      Play event WAV
+                    </button>
+                    <a
+                      className="download-link"
+                      href={`/api/audio/events/${editingEventId}?asset_version=${state.asset_version}`}
+                      download
+                    >
+                      Download event WAV
+                    </a>
+                  </div>
+                ) : null}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
                   <button type="button" className="secondary" onClick={() => setEditingEventId(null)} style={{ padding: "0.5rem 1rem", background: "transparent", border: "1px solid #555", borderRadius: "4px", cursor: "pointer", color: "#eee" }}>Cancel</button>
                   <button type="submit" style={{ padding: "0.5rem 1rem", background: "#3b82f6", border: "none", borderRadius: "4px", cursor: "pointer", color: "white", fontWeight: "bold" }}>Save Changes</button>
@@ -755,6 +907,14 @@ function isSoundRow(row: AssetResponse["timeline_rows"][number]): boolean {
 
 function inferFrameCount(rows: TimelineRow[]): number {
   return rows.reduce((maxEnd, row) => Math.max(maxEnd, row.end_frame), 0);
+}
+
+function clearGeneratedAudio(asset: VideoAsset): VideoAsset {
+  const nextAsset = cloneAsset(asset);
+  nextAsset.synthesized_video_path = null;
+  nextAsset.sound_event_audio_artifacts = [];
+  nextAsset.sound_track_audio_artifacts = [];
+  return nextAsset;
 }
 
 function applyTimelineEdits(asset: VideoAsset, rows: TimelineRow[]): VideoAsset {

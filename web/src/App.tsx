@@ -19,6 +19,8 @@ const emptyAsset: AssetResponse = {
   updated_at: "",
   video: null,
   timeline_rows: [],
+  audio_tracks: [],
+  audio_events: [],
 };
 
 export default function App() {
@@ -79,6 +81,7 @@ export default function App() {
       await refreshAssetSummary();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
+      throw error;
     }
   }
 
