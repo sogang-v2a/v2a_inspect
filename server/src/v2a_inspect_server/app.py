@@ -2,6 +2,7 @@ from __future__ import annotations
 import shutil
 import uuid
 import multiprocessing
+import logging
 from pathlib import Path
 
 # Fix for PyTorch CUDA DataLoader deadlock in FastAPI/Uvicorn
@@ -23,6 +24,8 @@ from v2a_inspect_server.inference.hunyuan import HunyuanInferenceClient
 from v2a_inspect_server.settings import settings
 from v2a_inspect_server.models.hunyuan import HunyuanGenerateV2ARequest
 from fastapi.responses import FileResponse
+
+logger = logging.getLogger("uvicorn.error")
 
 sam3_client: Sam3InferenceClient | None = None
 embed_client: DinoV2InferenceClient | None = None
@@ -139,6 +142,10 @@ async def generate_v2a_hunyuan(request: HunyuanGenerateV2ARequest):
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        if "model is not loaded" in str(e):
+            raise HTTPException(status_code=503, detail=str(e))
+        logger.exception("Hunyuan V2A generation failed.")
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
+        logger.exception("Hunyuan V2A generation failed.")
         raise HTTPException(status_code=500, detail=str(e))
