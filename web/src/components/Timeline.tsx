@@ -1,19 +1,30 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type FormEvent,
   type PointerEvent,
 } from "react";
-import type { SoundTrack, TimelineRow } from "../types";
+import type {
+  AudioEventArtifact,
+  AudioTrackArtifact,
+  SoundTrack,
+  TimelineRow,
+} from "../types";
 
 interface TimelineProps {
   rows: TimelineRow[];
   soundTracks: SoundTrack[];
+  audioTracks: AudioTrackArtifact[];
+  audioEvents: AudioEventArtifact[];
+  assetVersion: number;
   frame: number;
   frameCount: number;
   onSelectFrame: (frame: number) => void;
+  onPlayTrackAudio?: (soundTrackId: string, startFrame: number) => void;
+  onPlayEventAudio?: (soundEventId: string, startFrame: number) => void;
   onEditSoundEvent?: (
     soundEventId: string,
     startFrame: number,
@@ -30,9 +41,15 @@ interface TimelineProps {
   onEditSoundEventDetails?: (soundEventId: string) => void;
 }
 
-type LaneKind = "scene" | "tracking" | "visual" | "sound";
+type LaneKind = "scene" | "tracking" | "visual" | "sound" | "audio";
 type TrackType = "sfx" | "ambience" | "dialogue" | "music";
 type GenerationMode = "unknown" | "tta" | "vta" | "hybrid";
+
+interface TimelineTooltip {
+  content: string;
+  x: number;
+  y: number;
+}
 
 export interface CreateSoundTrackInput {
   trackType: TrackType;
@@ -47,7 +64,9 @@ interface PackedTimelineRow extends TimelineRow {
 
 interface LaneGroup {
   lane: string;
+  soundTrack?: SoundTrack;
   soundTrackId?: string;
+  audioTrack?: AudioTrackArtifact;
   rows: PackedTimelineRow[];
   depthCount: number;
 }
@@ -66,14 +85,20 @@ const laneToggles: { kind: LaneKind; label: string }[] = [
   { kind: "tracking", label: "Tracking" },
   { kind: "visual", label: "Visual" },
   { kind: "sound", label: "Sound" },
+  { kind: "audio", label: "Audio" },
 ];
 
 export default function Timeline({
   rows,
   soundTracks,
+  audioTracks,
+  audioEvents,
+  assetVersion,
   frame,
   frameCount,
   onSelectFrame,
+  onPlayTrackAudio,
+  onPlayEventAudio,
   onEditSoundEvent,
   onCreateSoundTrack,
   onDeleteSoundTrack,
@@ -87,6 +112,7 @@ export default function Timeline({
     tracking: true,
     visual: true,
     sound: true,
+    audio: true,
   });
   const dragRef = useRef<ActiveDrag | null>(null);
   const [showCreateTrack, setShowCreateTrack] = useState(false);
@@ -94,8 +120,29 @@ export default function Timeline({
   const [generationMode, setGenerationMode] = useState<GenerationMode>("vta");
   const [trackLabel, setTrackLabel] = useState("");
   const [canonicalKey, setCanonicalKey] = useState("");
-  const visibleRows = rows.filter((row) => enabledKinds[rowKind(row)]);
-  const lanes = groupRows(visibleRows, soundTracks);
+  const [tooltip, setTooltip] = useState<TimelineTooltip | null>(null);
+  const audioByTrack = useMemo(
+    () => new Map(audioTracks.map((item) => [item.sound_track_id, item])),
+    [audioTracks],
+  );
+  const audioByEvent = useMemo(
+    () => new Map(audioEvents.map((item) => [item.sound_event_id, item])),
+    [audioEvents],
+  );
+  const visibleRows = rows.filter((row) => {
+    const kind = rowKind(row);
+    if (kind === "sound") {
+      return enabledKinds.sound;
+    }
+    return enabledKinds[kind];
+  });
+  const lanes = groupRows(
+    visibleRows,
+    soundTracks,
+    audioByTrack,
+    enabledKinds.sound,
+    enabledKinds.audio,
+  );
   const timelineEndFrame = Math.max(frameCount, maxRowEnd(rows), 1);
   const maxPlaybackFrame = Math.max(0, timelineEndFrame - 1);
   const clampedFrame = clamp(frame, 0, maxPlaybackFrame);
@@ -214,6 +261,21 @@ export default function Timeline({
     event.stopPropagation();
   }
 
+
+  function showTooltip(content: string, x: number, y: number) {
+    setTooltip({ content, ...tooltipPosition(x, y) });
+  }
+
+  function moveTooltip(x: number, y: number) {
+    setTooltip((current) =>
+      current ? { ...current, ...tooltipPosition(x, y) } : current,
+    );
+  }
+
+  function hideTooltip() {
+    setTooltip(null);
+  }
+
   return (
     <section className="timeline-panel">
       <div className="timeline-header">
@@ -303,31 +365,81 @@ export default function Timeline({
           {lanes.length === 0 ? (
             <div className="empty-lane">Pipeline lanes will appear here.</div>
           ) : (
-            lanes.map(({ lane, soundTrackId, rows: laneRows, depthCount }) => (
+            lanes.map(({ lane, soundTrack, soundTrackId, audioTrack, rows: laneRows, depthCount }) => (
               <div className="lane" key={lane}>
-                <div className="lane-label">
-                  <span>{lane}</span>
+                <div className="lane-label" title={lane}>
+                  <span
+                    tabIndex={0}
+                    onMouseEnter={(event) => {
+                      showTooltip(
+                        trackInfoTooltip(soundTrack, lane, audioTrack),
+                        event.clientX,
+                        event.clientY,
+                      );
+                    }}
+                    onMouseMove={(event) => moveTooltip(event.clientX, event.clientY)}
+                    onMouseLeave={hideTooltip}
+                    onFocus={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      showTooltip(
+                        trackInfoTooltip(soundTrack, lane, audioTrack),
+                        rect.left,
+                        rect.bottom,
+                      );
+                    }}
+                    onBlur={hideTooltip}
+                  >
+                    {lane}
+                  </span>
                   {soundTrackId ? (
                     <div className="lane-actions">
-                      <button
-                        title="Add sound event"
-                        onClick={() => onCreateSoundEvent?.(soundTrackId, clampedFrame)}
-                        type="button"
-                      >
-                        +
-                      </button>
-                      <button
-                        title="Delete sound track"
-                        onClick={() => onDeleteSoundTrack?.(soundTrackId)}
-                        type="button"
-                      >
-                        x
-                      </button>
+                      {audioTrack ? (
+                        <button
+                          className="lane-play-button"
+                          title="Play track audio"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onPlayTrackAudio?.(soundTrackId, clampedFrame);
+                          }}
+                          type="button"
+                        >
+                          play
+                        </button>
+                      ) : null}
+                      {!(enabledKinds.audio && audioTrack) ? (
+                        <>
+                          <button
+                            title="Add sound event"
+                            onClick={() => onCreateSoundEvent?.(soundTrackId, clampedFrame)}
+                            type="button"
+                          >
+                            +
+                          </button>
+                          <button
+                            title="Delete sound track"
+                            onClick={() => onDeleteSoundTrack?.(soundTrackId)}
+                            type="button"
+                          >
+                            x
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
                 <div
                   className="lane-track"
+                  onMouseEnter={(event) => {
+                    if (enabledKinds.audio && audioTrack) {
+                      showTooltip(
+                        audioTrackTooltip(lane, audioTrack),
+                        event.clientX,
+                        event.clientY,
+                      );
+                    }
+                  }}
+                  onMouseMove={(event) => moveTooltip(event.clientX, event.clientY)}
+                  onMouseLeave={hideTooltip}
                   onPointerDown={(event) => {
                     if (event.detail === 2 && soundTrackId) {
                       createEventInLane(event, soundTrackId);
@@ -342,24 +454,46 @@ export default function Timeline({
                   }}
                   style={{ minHeight: `${depthCount * 24 + 8}px` }}
                 >
+                  {enabledKinds.audio && audioTrack ? (
+                    <Waveform peaks={audioTrack.waveform_peaks} />
+                  ) : null}
                   {laneRows.map((row, index) => {
                     const kind = rowKind(row);
                     const bar = barStyle(row, timelineEndFrame, kind);
                     const editable = isEditableSoundRow(row) && !!onEditSoundEvent;
+                    const hasEventAudio = !!row.sound_event_id && audioByEvent.has(row.sound_event_id);
                     const visualStyle =
                       kind === "visual"
                         ? ({ "--bar-color": visualEventColor(row.kind) } as CSSProperties)
                         : {};
-                    const genPrefix = row.generation_mode && row.generation_mode !== 'unknown' ? `[${row.generation_mode.toUpperCase()}] ` : "";
+                    const genPrefix = row.generation_mode && row.generation_mode !== "unknown" ? `[${row.generation_mode.toUpperCase()}] ` : "";
+                    const tooltipContent = soundEventTooltip(row, genPrefix, hasEventAudio);
                     return (
                       <div
                         className={`bar bar-${kind} bar-${safeClass(row.kind)}${
                           editable ? " bar-editable" : ""
-                        }`}
+                        }${hasEventAudio ? " bar-has-audio" : ""}`}
                         key={
                           row.sound_event_id ??
                           `${lane}-${row.start_frame}-${row.end_frame}-${index}`
                         }
+                        onMouseEnter={(event) => {
+                          event.stopPropagation();
+                          showTooltip(tooltipContent, event.clientX, event.clientY);
+                        }}
+                        onMouseMove={(event) => {
+                          event.stopPropagation();
+                          moveTooltip(event.clientX, event.clientY);
+                        }}
+                        onMouseLeave={(event) => {
+                          event.stopPropagation();
+                          hideTooltip();
+                        }}
+                        onFocus={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          showTooltip(tooltipContent, rect.left, rect.bottom);
+                        }}
+                        onBlur={hideTooltip}
                         onPointerDown={
                           editable
                             ? (event) => startSoundEventEdit(event, row)
@@ -371,7 +505,7 @@ export default function Timeline({
                           top: `${row.depth * 24 + 4}px`,
                           ...visualStyle,
                         }}
-                        title={`${genPrefix}${row.label}: ${row.start_frame}-${row.end_frame}`}
+                        title={`${genPrefix}${row.label}: ${row.start_frame}-${row.end_frame}${hasEventAudio ? " audio ready" : ""}`}
                         onDoubleClick={
                           editable && onEditSoundEventDetails
                             ? (event) => {
@@ -383,6 +517,20 @@ export default function Timeline({
                       >
                         {editable && onDeleteSoundEvent ? (
                           <span className="bar-actions">
+                            {hasEventAudio && onPlayEventAudio ? (
+                              <button
+                                className="bar-action-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onPlayEventAudio(row.sound_event_id ?? "", row.start_frame);
+                                }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                title="Play event audio"
+                                type="button"
+                              >
+                                p
+                              </button>
+                            ) : null}
                             {onEditSoundEventDescription ? (
                               <button
                                 className="bar-action-button"
@@ -445,11 +593,102 @@ export default function Timeline({
           )}
         </div>
       </div>
+      {tooltip ? (
+        <div
+          className="timeline-tooltip"
+          style={{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }}
+        >
+          {tooltip.content}
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function groupRows(rows: TimelineRow[], soundTracks: SoundTrack[]): LaneGroup[] {
+function tooltipPosition(x: number, y: number): { x: number; y: number } {
+  const margin = 16;
+  const width = 420;
+  const height = 180;
+  const viewportWidth = window.innerWidth || width + margin * 2;
+  const viewportHeight = window.innerHeight || height + margin * 2;
+  return {
+    x: clamp(x + 14, margin, Math.max(margin, viewportWidth - width - margin)),
+    y: clamp(y + 14, margin, Math.max(margin, viewportHeight - height - margin)),
+  };
+}
+
+function trackInfoTooltip(
+  track: SoundTrack | undefined,
+  lane: string,
+  audioTrack: AudioTrackArtifact | undefined,
+): string {
+  const lines = [lane];
+  if (track) {
+    lines.push(`Track type: ${track.track_type}`);
+    lines.push(`Generation mode: ${track.generation_mode || "unknown"}`);
+    if (track.canonical_key) {
+      lines.push(`Canonical key: ${track.canonical_key}`);
+    }
+  }
+  if (audioTrack) {
+    lines.push("Audio: generated track stem");
+    lines.push(`Duration: ${audioTrack.duration_sec.toFixed(2)}s`);
+    lines.push(`Events: ${audioTrack.event_count}`);
+  } else {
+    lines.push("Audio: not generated");
+  }
+  return lines.join("\n");
+}
+
+function audioTrackTooltip(lane: string, artifact: AudioTrackArtifact): string {
+  const label = artifact.track_label || lane;
+  const type = artifact.track_type ? `Type: ${artifact.track_type}` : null;
+  const duration = `Duration: ${artifact.duration_sec.toFixed(2)}s`;
+  const events = `Events: ${artifact.event_count}`;
+  return [label, type, duration, events, "Generated track stem"].filter(Boolean).join("\n");
+}
+
+function soundEventTooltip(
+  row: TimelineRow,
+  generationPrefix: string,
+  hasEventAudio: boolean,
+): string {
+  const generation = generationPrefix
+    ? `Generation: ${generationPrefix.replace(/[\[\] ]/g, "")}`
+    : "Generation: unknown";
+  return [
+    row.label,
+    `Frames: ${row.start_frame}-${row.end_frame}`,
+    generation,
+    hasEventAudio ? "Audio: ready" : "Audio: not generated",
+  ].join("\n");
+}
+
+function Waveform({ peaks }: { peaks: number[] }) {
+  if (peaks.length === 0) {
+    return <div className="waveform waveform-empty" />;
+  }
+  const sampledPeaks = peaks.length > 384 ? samplePeaks(peaks, 384) : peaks;
+  return (
+    <div className="waveform" aria-hidden="true">
+      {sampledPeaks.map((peak, index) => (
+        <span
+          className="waveform-bar"
+          key={index}
+          style={{ height: `${Math.max(3, peak * 100)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function groupRows(
+  rows: TimelineRow[],
+  soundTracks: SoundTrack[],
+  audioByTrack: Map<string, AudioTrackArtifact>,
+  showSound: boolean,
+  showAudio: boolean,
+): LaneGroup[] {
   const lanes = new Map<string, TimelineRow[]>();
   for (const row of rows) {
     if (!lanes.has(row.lane)) {
@@ -458,6 +697,10 @@ function groupRows(rows: TimelineRow[], soundTracks: SoundTrack[]): LaneGroup[] 
     lanes.get(row.lane)?.push(row);
   }
   for (const track of soundTracks) {
+    const trackId = track.sound_track_id;
+    if (!showSound && !(showAudio && audioByTrack.has(trackId))) {
+      continue;
+    }
     const lane = soundLane(track);
     if (!lanes.has(lane)) {
       lanes.set(lane, []);
@@ -467,10 +710,13 @@ function groupRows(rows: TimelineRow[], soundTracks: SoundTrack[]): LaneGroup[] 
     const packedRows = packLaneRows(laneRows);
     const depthCount =
       packedRows.reduce((maxDepth, row) => Math.max(maxDepth, row.depth), 0) + 1;
+    const soundTrack = soundTracks.find((track) => soundLane(track) === lane);
+    const soundTrackId = soundTrack?.sound_track_id;
     return {
       lane,
-      soundTrackId: soundTracks.find((track) => soundLane(track) === lane)
-        ?.sound_track_id,
+      soundTrack,
+      soundTrackId,
+      audioTrack: soundTrackId ? audioByTrack.get(soundTrackId) : undefined,
       rows: packedRows,
       depthCount,
     };
@@ -496,7 +742,7 @@ function packLaneRows(rows: TimelineRow[]): PackedTimelineRow[] {
     });
 }
 
-function rowKind(row: TimelineRow): LaneKind {
+function rowKind(row: TimelineRow): Exclude<LaneKind, "audio"> {
   if (row.kind === "scene") {
     return "scene";
   }
@@ -524,7 +770,7 @@ function safeClass(value: string): string {
 function barStyle(
   row: TimelineRow,
   timelineEndFrame: number,
-  kind: LaneKind,
+  kind: Exclude<LaneKind, "audio">,
 ): { left: number; width: number } {
   const start = clamp(row.start_frame, 0, timelineEndFrame);
   const end = clamp(row.end_frame, start, timelineEndFrame);
@@ -533,6 +779,19 @@ function barStyle(
   const minWidth = kind === "sound" ? 0.12 : 0.4;
   const width = Math.min(100 - left, Math.max(minWidth, rawWidth));
   return { left, width };
+}
+
+function samplePeaks(peaks: number[], targetCount: number): number[] {
+  if (peaks.length <= targetCount) {
+    return peaks;
+  }
+  const sampled: number[] = [];
+  for (let index = 0; index < targetCount; index += 1) {
+    const start = Math.floor((index / targetCount) * peaks.length);
+    const end = Math.max(start + 1, Math.floor(((index + 1) / targetCount) * peaks.length));
+    sampled.push(Math.max(...peaks.slice(start, end)));
+  }
+  return sampled;
 }
 
 function clamp(value: number, min: number, max: number): number {

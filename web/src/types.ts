@@ -9,6 +9,8 @@ export interface AssetResponse {
   updated_at: string;
   video: VideoSummary | null;
   timeline_rows: TimelineRow[];
+  audio_tracks: AudioTrackArtifact[];
+  audio_events: AudioEventArtifact[];
 }
 
 export interface FullAssetResponse extends AssetResponse {
@@ -34,6 +36,28 @@ export interface VideoAsset {
   visual_identity_layer?: VisualIdentityLayer | null;
   sound_timeline?: SoundTimeline | null;
   synthesized_video_path?: string | null;
+  sound_event_audio_artifacts?: AudioEventArtifact[];
+  sound_track_audio_artifacts?: AudioTrackArtifact[];
+}
+
+
+export interface AudioEventArtifact {
+  sound_event_id: string;
+  sound_track_id: string;
+  path: string;
+  duration_sec: number;
+  generation_model: string;
+  description: string;
+}
+
+export interface AudioTrackArtifact {
+  sound_track_id: string;
+  track_label: string;
+  track_type: string;
+  path: string;
+  duration_sec: number;
+  event_count: number;
+  waveform_peaks: number[];
 }
 
 export interface VideoSummary {

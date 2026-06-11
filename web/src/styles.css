@@ -545,6 +545,22 @@ button.download-link {
   position: relative;
 }
 
+.timeline-tooltip {
+  background: rgba(13, 15, 19, 0.96);
+  border: 1px solid #3a4050;
+  border-radius: 5px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+  color: #eef2f8;
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 9px 10px;
+  pointer-events: none;
+  position: fixed;
+  white-space: pre-wrap;
+  z-index: 10000;
+}
+
 .timeline-playhead-area {
   bottom: 0;
   left: var(--timeline-track-offset);
@@ -614,10 +630,16 @@ button.download-link {
 }
 
 .lane-label span {
+  border-radius: 3px;
   min-width: 0;
+  outline: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lane-label span:focus-visible {
+  box-shadow: 0 0 0 1px #77d7c2;
 }
 
 .lane-actions {
@@ -626,16 +648,26 @@ button.download-link {
   gap: 3px;
 }
 
-.lane-actions button {
+.lane-play-button {
+  min-width: 34px;
+}
+
+.lane-actions button,
+.lane-action-link {
+  align-items: center;
   background: #242832;
   border: 1px solid #3a4050;
   border-radius: 4px;
   color: #d8dde6;
+  display: inline-flex;
   font-size: 10px;
+  font-weight: 750;
   height: 18px;
+  justify-content: center;
   line-height: 1;
-  padding: 0;
-  width: 20px;
+  min-width: 18px;
+  padding: 0 4px;
+  text-decoration: none;
 }
 
 .lane-track {
@@ -645,6 +677,37 @@ button.download-link {
   cursor: crosshair;
   min-height: 30px;
   position: relative;
+}
+
+.waveform {
+  align-items: center;
+  bottom: 4px;
+  display: flex;
+  gap: 1px;
+  left: 5px;
+  opacity: 0.62;
+  pointer-events: none;
+  position: absolute;
+  right: 5px;
+  top: 4px;
+  z-index: 0;
+}
+
+.waveform-bar {
+  background: linear-gradient(180deg, #77d7c2, #347e73);
+  border-radius: 2px;
+  flex: 1;
+  min-width: 1px;
+}
+
+.waveform-empty {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(119, 215, 194, 0.22),
+    rgba(119, 215, 194, 0.22) 2px,
+    transparent 2px,
+    transparent 8px
+  );
 }
 
 .bar {
@@ -658,6 +721,7 @@ button.download-link {
   padding: 0 6px;
   position: absolute;
   text-overflow: clip;
+  z-index: 1;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
 }
@@ -730,6 +794,22 @@ button.download-link {
 
 .bar-editable:hover .bar-actions {
   display: flex;
+}
+
+.bar-has-audio {
+  box-shadow: inset 0 0 0 1px rgba(242, 210, 125, 0.68), 0 0 0 1px rgba(242, 210, 125, 0.18);
+}
+
+.event-audio-actions {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.event-audio-actions .secondary {
+  background: #242832;
+  border: 1px solid #3a4050;
+  color: #d8dde6;
 }
 
 .bar-scene {
