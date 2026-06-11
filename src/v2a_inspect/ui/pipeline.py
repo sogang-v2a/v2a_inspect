@@ -1,17 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
+from moviepy import AudioFileClip
+from scipy.io import wavfile
+
 from v2a_inspect.agents.sound_timeline import run_sound_timeline_agent_parallel
 from v2a_inspect.client import SAM3Client, VideoClient
 from v2a_inspect.config import settings
-from v2a_inspect.models import InitialScene, VideoAsset, AudioPlan, AudioPlanItem
+from v2a_inspect.models import (
+    AudioPlan,
+    AudioPlanItem,
+    InitialScene,
+    SoundEventAudioArtifact,
+    SoundTrackAudioArtifact,
+    VideoAsset,
+)
 from v2a_inspect.audio_generation.client import generate_audio_for_item
-from v2a_inspect.audio_generation.mix import mix_audio_into_video
-import tempfile
+from v2a_inspect.audio_generation.mix import mix_audio_into_video, mix_audio_items_to_wav
 from v2a_inspect.preprocessing import (
     analyze_initial_scene,
     build_visual_identity_layer,
@@ -237,6 +249,7 @@ def _threadsafe_publish_callback(
     return publish
 
 
+
 async def run_audio_generation_pipeline(
     video_asset: VideoAsset,
     store: VideoAssetStore,
@@ -250,11 +263,26 @@ async def run_audio_generation_pipeline(
             raise ValueError("No audio items to generate.")
 
         await store.set_running(stage="preparing audio plan")
+        video_asset = video_asset.model_copy(
+            update={
+                "synthesized_video_path": None,
+                "sound_event_audio_artifacts": [],
+                "sound_track_audio_artifacts": [],
+            }
+        )
+        await store.publish_asset_mutation(video_asset, stage="preparing audio plan")
+
         video_duration = video_asset.duration_sec
         fps = video_asset.fps
+        work_root = _audio_work_root(video_asset)
+        event_dir = work_root / "audio" / "events"
+        track_dir = work_root / "audio" / "tracks"
+        event_dir.mkdir(parents=True, exist_ok=True)
+        track_dir.mkdir(parents=True, exist_ok=True)
 
         audio_plan = AudioPlan(total_duration=video_duration)
         track_map = {track.sound_track_id: track for track in timeline.sound_tracks}
+        item_context: dict[str, tuple[object, object]] = {}
 
         await store.touch(stage="uploading video to inference server")
         async with VideoClient(base_url=server_url) as video_client:
@@ -309,54 +337,209 @@ async def run_audio_generation_pipeline(
                 generation_model=gen_model,
             )
             audio_plan.items.append(item)
+            item_context[item.item_id] = (event, track)
 
         audio_plan.items.sort(key=lambda x: x.time[0])
         n_items = len(audio_plan.items)
 
         generated_audio: dict[str, str] = {}
-        with tempfile.TemporaryDirectory(prefix="v2a_synth_audio_") as temp_dir_name:
-            audio_dir = Path(temp_dir_name)
+        event_artifacts: list[SoundEventAudioArtifact] = []
 
-            for i, item in enumerate(audio_plan.items, 1):
-                await store.touch(stage=f"generating audio {i}/{n_items}")
-                duration = item.time[1] - item.time[0]
-                out_path = str(audio_dir / f"{item.item_id}.wav")
+        for i, item in enumerate(audio_plan.items, 1):
+            context = item_context.get(item.item_id)
+            if context is None:
+                continue
+            event, track = context
+            await store.touch(stage=f"generating audio {i}/{n_items}")
+            duration = item.time[1] - item.time[0]
+            event_path = _event_audio_path(event_dir, item.item_id, track.label)
+            raw_path = event_path.with_name(f".{event_path.stem}.generated.wav")
 
-                audio_file = await asyncio.to_thread(
-                    generate_audio_for_item,
-                    kind=item.type,
-                    description=item.description,
-                    out_path=out_path,
-                    duration=duration,
-                    video_id=video_id,
-                    fps=fps,
-                    time=item.time,
-                    generation_model=item.generation_model,
-                )
-                if audio_file:
-                    generated_audio[item.item_id] = audio_file
-
-            if not generated_audio:
-                raise ValueError("No audio files were generated.")
-
-            await store.touch(stage="mixing audio")
-            output_path = str(video_asset.source_path.parent / "preview.mp4")
-
-            result = await asyncio.to_thread(
-                mix_audio_into_video,
-                video_path=str(video_asset.source_path),
-                audio_plan=audio_plan,
-                generated_audio=generated_audio,
-                output_path=output_path,
-                keep_original_audio=False,
+            audio_file = await asyncio.to_thread(
+                generate_audio_for_item,
+                kind=item.type,
+                description=item.description,
+                out_path=str(raw_path),
+                duration=duration,
+                video_id=video_id,
+                fps=fps,
+                time=item.time,
+                generation_model=item.generation_model,
             )
+            if not audio_file:
+                continue
+
+            normalized = await asyncio.to_thread(
+                _convert_audio_to_wav,
+                Path(audio_file),
+                event_path,
+            )
+            if raw_path.exists() and raw_path != event_path:
+                raw_path.unlink(missing_ok=True)
+            if normalized is None:
+                continue
+
+            generated_audio[item.item_id] = str(normalized)
+            event_artifacts.append(
+                SoundEventAudioArtifact(
+                    sound_event_id=event.sound_event_id,
+                    sound_track_id=track.sound_track_id,
+                    path=normalized,
+                    duration_sec=round(duration, 3),
+                    generation_model=item.generation_model,
+                    description=item.description,
+                )
+            )
+
+        if not generated_audio:
+            raise ValueError("No audio files were generated.")
+
+        await store.touch(stage="mixing track stems")
+        track_items: dict[str, list[AudioPlanItem]] = defaultdict(list)
+        for item in audio_plan.items:
+            if item.track_id and item.item_id in generated_audio:
+                track_items[item.track_id].append(item)
+
+        track_artifacts: list[SoundTrackAudioArtifact] = []
+        for track in timeline.sound_tracks:
+            items = track_items.get(str(track.sound_track_id), [])
+            if not items:
+                continue
+            track_path = _track_audio_path(track_dir, str(track.sound_track_id), track.label)
+            stem_path = await asyncio.to_thread(
+                mix_audio_items_to_wav,
+                items,
+                generated_audio,
+                str(track_path),
+                total_duration=video_duration,
+            )
+            if not stem_path or not Path(stem_path).exists():
+                continue
+            peaks = await asyncio.to_thread(_waveform_peaks, Path(stem_path))
+            track_artifacts.append(
+                SoundTrackAudioArtifact(
+                    sound_track_id=track.sound_track_id,
+                    track_label=track.label,
+                    track_type=track.track_type,
+                    path=Path(stem_path),
+                    duration_sec=round(video_duration, 3),
+                    event_count=len(items),
+                    waveform_peaks=peaks,
+                )
+            )
+
+        if not track_artifacts:
+            raise RuntimeError("No track stems were generated.")
+
+        await store.touch(stage="mixing audio")
+        output_path = str(work_root / "preview.mp4")
+        preview_plan = AudioPlan(total_duration=video_duration)
+        preview_audio: dict[str, str] = {}
+        for artifact in track_artifacts:
+            item_id = str(artifact.sound_track_id)
+            preview_plan.items.append(
+                AudioPlanItem(
+                    item_id=item_id,
+                    type=artifact.track_type,
+                    time=(0.0, video_duration),
+                    description=artifact.track_label,
+                    volume=1.0,
+                    track_id=item_id,
+                    generation_model="stem",
+                )
+            )
+            preview_audio[item_id] = str(artifact.path)
+
+        result = await asyncio.to_thread(
+            mix_audio_into_video,
+            video_path=str(video_asset.source_path),
+            audio_plan=preview_plan,
+            generated_audio=preview_audio,
+            output_path=output_path,
+            keep_original_audio=False,
+        )
 
         if not result or not Path(result).exists():
             raise RuntimeError("Audio synthesis and mixing failed.")
 
-        video_asset.synthesized_video_path = Path(result)
+        video_asset = video_asset.model_copy(
+            update={
+                "synthesized_video_path": Path(result),
+                "sound_event_audio_artifacts": event_artifacts,
+                "sound_track_audio_artifacts": track_artifacts,
+            }
+        )
         await store.set_complete_asset(
             video_asset, stage="Audio generation complete. Ready for preview."
         )
     except Exception as exc:
         await store.set_error(str(exc))
+
+
+def _audio_work_root(video_asset: VideoAsset) -> Path:
+    root = video_asset.source_path.parent
+    if root.name == "uploads":
+        return root.parent
+    return root
+
+
+def _event_audio_path(audio_dir: Path, event_id: str, track_label: str) -> Path:
+    return audio_dir / f"event_{_short_id(event_id)}_{_slug(track_label)}.wav"
+
+
+def _track_audio_path(audio_dir: Path, track_id: str, track_label: str) -> Path:
+    return audio_dir / f"track_{_short_id(track_id)}_{_slug(track_label)}.wav"
+
+
+def _short_id(value: object) -> str:
+    return str(value).replace("-", "")[:12] or "unknown"
+
+
+def _slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-_.").lower()
+    return (slug[:48] or "track")
+
+
+def _convert_audio_to_wav(input_path: Path, output_path: Path) -> Path | None:
+    if not input_path.exists():
+        return None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        clip = AudioFileClip(str(input_path))
+        try:
+            clip.write_audiofile(
+                str(output_path),
+                fps=44100,
+                codec="pcm_s16le",
+                logger=None,
+            )
+        finally:
+            clip.close()
+        return output_path
+    except Exception:
+        return None
+
+
+def _waveform_peaks(path: Path, *, bucket_count: int = 768) -> list[float]:
+    try:
+        _sample_rate, data = wavfile.read(path)
+    except Exception:
+        return []
+    if data.size == 0:
+        return []
+
+    samples = data.astype(np.float32)
+    if np.issubdtype(data.dtype, np.integer):
+        info = np.iinfo(data.dtype)
+        samples = samples / max(abs(info.min), info.max)
+    if samples.ndim > 1:
+        samples = np.max(np.abs(samples), axis=1)
+    else:
+        samples = np.abs(samples)
+
+    buckets = max(1, min(bucket_count, samples.size))
+    peaks = [float(chunk.max()) for chunk in np.array_split(samples, buckets)]
+    max_peak = max(peaks) if peaks else 0.0
+    if max_peak > 0:
+        peaks = [peak / max_peak for peak in peaks]
+    return [round(min(max(peak, 0.0), 1.0), 4) for peak in peaks]
